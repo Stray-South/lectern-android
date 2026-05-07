@@ -7,7 +7,7 @@ FOUND=0
 
 # Check Room entity class names
 while IFS= read -r -d '' file; do
-    if grep -nE "@Entity.*($PATTERN)|data class ($PATTERN)" "$file"; then
+    if grep -nEi "@Entity.*($PATTERN)|class [A-Za-z0-9_]*(face|eye|gaze|lookat)[A-Za-z0-9_]*" "$file"; then
         echo "GAZE DATA LEAK in $file"
         FOUND=1
     fi

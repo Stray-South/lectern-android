@@ -4,7 +4,7 @@ These rules mirror lectern-ios/RULES.md adapted for Kotlin/Android.
 CI enforces all of them. Zero exceptions without an ADR entry.
 
 ## Code quality
-- `kotlinOptions { jvmTarget = "17" }` on all targets
+- `compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }` on all targets (AGP 9.x; `kotlinOptions` removed)
 - Zero detekt errors on merge
 - Zero ktlint errors on merge
 - No force-unwrap `!!` — use `requireNotNull(msg)` or `?.let`

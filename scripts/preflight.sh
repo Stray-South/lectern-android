@@ -21,11 +21,11 @@ echo "[4/6] ktlint..."
 echo "  PASS"
 
 echo "[5/6] Banned strings..."
-scripts/check_banned_strings.sh
+bash "$(dirname "$0")/check_banned_strings.sh"
 echo "  PASS"
 
 echo "[6/6] Gaze data leak..."
-scripts/check_gaze_data_leak.sh
+bash "$(dirname "$0")/check_gaze_data_leak.sh"
 echo "  PASS"
 
 echo ""
