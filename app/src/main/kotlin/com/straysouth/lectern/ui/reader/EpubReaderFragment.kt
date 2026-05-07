@@ -24,22 +24,13 @@ class EpubReaderFragment : Fragment() {
     private var navigatorFragment: EpubNavigatorFragment? = null
 
     companion object {
-        private const val ARG_BOOK_ID = "book_id"
-        private const val ARG_FILE_URI = "file_uri"
+        const val ARG_BOOK_ID = "book_id"
         private const val TAG_NAVIGATOR = "epub_navigator"
         private val CONTAINER_ID get() = R.id.epub_reader_container
-
-        fun newInstance(bookId: String, fileUri: String) = EpubReaderFragment().apply {
-            arguments = Bundle().apply {
-                putString(ARG_BOOK_ID, bookId)
-                putString(ARG_FILE_URI, fileUri)
-            }
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val bookId = arguments?.getString(ARG_BOOK_ID)
-        val fileUri = arguments?.getString(ARG_FILE_URI)
 
         // Dummy factory must be set before super.onCreate() so the FragmentManager
         // can safely restore EpubNavigatorFragment on config change or process death.
@@ -47,12 +38,12 @@ class EpubReaderFragment : Fragment() {
         childFragmentManager.fragmentFactory = EpubNavigatorFragment.createDummyFactory()
         super.onCreate(savedInstanceState)
 
-        if (bookId == null || fileUri == null) {
+        if (bookId == null) {
             requireActivity().finish()
             return
         }
 
-        viewModel.load(bookId, fileUri)
+        viewModel.load(bookId)
 
         // STARTED guarantees mStateSaved and mStopped are both false — safe for commit().
         // take(1) makes this a one-shot action; the findFragmentByTag guard prevents

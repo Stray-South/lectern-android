@@ -1,21 +1,24 @@
 package com.straysouth.lectern
 
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.runtime.Composable
 import com.straysouth.lectern.ui.library.LibraryScreen
 import com.straysouth.lectern.ui.library.LibraryViewModel
-import com.straysouth.lectern.ui.reader.EpubReaderFragment
+import com.straysouth.lectern.ui.reader.ReaderScreen
 import com.straysouth.lectern.ui.theme.LecternTheme
 
 class MainActivity : AppCompatActivity() {
@@ -33,28 +36,24 @@ class MainActivity : AppCompatActivity() {
                         .semantics { contentDescription = "Lectern" },
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    LibraryScreen(
-                        viewModel = libraryViewModel,
-                        onBookSelected = { book ->
-                            openReader(book.id, book.filePath ?: return@LibraryScreen)
-                        },
-                    )
+                    var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
+
+                    BackHandler(enabled = currentBookId != null) {
+                        currentBookId = null
+                    }
+
+                    if (currentBookId == null) {
+                        LibraryScreen(
+                            viewModel = libraryViewModel,
+                            onBookSelected = { book ->
+                                currentBookId = book.id
+                            },
+                        )
+                    } else {
+                        ReaderScreen(bookId = currentBookId!!)
+                    }
                 }
             }
         }
     }
-
-    private fun openReader(bookId: String, fileUri: String) {
-        if (supportFragmentManager.isStateSaved) return
-        supportFragmentManager.beginTransaction()
-            .replace(android.R.id.content, EpubReaderFragment.newInstance(bookId, fileUri))
-            .addToBackStack(null)
-            .commit()
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    LecternTheme { }
 }

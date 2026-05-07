@@ -36,12 +36,16 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // Tracked separately so onCleared() can close regardless of current _state value
     private var _publication: Publication? = null
 
-    fun load(bookId: String, fileUriString: String) {
+    fun load(bookId: String) {
         if (_publication != null) return
         viewModelScope.launch {
+            val filePath = bookDao.getById(bookId)?.filePath
+            if (filePath == null) {
+                _state.value = State.Error("Book not found")
+                return@launch
+            }
             val savedLocator = locatorRepository.get(bookId)
-
-            pubRepository.open(Uri.parse(fileUriString))
+            pubRepository.open(Uri.parse(filePath))
                 .onSuccess { publication ->
                     _publication = publication
                     bookDao.updateLastOpened(bookId, System.currentTimeMillis())
