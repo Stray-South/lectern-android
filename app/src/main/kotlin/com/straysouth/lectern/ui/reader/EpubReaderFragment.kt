@@ -24,6 +24,9 @@ class EpubReaderFragment : Fragment() {
     private var navigatorFragment: EpubNavigatorFragment? = null
 
     companion object {
+        // Public so ReaderScreen can build the arguments Bundle via AndroidFragment.
+        // Direct instantiation is not supported — use AndroidFragment<EpubReaderFragment>
+        // with arguments = bundleOf(ARG_BOOK_ID to bookId).
         const val ARG_BOOK_ID = "book_id"
         private const val TAG_NAVIGATOR = "epub_navigator"
         private val CONTAINER_ID get() = R.id.epub_reader_container
@@ -39,7 +42,8 @@ class EpubReaderFragment : Fragment() {
         super.onCreate(savedInstanceState)
 
         if (bookId == null) {
-            requireActivity().finish()
+            // Null bookId is a programming error — AndroidFragment should always supply it.
+            // Leave the Fragment inert; BackHandler in MainActivity handles navigation back.
             return
         }
 

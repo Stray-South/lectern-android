@@ -35,9 +35,10 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     // Tracked separately so onCleared() can close regardless of current _state value
     private var _publication: Publication? = null
+    private val _loading = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun load(bookId: String) {
-        if (_publication != null) return
+        if (_publication != null || !_loading.compareAndSet(false, true)) return
         viewModelScope.launch {
             val filePath = bookDao.getById(bookId)?.filePath
             if (filePath == null) {

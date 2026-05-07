@@ -17,13 +17,16 @@ fun ReaderScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .semantics { contentDescription = "Reader" },
+            // mergeDescendants = false (default) — TalkBack must traverse into the
+            // Fragment's WebView accessibility tree. Verify with TalkBack audit before merge.
+            .semantics(mergeDescendants = false) { contentDescription = "Reader" },
     ) {
         // fillMaxSize is mandatory — zero-size container causes blank WebView (Discussion #513)
+        // AndroidFragment removal is handled by fragment-compose DisposableEffect when
+        // this composable leaves the composition (i.e. currentBookId → null in MainActivity).
         AndroidFragment<EpubReaderFragment>(
             modifier = Modifier.fillMaxSize(),
             arguments = bundleOf(EpubReaderFragment.ARG_BOOK_ID to bookId),
         )
-        // TTS controls, Focus Band overlays added here in Sprint 3
     }
 }

@@ -36,13 +36,16 @@ class MainActivity : AppCompatActivity() {
                         .semantics { contentDescription = "Lectern" },
                     color = MaterialTheme.colorScheme.background,
                 ) {
+                    // Process death resets to null — user lands on library and resumes
+                    // from DataStore-persisted locator on next open. Intentional.
                     var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
 
                     BackHandler(enabled = currentBookId != null) {
                         currentBookId = null
                     }
 
-                    if (currentBookId == null) {
+                    val bookId = currentBookId
+                    if (bookId == null) {
                         LibraryScreen(
                             viewModel = libraryViewModel,
                             onBookSelected = { book ->
@@ -50,7 +53,7 @@ class MainActivity : AppCompatActivity() {
                             },
                         )
                     } else {
-                        ReaderScreen(bookId = currentBookId!!)
+                        ReaderScreen(bookId = bookId)
                     }
                 }
             }
