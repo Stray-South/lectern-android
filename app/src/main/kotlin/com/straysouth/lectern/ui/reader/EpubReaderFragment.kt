@@ -73,8 +73,6 @@ class EpubReaderFragment : Fragment() {
                                 add(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
                             }
                         }
-                        navigatorFragment =
-                            childFragmentManager.findFragmentByTag(TAG_NAVIGATOR) as? EpubNavigatorFragment
                     }
             }
         }
@@ -86,5 +84,11 @@ class EpubReaderFragment : Fragment() {
         savedInstanceState: Bundle?,
     ): View = FrameLayout(requireContext()).apply {
         id = CONTAINER_ID
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        navigatorFragment =
+            childFragmentManager.findFragmentByTag(TAG_NAVIGATOR) as? EpubNavigatorFragment
     }
 }

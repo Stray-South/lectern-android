@@ -14,7 +14,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.data.db.Book
@@ -41,11 +43,16 @@ fun LibraryScreen(
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(books, key = { it.id }) { book ->
+                    val title = book.title ?: "Untitled"
                     Text(
-                        text = book.title ?: "Untitled",
+                        text = title,
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .semantics {
+                                contentDescription = title
+                                role = Role.Button
+                            }
                             .clickable { onBookSelected(book) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     )

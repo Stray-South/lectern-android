@@ -37,6 +37,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private var _publication: Publication? = null
 
     fun load(bookId: String, fileUriString: String) {
+        if (_publication != null) return
         viewModelScope.launch {
             val savedLocator = locatorRepository.get(bookId)
 

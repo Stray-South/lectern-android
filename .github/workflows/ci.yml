@@ -43,7 +43,12 @@ jobs:
 
       - name: Check @Serializable not co-annotated with @Entity
         run: |
-          matches=$(grep -rl "@Serializable" app/src/main/kotlin --include="*.kt" | xargs -I{} grep -l "@Entity" {} 2>/dev/null || true)
+          matches=$(find app/src/main/kotlin -name "*.kt" -exec awk '
+            /@Serializable/ { s=NR }
+            /@Entity/       { if (s && NR-s<=5) { print FILENAME; found=1; exit } }
+            /@Entity/       { s2=NR }
+            /@Serializable/ { if (s2 && NR-s2<=5) { print FILENAME; found=1; exit } }
+          ' {} \; 2>/dev/null || true)
           if [ -n "$matches" ]; then
             echo "FAIL: @Serializable and @Entity on same class (KSP2 bug #1896):"
             echo "$matches"

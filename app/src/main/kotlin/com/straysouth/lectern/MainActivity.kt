@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openReader(bookId: String, fileUri: String) {
+        if (supportFragmentManager.isStateSaved) return
         supportFragmentManager.beginTransaction()
             .replace(android.R.id.content, EpubReaderFragment.newInstance(bookId, fileUri))
             .addToBackStack(null)
