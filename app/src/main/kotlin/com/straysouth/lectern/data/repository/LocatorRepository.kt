@@ -12,7 +12,9 @@ import org.readium.r2.shared.publication.Locator
 
 private val Context.readerPrefs by preferencesDataStore(name = "reader_prefs")
 
-class LocatorRepository(private val context: Context) {
+class LocatorRepository(context: Context) {
+
+    private val context = context.applicationContext
 
     private fun keyFor(bookId: String) = stringPreferencesKey("locator_$bookId")
 

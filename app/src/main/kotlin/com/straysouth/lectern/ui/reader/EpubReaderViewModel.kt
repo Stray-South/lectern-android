@@ -1,6 +1,7 @@
 package com.straysouth.lectern.ui.reader
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.data.db.AppDatabase
@@ -32,12 +33,16 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private val _state = MutableStateFlow<State>(State.Loading)
     val state: StateFlow<State> = _state
 
+    // Tracked separately so onCleared() can close regardless of current _state value
+    private var _publication: Publication? = null
+
     fun load(bookId: String, fileUriString: String) {
         viewModelScope.launch {
             val savedLocator = locatorRepository.get(bookId)
 
-            pubRepository.open(android.net.Uri.parse(fileUriString))
+            pubRepository.open(Uri.parse(fileUriString))
                 .onSuccess { publication ->
+                    _publication = publication
                     bookDao.updateLastOpened(bookId, System.currentTimeMillis())
                     _state.value = State.Ready(
                         publication = publication,
@@ -59,6 +64,6 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() {
         super.onCleared()
-        (_state.value as? State.Ready)?.publication?.close()
+        _publication?.close()
     }
 }

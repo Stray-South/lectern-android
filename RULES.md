@@ -13,7 +13,8 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - No `TODO` / `FIXME` / `HACK` comments in non-test code
 
 ## Threading
-- All Room operations on `Dispatchers.IO`
+- `suspend` DAO functions are main-safe — Room 2.1+ dispatches internally; do NOT wrap in `withContext(Dispatchers.IO)` (adds a redundant context switch)
+- Non-suspend Room calls (blocking transactions, raw queries) MUST run on `Dispatchers.IO`
 - All Compose UI updates on `Dispatchers.Main`
 - No `runBlocking` in production code paths
 - GazeProvider uses `Dispatchers.Default.limitedParallelism(1)`

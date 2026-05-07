@@ -41,6 +41,16 @@ jobs:
       - name: Lint
         run: ./gradlew lintDebug --no-daemon
 
+      - name: Check @Serializable not co-annotated with @Entity
+        run: |
+          matches=$(grep -rl "@Serializable" app/src/main/kotlin --include="*.kt" | xargs -I{} grep -l "@Entity" {} 2>/dev/null || true)
+          if [ -n "$matches" ]; then
+            echo "FAIL: @Serializable and @Entity on same class (KSP2 bug #1896):"
+            echo "$matches"
+            exit 1
+          fi
+          echo "OK: no @Serializable+@Entity co-annotation"
+
       - name: Banned strings check
         run: bash scripts/check_banned_strings.sh
 

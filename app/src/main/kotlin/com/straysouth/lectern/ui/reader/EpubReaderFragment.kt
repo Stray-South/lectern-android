@@ -6,11 +6,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.commit
 import androidx.fragment.app.viewModels
-import com.straysouth.lectern.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.straysouth.lectern.R
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 
@@ -35,44 +38,44 @@ class EpubReaderFragment : Fragment() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val bookId = arguments?.getString(ARG_BOOK_ID) ?: run {
-            // Process death with no args — factory placeholder prevents crash on restore
-            childFragmentManager.fragmentFactory = EpubNavigatorFragment.createDummyFactory()
-            super.onCreate(savedInstanceState)
-            requireActivity().finish()
-            return
-        }
-        val fileUri = arguments?.getString(ARG_FILE_URI) ?: run {
-            childFragmentManager.fragmentFactory = EpubNavigatorFragment.createDummyFactory()
-            super.onCreate(savedInstanceState)
-            requireActivity().finish()
-            return
-        }
+        val bookId = arguments?.getString(ARG_BOOK_ID)
+        val fileUri = arguments?.getString(ARG_FILE_URI)
 
-        // Factory must be set before super.onCreate() so the fragment manager
-        // can restore EpubNavigatorFragment on config change / process death
+        // Dummy factory must be set before super.onCreate() so the FragmentManager
+        // can safely restore EpubNavigatorFragment on config change or process death.
+        // The real factory is installed below once the publication is loaded.
         childFragmentManager.fragmentFactory = EpubNavigatorFragment.createDummyFactory()
         super.onCreate(savedInstanceState)
 
+        if (bookId == null || fileUri == null) {
+            requireActivity().finish()
+            return
+        }
+
         viewModel.load(bookId, fileUri)
 
+        // STARTED guarantees mStateSaved and mStopped are both false — safe for commit().
+        // take(1) makes this a one-shot action; the findFragmentByTag guard prevents
+        // double-add if STARTED restarts (e.g. returning from back stack).
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.CREATED) {
-                viewModel.state.collect { state ->
-                    if (state is EpubReaderViewModel.State.Ready) {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.state
+                    .filterIsInstance<EpubReaderViewModel.State.Ready>()
+                    .take(1)
+                    .collect { state ->
                         childFragmentManager.fragmentFactory =
                             state.navigatorFactory.createFragmentFactory(
                                 initialLocator = state.initialLocator,
                             )
                         if (childFragmentManager.findFragmentByTag(TAG_NAVIGATOR) == null) {
-                            childFragmentManager.beginTransaction()
-                                .add(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
-                                .commitNow()
+                            childFragmentManager.commit {
+                                setReorderingAllowed(true)
+                                add(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
+                            }
                         }
                         navigatorFragment =
                             childFragmentManager.findFragmentByTag(TAG_NAVIGATOR) as? EpubNavigatorFragment
                     }
-                }
             }
         }
     }

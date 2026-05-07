@@ -25,7 +25,7 @@ fun LibraryScreen(
     onBookSelected: (Book) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val books by viewModel.books.collectAsState(initial = emptyList())
+    val books by viewModel.books.collectAsState()
 
     Box(
         modifier = modifier
