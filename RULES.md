@@ -24,6 +24,7 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - No analytics SDK in build.gradle.kts
 - No raw gaze coordinates written to Room, DataStore, or any file
 - No Room entity names matching: face, eye, gaze, lookAt
+- Never annotate a `@Entity` class with `@Serializable` (KSP2 bug #1896 — use a separate DTO class)
 - Calibration weights: DataStore only, allowBackup = false
 - allowBackup = false in AndroidManifest.xml — no exceptions
 
