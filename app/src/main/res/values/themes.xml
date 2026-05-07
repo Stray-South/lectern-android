@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme — Compose handles all theming; this is the XML stub required by the manifest -->
+    <style name="Theme.Lectern" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

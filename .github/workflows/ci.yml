@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build (zero errors, zero warnings)
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Detekt
+        run: ./gradlew detekt --no-daemon
+
+      - name: ktlint
+        run: ./gradlew ktlintCheck --no-daemon
+
+      - name: Lint
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: Banned strings check
+        run: scripts/check_banned_strings.sh
+
+      - name: Gaze data leak check
+        run: scripts/check_gaze_data_leak.sh

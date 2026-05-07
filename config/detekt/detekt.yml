@@ -1,0 +1,16 @@
+build:
+  maxIssues: 0
+  weights:
+    complexity: 2
+    naming: 1
+
+naming:
+  FunctionNaming:
+    # Compose @Composable functions follow PascalCase by convention
+    functionPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+style:
+  MagicNumber:
+    active: false  # Too noisy for UI code
+  MaxLineLength:
+    maxLineLength: 120
