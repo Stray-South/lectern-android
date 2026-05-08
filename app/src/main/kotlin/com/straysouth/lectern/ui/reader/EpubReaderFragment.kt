@@ -7,9 +7,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -214,7 +217,12 @@ class EpubReaderFragment : Fragment() {
                         onAnchorDismiss = viewModel::clearAnchor,
                         // onGazeToggle is wired from MainActivity via ReaderScreen args;
                         // the Fragment accesses it through the ViewModel toggle path.
-                        onGazeToggle = { gazeViewModel.toggleGaze(hasPermission = true) },
+                        onGazeToggle = {
+                            val hasPermission = ContextCompat.checkSelfPermission(
+                                requireContext(), Manifest.permission.CAMERA,
+                            ) == PackageManager.PERMISSION_GRANTED
+                            gazeViewModel.toggleGaze(hasPermission = hasPermission)
+                        },
                     )
                     // TODO(ADR-AND-L): Focus Band V2 visual — deferred to V3.
                     // When a native BasicText surface exists, replace the above with:

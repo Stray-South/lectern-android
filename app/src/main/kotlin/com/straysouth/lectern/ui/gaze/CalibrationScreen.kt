@@ -106,7 +106,6 @@ private fun CalibrationDot(
     val density = LocalDensity.current
     var dotScreenX by remember { mutableStateOf(0f) }
     var dotScreenY by remember { mutableStateOf(0f) }
-    val irisUV = gazeIrisUV(gazeState, fractionX, fractionY)
 
     Box(modifier = modifier) {
         DotPositionMeasurer(fractionX, fractionY) { x, y -> dotScreenX = x; dotScreenY = y }
@@ -120,8 +119,10 @@ private fun CalibrationDot(
         )
         Button(
             onClick = {
+                // Read iris UV at tap time — avoids stale composition-time snapshot.
+                val uv = gazeIrisUV(gazeState, fractionX, fractionY)
                 val halfDot = with(density) { DOT_SIZE.toPx() / 2 }
-                onConfirm(CalibrationPoint(dotScreenX + halfDot, dotScreenY + halfDot, irisUV.first, irisUV.second))
+                onConfirm(CalibrationPoint(dotScreenX + halfDot, dotScreenY + halfDot, uv.first, uv.second))
             },
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp),
         ) { Text(stringResource(R.string.gaze_calibration_confirm_point)) }
@@ -151,7 +152,8 @@ private fun DotPositionMeasurer(
 }
 
 private fun gazeIrisUV(state: GazeState, fallbackU: Float, fallbackV: Float): Pair<Float, Float> =
-    if (state is GazeState.Tracking) state.gazePoint.x to state.gazePoint.y
+    // Use raw image-space iris UV — NOT gazePoint (calibrated screen pixels).
+    if (state is GazeState.Tracking) state.irisU to state.irisV
     else fallbackU to fallbackV
 
 @Composable

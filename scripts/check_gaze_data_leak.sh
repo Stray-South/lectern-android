@@ -22,6 +22,15 @@ while IFS= read -r -d '' file; do
     fi
 done < <(find app/src -path "*/data/db/*.kt" -print0)
 
+# Check DataStore store names and preference key names — raw gaze terms forbidden.
+# Matches: preferencesDataStore("..."), stringPreferencesKey("..."), etc.
+while IFS= read -r -d '' file; do
+    if grep -nEi "(preferencesDataStore|[a-zA-Z]+PreferencesKey)\s*\(\s*[\"'].*($PATTERN)" "$file"; then
+        echo "GAZE DATA LEAK in $file"
+        FOUND=1
+    fi
+done < <(find app/src -name "*.kt" -print0)
+
 if [ "$FOUND" -eq 1 ]; then
     echo "FAIL: gaze data leak detected"
     exit 1

@@ -73,9 +73,14 @@ class GazeProviderImpl(
 
     override suspend fun stop() {
         unregisterThermalListener()
-        withContext(Dispatchers.Main) {
-            ProcessCameraProvider.getInstance(context).get().unbindAll()
+        // Use the same suspendCancellableCoroutine pattern as bindCamera() — never block Main.
+        val provider = suspendCancellableCoroutine { cont ->
+            ProcessCameraProvider.getInstance(context).also { future ->
+                future.addListener({ cont.resume(future.get()) }, ContextCompat.getMainExecutor(context))
+            }
         }
+        withContext(Dispatchers.Main) { provider.unbindAll() }
+        analysisExecutor.shutdown()
         landmarker?.close()
         landmarker = null
         _state.value = GazeState.Paused
@@ -192,7 +197,9 @@ class GazeProviderImpl(
 
             val smoothX = filterX.filter(rawX).toFloat()
             val smoothY = filterY.filter(rawY).toFloat()
-            _state.value = GazeState.Tracking(PointF(smoothX, smoothY))
+            // Pass raw irisU/V alongside screen point — CalibrationScreen reads them
+            // as regression inputs. Passing gazePoint instead would corrupt calibration.
+            _state.value = GazeState.Tracking(PointF(smoothX, smoothY), u.toFloat(), v.toFloat())
         }
     }
 
@@ -207,7 +214,7 @@ class GazeProviderImpl(
         val xty = DMatrixRMaj(p, 1).also { CommonOps_DDRM.mult(xt, y, it) }
         val w = DMatrixRMaj(p, 1)
         val solver = LinearSolverFactory_DDRM.symmPosDef(p)
-        requireNotNull(solver.setA(xtx).takeIf { it }) { "Ridge: singular regularized matrix" }
+        check(solver.setA(xtx)) { "Ridge: matrix not positive definite — degenerate calibration data" }
         solver.solve(xty, w)
         return w
     }

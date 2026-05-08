@@ -163,9 +163,11 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
                 _calibrationUiState.value = CalibrationUiState.Done(result)
             } catch (e: IllegalArgumentException) {
                 Log.e(TAG, "Calibration failed", e)
-                _calibrationUiState.value = CalibrationUiState.CalibrationError(
-                    e.message ?: "Calibration failed",
-                )
+                _calibrationUiState.value = CalibrationUiState.CalibrationError(e.message ?: "Calibration failed")
+            } catch (e: IllegalStateException) {
+                // Thrown by ridge() when calibration data is degenerate (not positive definite).
+                Log.e(TAG, "Calibration failed — degenerate data", e)
+                _calibrationUiState.value = CalibrationUiState.CalibrationError(e.message ?: "Calibration failed")
             }
         }
     }
