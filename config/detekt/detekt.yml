@@ -8,6 +8,9 @@ complexity:
   LongParameterList:
     # Composable functions legitimately have many parameters — suppress for @Composable.
     ignoreAnnotated: ['Composable']
+  LongMethod:
+    # Fragment.onCreate collects three coroutines; 65 accommodates this pattern.
+    threshold: 65
 
 naming:
   FunctionNaming:

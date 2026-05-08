@@ -93,7 +93,7 @@ private fun SpeedChips(currentSpeed: Double, onSpeedChange: (Double) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         SPEED_OPTIONS.forEach { speed ->
             FilterChip(
-                selected = currentSpeed == speed,
+                selected = kotlin.math.abs(currentSpeed - speed) < 0.001,
                 onClick = { onSpeedChange(speed) },
                 label = { Text(text = formatSpeed(speed)) },
                 modifier = Modifier.heightIn(min = 32.dp),

@@ -136,8 +136,11 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun startTts(initialLocator: Locator? = null) {
         val factory = (_state.value as? State.Ready)?.ttsFactory ?: return
-        // If navigator already exists, just resume
-        _ttsNavigator?.let { it.play(); return }
+        // If navigator already exists, resume only if not already playing
+        _ttsNavigator?.let { nav ->
+            if (!nav.playback.value.playWhenReady) nav.play()
+            return
+        }
         viewModelScope.launch {
             val listener = object : TtsNavigator.Listener {
                 override fun onStopRequested() { stopTts() }
@@ -161,7 +164,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     }.collect { state ->
                         _ttsUiState.value = state
-                        if (state == TtsUiState.Idle) cleanUpTts()
+                        if (state == TtsUiState.Idle) viewModelScope.launch { cleanUpTts() }
                     }
                 }
             }.onFailure { error ->
@@ -183,8 +186,10 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateTtsSpeed(speed: Double) {
-        viewModelScope.launch { ttsRepository.save(TtsPrefs(speed)) }
-        _ttsNavigator?.submitPreferences(AndroidTtsPreferences(speed = speed))
+        viewModelScope.launch {
+            ttsRepository.save(TtsPrefs(speed))
+            _ttsNavigator?.submitPreferences(AndroidTtsPreferences(speed = speed))
+        }
     }
 
     // Cancels collection job, closes navigator, resets state.

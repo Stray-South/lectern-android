@@ -61,7 +61,8 @@ class EpubReaderFragment : Fragment() {
             // Leave the Fragment inert; BackHandler in MainActivity handles navigation back.
             return
         }
-
+        // True only on config change: ViewModel survived, existing navigator is functional.
+        val isConfigChange = viewModel.state.value is EpubReaderViewModel.State.Ready
         viewModel.load(bookId)
 
         // STARTED guarantees mStateSaved and mStopped are both false — safe for commit().
@@ -78,13 +79,13 @@ class EpubReaderFragment : Fragment() {
                                 initialLocator = state.initialLocator,
                                 initialPreferences = state.initialTypography,
                             )
-                        if (childFragmentManager.findFragmentByTag(TAG_NAVIGATOR) == null) {
+                        if (!isConfigChange) {
                             childFragmentManager.commit {
                                 setReorderingAllowed(true)
-                                add(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
+                                replace(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
                             }
-                            childFragmentManager.executePendingTransactions()
                         }
+                        childFragmentManager.executePendingTransactions()
                         navigatorFragment =
                             childFragmentManager.findFragmentByTag(TAG_NAVIGATOR)
                                 as? EpubNavigatorFragment
