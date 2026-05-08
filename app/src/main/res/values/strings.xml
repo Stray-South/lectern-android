@@ -48,6 +48,7 @@
     <string name="cd_sort_toggle">Toggle sort order</string>
     <string name="cd_gaze_toggle">Toggle gaze tracking</string>
     <string name="cd_gaze_calibrate">Gaze calibration target</string>
+    <string name="cd_gaze_calibrate_start">Calibrate gaze</string>
     <string name="cd_gaze_tracking">Gaze tracking active</string>
     <string name="gaze_calibration_title">Gaze calibration</string>
     <string name="gaze_calibration_instruction">Look at the dot, then tap Confirm</string>

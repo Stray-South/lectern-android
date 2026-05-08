@@ -35,6 +35,7 @@ import com.straysouth.lectern.gaze.CalibrationPoint
 import com.straysouth.lectern.gaze.GazeState
 
 private const val GRID_COLS = 3
+internal const val CALIBRATION_TOTAL_POINTS = GRID_COLS * GRID_COLS
 private val GRID_FRACTIONS = listOf(0.1f, 0.5f, 0.9f)
 private val DOT_SIZE = 24.dp
 private val DOT_COLOR = Color(0xFFFF6B35)  // warm orange — visible on all reader themes

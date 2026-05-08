@@ -25,6 +25,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.core.content.ContextCompat
 import com.straysouth.lectern.data.db.Book
+import com.straysouth.lectern.ui.gaze.CALIBRATION_TOTAL_POINTS
+import com.straysouth.lectern.ui.gaze.CalibrationScreen
+import com.straysouth.lectern.ui.gaze.CalibrationUiState
 import com.straysouth.lectern.ui.gaze.GazeViewModel
 import com.straysouth.lectern.ui.library.LibraryScreen
 import com.straysouth.lectern.ui.library.LibraryViewModel
@@ -83,6 +86,8 @@ private fun AppContent(
 ) {
     var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var currentBookFormat by rememberSaveable { mutableStateOf<String?>(null) }
+    val calibrationUiState by gazeViewModel.calibrationUiState.collectAsState()
+    val gazeState by gazeViewModel.gazeState.collectAsState()
 
     // Navigate back to library if the currently-open book is deleted.
     // acknowledgeDeletedBook() clears the replay cache so re-importing the same
@@ -123,5 +128,20 @@ private fun AppContent(
                 }
             }
         }
+    }
+
+    // CalibrationScreen is a full-screen surface (alpha=0.95) that overlays whatever is
+    // below. Placed at Activity setContent level so positionInRoot() measurements span the
+    // full edge-to-edge window — same coordinate space as the GazeFocusBandOverlay.
+    if (calibrationUiState !is CalibrationUiState.Idle) {
+        BackHandler { gazeViewModel.cancelCalibration() }
+        CalibrationScreen(
+            state = calibrationUiState,
+            gazeState = gazeState,
+            onRecordPoint = { point ->
+                gazeViewModel.recordCalibrationPoint(point, CALIBRATION_TOTAL_POINTS)
+            },
+            onCancel = { gazeViewModel.cancelCalibration() },
+        )
     }
 }

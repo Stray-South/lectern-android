@@ -22,6 +22,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.straysouth.lectern.R
+import com.straysouth.lectern.ui.gaze.CALIBRATION_TOTAL_POINTS
 import com.straysouth.lectern.ui.gaze.GazeViewModel
 import com.straysouth.lectern.ui.theme.LecternTheme
 import kotlinx.coroutines.flow.combine
@@ -246,6 +247,9 @@ class EpubReaderFragment : Fragment() {
                                 requireContext(), Manifest.permission.CAMERA,
                             ) == PackageManager.PERMISSION_GRANTED
                             gazeViewModel.toggleGaze(hasPermission = hasPermission)
+                        },
+                        onCalibrate = {
+                            gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS)
                         },
                     )
                     // TODO(ADR-AND-L): Focus Band V2 — deferred to V3.

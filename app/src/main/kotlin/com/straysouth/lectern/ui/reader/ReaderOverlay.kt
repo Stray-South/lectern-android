@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.TextFormat
 import androidx.compose.material.icons.outlined.RemoveRedEye
@@ -68,6 +69,7 @@ internal fun ReaderOverlay(
     onDismissTtsUnavailable: () -> Unit,
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
+    onCalibrate: () -> Unit,
 ) {
     when (state) {
         EpubReaderViewModel.State.Loading -> LoadingOverlay()
@@ -90,6 +92,7 @@ internal fun ReaderOverlay(
             onDismissTtsUnavailable = onDismissTtsUnavailable,
             onAnchorDismiss = onAnchorDismiss,
             onGazeToggle = onGazeToggle,
+            onCalibrate = onCalibrate,
         )
     }
 }
@@ -145,6 +148,7 @@ private fun ReadyOverlay(
     onDismissTtsUnavailable: () -> Unit,
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
+    onCalibrate: () -> Unit,
 ) {
     var showPanel by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
@@ -164,6 +168,7 @@ private fun ReadyOverlay(
             onTypography = { showPanel = true },
             onAnchorDismiss = onAnchorDismiss,
             onGazeToggle = onGazeToggle,
+            onCalibrate = onCalibrate,
             modifier = Modifier.align(Alignment.TopStart),
         )
 
@@ -234,6 +239,7 @@ private fun ReaderToolbar(
     onTypography: () -> Unit,
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
+    onCalibrate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Semi-opaque so the reader text remains visible beneath.
@@ -262,6 +268,17 @@ private fun ReaderToolbar(
                     tint = if (isTracking) MaterialTheme.colorScheme.primary
                            else MaterialTheme.colorScheme.onSurface,
                 )
+            }
+            // Calibrate button — visible only when gaze is enabled (camera already running).
+            AnimatedVisibility(
+                visible = gazeEnabled,
+                enter = fadeIn(androidx.compose.animation.core.tween(200)),
+                exit = fadeOut(androidx.compose.animation.core.tween(200)),
+            ) {
+                val cdCalibrate = stringResource(R.string.cd_gaze_calibrate_start)
+                IconButton(onClick = onCalibrate, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = cdCalibrate)
+                }
             }
             // Anchor dismiss — visible with ≤200ms fade per AuDHD design rules.
             AnimatedVisibility(
