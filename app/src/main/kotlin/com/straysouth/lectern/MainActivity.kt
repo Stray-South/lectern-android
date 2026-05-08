@@ -134,6 +134,9 @@ private fun AppContent(
     // below. Placed at Activity setContent level so positionInRoot() measurements span the
     // full edge-to-edge window — same coordinate space as the GazeFocusBandOverlay.
     if (calibrationUiState !is CalibrationUiState.Idle) {
+        // LIFO BackHandler: this is composed after the reader BackHandler above, so it wins
+        // when both are active. The reader handler uses enabled = (currentBookId != null),
+        // which is false when calibration is launched from the library — correct in both cases.
         BackHandler { gazeViewModel.cancelCalibration() }
         CalibrationScreen(
             state = calibrationUiState,

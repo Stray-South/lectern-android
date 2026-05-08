@@ -55,8 +55,6 @@ fun CalibrationScreen(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val totalPoints = GRID_COLS * GRID_COLS
-
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
@@ -72,7 +70,9 @@ fun CalibrationScreen(
                     )
                     CalibrationHeader(
                         pointIndex = state.pointIndex,
-                        totalPoints = totalPoints,
+                        // Use state.totalPoints — not a local recomputation — so the header
+                        // stays in sync if startCalibration() is ever called with a non-default count.
+                        totalPoints = state.totalPoints,
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = 32.dp),
                     )
                 }
