@@ -35,4 +35,8 @@ class LocatorRepository(context: Context) {
         }
 
     suspend fun get(bookId: String): Locator? = observe(bookId).first()
+
+    suspend fun remove(bookId: String) {
+        context.readerPrefs.edit { prefs -> prefs.remove(keyFor(bookId)) }
+    }
 }

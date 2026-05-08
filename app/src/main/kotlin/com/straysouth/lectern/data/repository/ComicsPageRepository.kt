@@ -21,4 +21,8 @@ class ComicsPageRepository(context: Context) {
 
     suspend fun get(bookId: String): Int =
         context.comicsPagePrefs.data.map { it[keyFor(bookId)] ?: 0 }.first()
+
+    suspend fun remove(bookId: String) {
+        context.comicsPagePrefs.edit { prefs -> prefs.remove(keyFor(bookId)) }
+    }
 }

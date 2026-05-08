@@ -13,4 +13,7 @@ interface ReadingProgressDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(progress: ReadingProgress)
+
+    @Query("DELETE FROM reading_progress WHERE bookId = :bookId")
+    suspend fun deleteByBookId(bookId: String)
 }

@@ -19,4 +19,7 @@ interface BookDao {
 
     @Query("UPDATE books SET lastOpenedAt = :timestamp WHERE id = :id")
     suspend fun updateLastOpened(id: String, timestamp: Long)
+
+    @Query("DELETE FROM books WHERE id = :id")
+    suspend fun deleteById(id: String)
 }

@@ -21,4 +21,8 @@ class PdfPageRepository(context: Context) {
 
     suspend fun get(bookId: String): Int =
         context.pdfPagePrefs.data.map { it[keyFor(bookId)] ?: 0 }.first()
+
+    suspend fun remove(bookId: String) {
+        context.pdfPagePrefs.edit { prefs -> prefs.remove(keyFor(bookId)) }
+    }
 }
