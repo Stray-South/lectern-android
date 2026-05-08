@@ -238,5 +238,28 @@ Format: see .claude/skills/devlog/SKILL.md
   CalibrationScreen.kt, CalibrationRepository.kt, ReaderOverlay.kt,
   EpubReaderFragment.kt, MainActivity.kt, strings.xml, docs/adr/ADR-AND-L.md,
   scripts/download_models.sh, scripts/check_gaze_data_leak.sh
-- **Next:** Sprint 12 — TBD.
+- **Next:** Sprint 12 — TTS gap fixes.
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 12 TTS gap fixes
+- **Did:** All TTS scaffolding (ViewModel, TtsBar, TtsUiState, TtsRepository,
+  AnchorRepository, EpubReaderFragment observers, ReaderOverlay) was already in
+  place from prior sprints; Sprint 12 closed the remaining gaps:
+  1. `EpubReaderFragment.onTtsPlay`: pass `navigatorFragment?.currentLocator?.value`
+     so TTS starts at reading position, not beginning of book.
+  2. `TtsUiState.EngineUnavailable` (new state): surfaces when `ttsFactory == null`
+     (Samsung One UI 7+, no TTS engine) or `createNavigator` fails. Previously
+     `startTts()` silently returned with no user feedback on those devices.
+  3. `TtsBar`: inline "not available" message + Close button for `EngineUnavailable`.
+  4. `EpubReaderViewModel.dismissTtsUnavailable()`: `EngineUnavailable → Idle`.
+  5. `cleanUpTts()` inline call in collect block: removed inner `viewModelScope.launch`
+     wrapper that raced `_ttsCollectionJob.cancel()` on double-Idle emission.
+  6. `data_extraction_rules.xml`: exclude `tts_prefs.preferences_pb` from D2D transfer.
+  7. `detekt.yml`: `TooManyFunctions` threshold 12→13 for EpubReaderViewModel (12 funcs).
+- **Why:** TTS was scaffolded but had three runtime correctness gaps: wrong start position,
+  silent failure on devices without TTS engine, and a coroutine double-fire race on end.
+- **Files:** EpubReaderViewModel.kt, TtsUiState.kt, TtsBar.kt, ReaderOverlay.kt,
+  EpubReaderFragment.kt, strings.xml, data_extraction_rules.xml, detekt.yml
+- **Next:** Sprint 13 — TBD (candidates: Focus Band V1 gaze→line, PDF reader, Typography panel).
+- **Blockers:** Gaze + TTS thermal coexistence on low-end devices is a known MEDIUM risk;
+  explicit gaze-pause-on-TTS-start is deferred to Sprint 13.
