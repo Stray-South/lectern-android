@@ -53,7 +53,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val pub = result.getOrThrow()
-            val title = pub.metadata.title.takeIf { it.isNotBlank() }
+            val title = pub.metadata.title?.takeIf { it.isNotBlank() }
                 ?: uri.lastPathSegment
                 ?: "Untitled"
             pub.close()

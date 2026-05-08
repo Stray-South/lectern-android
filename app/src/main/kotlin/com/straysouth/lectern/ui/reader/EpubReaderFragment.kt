@@ -8,14 +8,14 @@ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.straysouth.lectern.R
 import com.straysouth.lectern.ui.theme.LecternTheme
 import kotlinx.coroutines.flow.filterIsInstance
@@ -28,6 +28,9 @@ class EpubReaderFragment : Fragment() {
     private val viewModel: EpubReaderViewModel by viewModels()
 
     private lateinit var overlay: ComposeView
+
+    // Assigned once the navigator fragment is committed; used to submit live pref updates.
+    private var navigatorFragment: EpubNavigatorFragment? = null
 
     companion object {
         // Public so ReaderScreen can build the arguments Bundle via AndroidFragment.
@@ -67,14 +70,30 @@ class EpubReaderFragment : Fragment() {
                         childFragmentManager.fragmentFactory =
                             state.navigatorFactory.createFragmentFactory(
                                 initialLocator = state.initialLocator,
+                                initialPreferences = state.initialTypography,
                             )
                         if (childFragmentManager.findFragmentByTag(TAG_NAVIGATOR) == null) {
                             childFragmentManager.commit {
                                 setReorderingAllowed(true)
                                 add(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
                             }
+                            childFragmentManager.executePendingTransactions()
                         }
+                        navigatorFragment =
+                            childFragmentManager.findFragmentByTag(TAG_NAVIGATOR)
+                                as? EpubNavigatorFragment
                     }
+            }
+        }
+
+        // Push live typography changes to the navigator. navigatorFragment is null until
+        // the Ready collector above fires, so early emissions are no-ops — that is correct
+        // because initialTypography already bakes the startup prefs into the factory.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.typographyPrefs.collect { prefs ->
+                    navigatorFragment?.submitPreferences(prefs.toEpubPreferences())
+                }
             }
         }
     }
@@ -96,9 +115,12 @@ class EpubReaderFragment : Fragment() {
             setContent {
                 LecternTheme {
                     val state by viewModel.state.collectAsState()
+                    val typographyPrefs by viewModel.typographyPrefs.collectAsState()
                     ReaderOverlay(
                         state = state,
+                        typographyPrefs = typographyPrefs,
                         onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
+                        onTypographyChange = viewModel::updateTypography,
                     )
                 }
             }
@@ -107,5 +129,4 @@ class EpubReaderFragment : Fragment() {
 
         return root
     }
-
 }

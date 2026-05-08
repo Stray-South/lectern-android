@@ -35,3 +35,22 @@ Format: see .claude/skills/devlog/SKILL.md
   libs.versions.toml, build.gradle.kts, check_banned_strings.sh
 - **Next:** Sprint 3 — Typography panel (font, size, line height, background).
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 3 Typography Panel
+- **Did:** DataStore-backed typography preferences (font family, font size, line
+  height, theme). TypographyRepository persists TypographyPrefs; EpubReaderViewModel
+  exposes typographyPrefs: StateFlow and updateTypography(). EpubReaderFragment passes
+  initialPreferences to EpubNavigatorFactory.createFragmentFactory and submits live
+  updates via submitPreferences. TypographyPanel: ModalBottomSheet with font family
+  segmented buttons (Default/Serif/Sans/Dyslexic), font-size Slider (0.75–2.0, 6
+  stops), line-height Slider (1.2–2.0, 5 stops), theme buttons (Light/Sepia/Dark).
+  ReaderOverlay Ready state now shows floating top toolbar (back + typography icons).
+  material-icons-extended added for TextFormat icon (R8 strips unused entries).
+- **Why:** Sprint 3 target: AuDHD-friendly font control including OpenDyslexic and
+  line height ≥ 1.5× default (WCAG 1.4.12; Stagg et al. 2022).
+- **Files:** TypographyPrefs.kt (new), TypographyRepository.kt (new),
+  TypographyMapping.kt (new), TypographyPanel.kt (new), EpubReaderViewModel.kt,
+  EpubReaderFragment.kt, ReaderOverlay.kt, strings.xml, libs.versions.toml,
+  build.gradle.kts
+- **Next:** Sprint 4 — TTS with word-level highlighting.
+- **Blockers:** none

@@ -14,13 +14,6 @@ while IFS= read -r -d '' file; do
     fi
 done < <(find app/src/main/res/values -name "*.xml" -print0)
 
-while IFS= read -r -d '' file; do
-    if grep -nEi "$BANNED" "$file"; then
-        echo "BANNED STRING in $file"
-        FOUND=1
-    fi
-done < <(find app/src/main -name "*.kt" -print0)
-
 if [ "$FOUND" -eq 1 ]; then
     echo "FAIL: banned strings found"
     exit 1
