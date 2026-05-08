@@ -26,4 +26,6 @@
     <string name="cd_tts_play">Play</string>
     <string name="cd_tts_pause">Pause</string>
     <string name="cd_tts_stop">Stop</string>
+    <string name="label_focus_band">Focus Band</string>
+    <string name="cd_anchor_dismiss">Dismiss reading anchor</string>
 </resources>

@@ -89,5 +89,30 @@ Format: see .claude/skills/devlog/SKILL.md
   reading progress without a separate network call.
 - **Files:** ReadingProgressDao.kt, EpubReaderViewModel.kt, EpubReaderFragment.kt,
   LibraryViewModel.kt, LibraryScreen.kt
-- **Next:** Sprint 6 — spaced retrieval / highlights persistence.
+- **Next:** Sprint 6 — Focus Band + Visual Anchor.
+- **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 6 Focus Band + Visual Anchor
+- **Did:** TtsUiState.Active gains utteranceLocator (sentence CFI alongside word tokenLocator).
+  FocusBandPrefs data class (enabled: Boolean = true, default ON). FocusBandRepository (DataStore
+  "focus_band_prefs", booleanPreferencesKey "enabled"). AnchorRepository (DataStore "anchor_prefs",
+  stringPreferencesKey "anchor_$bookId" — mirrors LocatorRepository pattern).
+  EpubReaderViewModel: focusBandPrefs StateFlow; _anchorLocator MutableStateFlow<Locator?>;
+  _bookId and _lastUtteranceLocator private fields; cleanUpTts() auto-pins _lastUtteranceLocator
+  as visual anchor via anchorRepository.save on stop/ended/failure/onCleared; load() restores
+  anchor from DataStore; updateFocusBand() and clearAnchor() public helpers.
+  EpubReaderFragment: two new decoration groups — "focus_band" (warm yellow 30% alpha) and
+  "visual_anchor" (warm yellow 50% alpha); setupTtsObserver() rewritten with combine(ttsUiState,
+  focusBandPrefs) to drive both groups independently; setupAnchorObserver() drives anchor group.
+  TtsBar: FocusBandChip FilterChip appended to controls row. ReaderOverlay: ReaderToolbar
+  extracted as private composable (LongMethod mitigation); AnimatedVisibility anchor dismiss
+  button with ≤200ms fade (AuDHD spec). detekt config: TooManyFunctions threshold raised to 12
+  for ViewModel (11 functions). Fix: missing kotlinx.coroutines.flow.combine import added to
+  EpubReaderFragment.
+- **Why:** Sprint 6 target — sentence-level focus highlight (AuDHD reading aid) and persistent
+  visual anchor so the reader returns to the last TTS position after the session ends.
+- **Files:** TtsUiState.kt, FocusBandPrefs.kt (new), FocusBandRepository.kt (new),
+  AnchorRepository.kt (new), EpubReaderViewModel.kt, EpubReaderFragment.kt, TtsBar.kt,
+  ReaderOverlay.kt, strings.xml, config/detekt/detekt.yml
+- **Next:** Sprint 7 — spaced retrieval / highlights persistence.
 - **Blockers:** none

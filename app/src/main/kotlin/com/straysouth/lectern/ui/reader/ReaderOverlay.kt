@@ -1,5 +1,8 @@
 package com.straysouth.lectern.ui.reader
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.TextFormat
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +36,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.R
+import com.straysouth.lectern.data.repository.FocusBandPrefs
 import com.straysouth.lectern.data.repository.TtsPrefs
 import com.straysouth.lectern.data.repository.TypographyPrefs
 
@@ -40,12 +46,16 @@ internal fun ReaderOverlay(
     typographyPrefs: TypographyPrefs,
     ttsUiState: TtsUiState,
     ttsPrefs: TtsPrefs,
+    focusBandPrefs: FocusBandPrefs,
+    anchorActive: Boolean,
     onBack: () -> Unit,
     onTypographyChange: (TypographyPrefs) -> Unit,
     onTtsPlay: () -> Unit,
     onTtsPause: () -> Unit,
     onTtsStop: () -> Unit,
     onTtsSpeedChange: (Double) -> Unit,
+    onFocusBandChange: (FocusBandPrefs) -> Unit,
+    onAnchorDismiss: () -> Unit,
 ) {
     when (state) {
         EpubReaderViewModel.State.Loading -> LoadingOverlay()
@@ -54,12 +64,16 @@ internal fun ReaderOverlay(
             typographyPrefs = typographyPrefs,
             ttsUiState = ttsUiState,
             ttsPrefs = ttsPrefs,
+            focusBandPrefs = focusBandPrefs,
+            anchorActive = anchorActive,
             onBack = onBack,
             onTypographyChange = onTypographyChange,
             onTtsPlay = onTtsPlay,
             onTtsPause = onTtsPause,
             onTtsStop = onTtsStop,
             onTtsSpeedChange = onTtsSpeedChange,
+            onFocusBandChange = onFocusBandChange,
+            onAnchorDismiss = onAnchorDismiss,
         )
     }
 }
@@ -101,40 +115,36 @@ private fun ReadyOverlay(
     typographyPrefs: TypographyPrefs,
     ttsUiState: TtsUiState,
     ttsPrefs: TtsPrefs,
+    focusBandPrefs: FocusBandPrefs,
+    anchorActive: Boolean,
     onBack: () -> Unit,
     onTypographyChange: (TypographyPrefs) -> Unit,
     onTtsPlay: () -> Unit,
     onTtsPause: () -> Unit,
     onTtsStop: () -> Unit,
     onTtsSpeedChange: (Double) -> Unit,
+    onFocusBandChange: (FocusBandPrefs) -> Unit,
+    onAnchorDismiss: () -> Unit,
 ) {
     var showPanel by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
-        // Floating toolbar — semi-opaque so the reader text remains visible beneath.
-        Surface(
+        ReaderToolbar(
+            anchorActive = anchorActive,
+            onBack = onBack,
+            onTypography = { showPanel = true },
+            onAnchorDismiss = onAnchorDismiss,
             modifier = Modifier.align(Alignment.TopStart),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-            shape = MaterialTheme.shapes.small,
-        ) {
-            Row(modifier = Modifier.padding(horizontal = 4.dp)) {
-                val cdBack = stringResource(R.string.cd_back)
-                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = cdBack)
-                }
-                val cdTypography = stringResource(R.string.cd_typography)
-                IconButton(onClick = { showPanel = true }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Filled.TextFormat, contentDescription = cdTypography)
-                }
-            }
-        }
+        )
 
         TtsBar(
             state = ttsUiState,
             prefs = ttsPrefs,
+            focusBandPrefs = focusBandPrefs,
             onPlay = onTtsPlay,
             onPause = onTtsPause,
             onStop = onTtsStop,
             onSpeedChange = onTtsSpeedChange,
+            onFocusBandChange = onFocusBandChange,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 16.dp),
@@ -146,6 +156,47 @@ private fun ReadyOverlay(
                 onPrefsChange = onTypographyChange,
                 onDismiss = { showPanel = false },
             )
+        }
+    }
+}
+
+@Composable
+private fun ReaderToolbar(
+    anchorActive: Boolean,
+    onBack: () -> Unit,
+    onTypography: () -> Unit,
+    onAnchorDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Semi-opaque so the reader text remains visible beneath.
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 4.dp)) {
+            val cdBack = stringResource(R.string.cd_back)
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = cdBack)
+            }
+            val cdTypography = stringResource(R.string.cd_typography)
+            IconButton(onClick = onTypography, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Filled.TextFormat, contentDescription = cdTypography)
+            }
+            // Anchor dismiss — visible with ≤200ms fade per AuDHD design rules.
+            AnimatedVisibility(
+                visible = anchorActive,
+                enter = fadeIn(androidx.compose.animation.core.tween(200)),
+                exit = fadeOut(androidx.compose.animation.core.tween(200)),
+            ) {
+                val cdAnchor = stringResource(R.string.cd_anchor_dismiss)
+                IconButton(onClick = onAnchorDismiss, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        imageVector = if (anchorActive) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        contentDescription = cdAnchor,
+                    )
+                }
+            }
         }
     }
 }

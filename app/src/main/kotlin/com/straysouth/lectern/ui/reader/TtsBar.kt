@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.R
+import com.straysouth.lectern.data.repository.FocusBandPrefs
 import com.straysouth.lectern.data.repository.TtsPrefs
 
 private val SPEED_OPTIONS = listOf(0.5, 1.0, 1.5, 2.0)
@@ -34,10 +35,12 @@ private val SPEED_OPTIONS = listOf(0.5, 1.0, 1.5, 2.0)
 internal fun TtsBar(
     state: TtsUiState,
     prefs: TtsPrefs,
+    focusBandPrefs: FocusBandPrefs,
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
     onSpeedChange: (Double) -> Unit,
+    onFocusBandChange: (FocusBandPrefs) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -68,6 +71,13 @@ internal fun TtsBar(
             Spacer(modifier = Modifier.width(4.dp))
 
             SpeedChips(currentSpeed = prefs.speed, onSpeedChange = onSpeedChange)
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            FocusBandChip(
+                enabled = focusBandPrefs.enabled,
+                onToggle = { onFocusBandChange(focusBandPrefs.copy(enabled = !focusBandPrefs.enabled)) },
+            )
         }
     }
 }
@@ -100,6 +110,17 @@ private fun SpeedChips(currentSpeed: Double, onSpeedChange: (Double) -> Unit) {
             )
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FocusBandChip(enabled: Boolean, onToggle: () -> Unit) {
+    FilterChip(
+        selected = enabled,
+        onClick = onToggle,
+        label = { Text(stringResource(R.string.label_focus_band)) },
+        modifier = Modifier.heightIn(min = 32.dp),
+    )
 }
 
 private fun formatSpeed(speed: Double): String = when (speed) {

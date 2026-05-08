@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.straysouth.lectern.R
 import com.straysouth.lectern.ui.theme.LecternTheme
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
@@ -47,9 +48,15 @@ class EpubReaderFragment : Fragment() {
         const val ARG_BOOK_ID = "book_id"
         private const val TAG_NAVIGATOR = "epub_navigator"
         private const val TTS_DECORATION_GROUP = "tts"
+        private const val FOCUS_BAND_DECORATION_GROUP = "focus_band"
+        private const val ANCHOR_DECORATION_GROUP = "visual_anchor"
         private val CONTAINER_ID get() = R.id.epub_reader_container
-        // Amber at 40% alpha — accessible on both light and dark Readium themes.
+        // Amber at 40% alpha — word-level TTS highlight.
         private val TTS_HIGHLIGHT_TINT = Color.argb(102, 255, 215, 0)
+        // Warm yellow at 30% alpha — sentence-level Focus Band.
+        private val FOCUS_BAND_TINT = Color.argb(77, 255, 235, 59)
+        // Warm yellow at 50% alpha — pinned Visual Anchor (more prominent than live band).
+        private val ANCHOR_TINT = Color.argb(128, 255, 235, 59)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +72,7 @@ class EpubReaderFragment : Fragment() {
         setupNavigator(isConfigChange, bookId)
         setupTypographyObserver()
         setupTtsObserver()
+        setupAnchorObserver()
     }
 
     // ── Private lifecycle helpers ─────────────────────────────────────────────
@@ -116,20 +124,45 @@ class EpubReaderFragment : Fragment() {
     private fun setupTtsObserver() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.ttsUiState.collect { state ->
-                    val locator = (state as? TtsUiState.Active)?.tokenLocator
-                    val decorations = if (locator != null) {
-                        listOf(
-                            Decoration(
-                                id = "tts_word",
-                                locator = locator,
-                                style = Decoration.Style.Highlight(tint = TTS_HIGHLIGHT_TINT),
-                            ),
-                        )
+                combine(viewModel.ttsUiState, viewModel.focusBandPrefs) { state, focusBand ->
+                    state to focusBand
+                }.collect { (state, focusBand) ->
+                    val active = state as? TtsUiState.Active
+
+                    // Word-level amber highlight
+                    val wordDecorations = active?.tokenLocator?.let { loc ->
+                        listOf(Decoration("tts_word", loc, Decoration.Style.Highlight(tint = TTS_HIGHLIGHT_TINT)))
+                    } ?: emptyList()
+                    navigatorFragment?.applyDecorations(wordDecorations, TTS_DECORATION_GROUP)
+
+                    // Sentence-level focus band — only when enabled
+                    val bandDecorations = if (focusBand.enabled) {
+                        active?.utteranceLocator?.let { loc ->
+                            listOf(
+                                Decoration(
+                                    "focus_band_sentence",
+                                    loc,
+                                    Decoration.Style.Highlight(tint = FOCUS_BAND_TINT),
+                                ),
+                            )
+                        } ?: emptyList()
                     } else {
                         emptyList()
                     }
-                    navigatorFragment?.applyDecorations(decorations, TTS_DECORATION_GROUP)
+                    navigatorFragment?.applyDecorations(bandDecorations, FOCUS_BAND_DECORATION_GROUP)
+                }
+            }
+        }
+    }
+
+    private fun setupAnchorObserver() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.anchorLocator.collect { locator ->
+                    val decorations = locator?.let {
+                        listOf(Decoration("visual_anchor", it, Decoration.Style.Highlight(tint = ANCHOR_TINT)))
+                    } ?: emptyList()
+                    navigatorFragment?.applyDecorations(decorations, ANCHOR_DECORATION_GROUP)
                 }
             }
         }
@@ -155,17 +188,23 @@ class EpubReaderFragment : Fragment() {
                     val typographyPrefs by viewModel.typographyPrefs.collectAsState()
                     val ttsUiState by viewModel.ttsUiState.collectAsState()
                     val ttsPrefs by viewModel.ttsPrefs.collectAsState()
+                    val focusBandPrefs by viewModel.focusBandPrefs.collectAsState()
+                    val anchorLocator by viewModel.anchorLocator.collectAsState()
                     ReaderOverlay(
                         state = state,
                         typographyPrefs = typographyPrefs,
                         ttsUiState = ttsUiState,
                         ttsPrefs = ttsPrefs,
+                        focusBandPrefs = focusBandPrefs,
+                        anchorActive = anchorLocator != null,
                         onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
                         onTypographyChange = viewModel::updateTypography,
                         onTtsPlay = { viewModel.startTts() },
                         onTtsPause = viewModel::pauseTts,
                         onTtsStop = viewModel::stopTts,
                         onTtsSpeedChange = viewModel::updateTtsSpeed,
+                        onFocusBandChange = viewModel::updateFocusBand,
+                        onAnchorDismiss = viewModel::clearAnchor,
                     )
                 }
             }

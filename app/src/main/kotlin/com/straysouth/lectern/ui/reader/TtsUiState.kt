@@ -8,5 +8,7 @@ sealed class TtsUiState {
         val isPlaying: Boolean,
         // Null until the first word-level Location is emitted by TtsNavigator
         val tokenLocator: Locator?,
+        // Sentence-level locator; drives Focus Band decoration
+        val utteranceLocator: Locator?,
     ) : TtsUiState()
 }

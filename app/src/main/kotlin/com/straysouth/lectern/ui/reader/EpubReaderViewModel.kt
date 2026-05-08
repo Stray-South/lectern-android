@@ -7,6 +7,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.ReadingProgress
+import com.straysouth.lectern.data.repository.AnchorRepository
+import com.straysouth.lectern.data.repository.FocusBandPrefs
+import com.straysouth.lectern.data.repository.FocusBandRepository
 import com.straysouth.lectern.data.repository.LocatorRepository
 import com.straysouth.lectern.data.repository.PublicationRepository
 import com.straysouth.lectern.data.repository.TtsPrefs
@@ -51,6 +54,8 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private val locatorRepository = LocatorRepository(application)
     private val typographyRepository = TypographyRepository(application)
     private val ttsRepository = TtsRepository(application)
+    private val focusBandRepository = FocusBandRepository(application)
+    private val anchorRepository = AnchorRepository(application)
     private val bookDao = AppDatabase.getInstance(application).bookDao()
     private val readingProgressDao = AppDatabase.getInstance(application).readingProgressDao()
 
@@ -75,18 +80,30 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     val ttsPrefs: StateFlow<TtsPrefs> = ttsRepository.observe()
         .stateIn(viewModelScope, SharingStarted.Eagerly, TtsPrefs())
 
+    val focusBandPrefs: StateFlow<FocusBandPrefs> = focusBandRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, FocusBandPrefs())
+
     private val _ttsUiState = MutableStateFlow<TtsUiState>(TtsUiState.Idle)
     val ttsUiState: StateFlow<TtsUiState> = _ttsUiState
+
+    private val _anchorLocator = MutableStateFlow<Locator?>(null)
+    val anchorLocator: StateFlow<Locator?> = _anchorLocator
 
     // Tracked separately so onCleared() can close regardless of current _state value
     private var _publication: Publication? = null
     private val _loading = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    // Stored on load so cleanUpTts() can persist the anchor without a bookId parameter.
+    private var _bookId: String? = null
+
     private var _ttsNavigator: AndroidTtsNav? = null
     private var _ttsCollectionJob: Job? = null
+    // Last sentence locator seen during TTS playback; persisted as anchor on stop.
+    private var _lastUtteranceLocator: Locator? = null
 
     fun load(bookId: String) {
         if (_publication != null || !_loading.compareAndSet(false, true)) return
+        _bookId = bookId
         viewModelScope.launch {
             val filePath = bookDao.getById(bookId)?.filePath
             if (filePath == null) {
@@ -95,6 +112,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 return@launch
             }
             val savedLocator = locatorRepository.get(bookId)
+            _anchorLocator.value = anchorRepository.get(bookId)
             pubRepository.open(Uri.parse(filePath))
                 .onSuccess { publication ->
                     _publication = publication
@@ -142,6 +160,20 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun updateFocusBand(prefs: FocusBandPrefs) {
+        viewModelScope.launch {
+            focusBandRepository.save(prefs)
+        }
+    }
+
+    fun clearAnchor() {
+        val bookId = _bookId ?: return
+        _anchorLocator.value = null
+        viewModelScope.launch {
+            anchorRepository.clear(bookId)
+        }
+    }
+
     // ── TTS ──────────────────────────────────────────────────────────────────
 
     fun startTts(initialLocator: Locator? = null) {
@@ -170,9 +202,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                             else -> TtsUiState.Active(
                                 isPlaying = pb.playWhenReady,
                                 tokenLocator = loc.tokenLocator,
+                                utteranceLocator = loc.utteranceLocator,
                             )
                         }
                     }.collect { state ->
+                        if (state is TtsUiState.Active) {
+                            _lastUtteranceLocator = state.utteranceLocator
+                        }
                         _ttsUiState.value = state
                         if (state == TtsUiState.Idle) viewModelScope.launch { cleanUpTts() }
                     }
@@ -202,7 +238,9 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // Cancels collection job, closes navigator, resets state.
+    // Cancels collection job, closes navigator, resets UI state.
+    // Persists the last utterance locator as anchor so the reading position
+    // remains visually marked after TTS stops.
     // Called from stopTts(), onCleared(), and the Ended/Failure branch of the collect.
     private fun cleanUpTts() {
         _ttsCollectionJob?.cancel()
@@ -210,6 +248,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         _ttsNavigator?.close()
         _ttsNavigator = null
         _ttsUiState.value = TtsUiState.Idle
+        val bookId = _bookId ?: return
+        val anchor = _lastUtteranceLocator ?: return
+        _lastUtteranceLocator = null
+        _anchorLocator.value = anchor
+        viewModelScope.launch {
+            anchorRepository.save(bookId, anchor)
+        }
     }
 
     override fun onCleared() {
