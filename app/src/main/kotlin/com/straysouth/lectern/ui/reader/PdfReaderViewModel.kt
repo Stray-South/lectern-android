@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.ReadingProgress
 import com.straysouth.lectern.data.repository.PdfPageRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +39,7 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
     private val _pageBitmap = MutableStateFlow<Bitmap?>(null)
     val pageBitmap: StateFlow<Bitmap?> = _pageBitmap
 
-    // PdfRenderer is not thread-safe — all operations serialised on a single IO thread.
+    // PdfRenderer is not thread-safe — all PdfRenderer calls serialised on one IO thread.
     private val ioSerial = Dispatchers.IO.limitedParallelism(1)
 
     private var pfd: ParcelFileDescriptor? = null
@@ -49,10 +50,17 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
     fun load(id: String) {
         bookId = id
         viewModelScope.launch {
+            // DAO and DataStore calls outside withContext — both dispatch internally (RULES.md).
+            val filePath = bookDao.getById(id)?.filePath
+            if (filePath == null) {
+                _state.value = State.Error("Book not found")
+                return@launch
+            }
+            val savedPage = pdfPageRepository.get(id)
+
+            // Only PdfRenderer I/O runs on ioSerial.
             withContext(ioSerial) {
                 runCatching {
-                    val filePath = bookDao.getById(id)?.filePath
-                        ?: error("Book not found: $id")
                     val descriptor = getApplication<Application>().contentResolver
                         .openFileDescriptor(Uri.parse(filePath), "r")
                         ?: error("Cannot open file descriptor: $filePath")
@@ -60,11 +68,10 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                     val r = PdfRenderer(descriptor)
                     renderer = r
                     pageCount = r.pageCount
-                    val saved = pdfPageRepository.get(id)
-                        .coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-                    _currentPage.value = saved
+                    val clamped = savedPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                    _currentPage.value = clamped
                     _state.value = State.Ready(pageCount)
-                    renderPage(saved)
+                    renderPage(clamped)
                 }.onFailure { e ->
                     Log.e("PdfReaderViewModel", "Cannot open PDF", e)
                     _state.value = State.Error("Unable to open PDF")
@@ -78,10 +85,9 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         if (next == _currentPage.value) return
         _currentPage.value = next
         viewModelScope.launch {
-            withContext(ioSerial) {
-                renderPage(next)
-                saveProgress(next)
-            }
+            // Render on ioSerial; save progress after — Room/DataStore are main-safe.
+            withContext(ioSerial) { renderPage(next) }
+            saveProgress(next)
         }
     }
 
@@ -90,10 +96,8 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         if (prev == _currentPage.value) return
         _currentPage.value = prev
         viewModelScope.launch {
-            withContext(ioSerial) {
-                renderPage(prev)
-                saveProgress(prev)
-            }
+            withContext(ioSerial) { renderPage(prev) }
+            saveProgress(prev)
         }
     }
 
@@ -108,6 +112,7 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         _pageBitmap.value = bmp
     }
 
+    // Room and DataStore are both main-safe suspend functions — no withContext needed.
     private suspend fun saveProgress(index: Int) {
         val id = bookId ?: return
         val progression = if (pageCount > 1) index.toDouble() / (pageCount - 1) else 0.0
@@ -125,10 +130,14 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         super.onCleared()
-        // Close in order: renderer first, then ParcelFileDescriptor.
-        renderer?.close()
-        renderer = null
-        pfd?.close()
-        pfd = null
+        // Post cleanup to ioSerial so it runs AFTER any in-flight renderPage completes.
+        // ioSerial is serial (limitedParallelism(1)) — ordering is guaranteed.
+        // A fresh CoroutineScope is used because viewModelScope is already cancelled here.
+        CoroutineScope(ioSerial).launch {
+            renderer?.close()
+            renderer = null
+            pfd?.close()
+            pfd = null
+        }
     }
 }
