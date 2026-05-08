@@ -215,7 +215,8 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                             _lastUtteranceLocator = state.utteranceLocator
                         }
                         _ttsUiState.value = state
-                        if (state == TtsUiState.Idle) viewModelScope.launch { cleanUpTts() }
+                        // Call directly — launching a sibling coroutine races the cancel in cleanUpTts().
+                        if (state == TtsUiState.Idle) cleanUpTts()
                     }
                 }
             }.onFailure { error ->
