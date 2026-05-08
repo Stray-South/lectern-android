@@ -56,7 +56,7 @@ fun LibraryScreen(
         modifier = modifier.semantics { contentDescription = cdLibrary },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { if (!isImporting) launcher.launch(arrayOf("application/epub+zip")) },
+                onClick = { if (!isImporting) launcher.launch(arrayOf("application/epub+zip", "application/pdf")) },
             ) {
                 if (isImporting) {
                     CircularProgressIndicator(

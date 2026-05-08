@@ -114,5 +114,27 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** TtsUiState.kt, FocusBandPrefs.kt (new), FocusBandRepository.kt (new),
   AnchorRepository.kt (new), EpubReaderViewModel.kt, EpubReaderFragment.kt, TtsBar.kt,
   ReaderOverlay.kt, strings.xml, config/detekt/detekt.yml
-- **Next:** Sprint 7 — spaced retrieval / highlights persistence.
+- **Next:** Sprint 7 — PDF rendering.
+- **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 7 PDF rendering
+- **Did:** Room migration v1→v2: `Book` entity gains non-nullable `format: String` column
+  (`ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'EPUB'`); `.addMigrations(MIGRATION_1_2)`
+  wired in AppDatabase builder. LibraryViewModel: `detectFormat()` probes contentResolver MIME type
+  then extension; branched `importBook()` bypasses Readium for PDFs (uses filename as title) and sets
+  `format = "PDF"`. LibraryScreen: MIME filter expanded to include `application/pdf`. MainActivity:
+  `currentBookFormat` added as second `rememberSaveable`; survives process death. ReaderScreen: accepts
+  `format` param; branches `AndroidFragment<EpubReaderFragment>` vs `AndroidFragment<PdfReaderFragment>`;
+  EPUB path bit-for-bit unchanged. PdfPageRepository: DataStore `"pdf_page_prefs"` persists last page
+  index. PdfReaderViewModel: platform `PdfRenderer` on `Dispatchers.IO.limitedParallelism(1)` serial
+  dispatcher; resource lifecycle (Page.close before next openPage, renderer.close + pfd.close in
+  onCleared); writes `totalProgression = index/(pageCount-1)` to ReadingProgressDao for library bar.
+  PdfReaderFragment: ComposeView Fragment (no child Fragment, no Readium factory); swipe-left/right
+  gesture (50px threshold) for page turn; Loading/Error/PageView composables; page indicator.
+- **Why:** Sprint 7 target — PDF books importable and readable alongside EPUBs; library progress bar
+  works for PDFs via same totalProgression path.
+- **Files:** Book.kt, AppDatabase.kt, schemas/2.json (generated), PdfPageRepository.kt (new),
+  LibraryViewModel.kt, LibraryScreen.kt, MainActivity.kt, ReaderScreen.kt,
+  PdfReaderViewModel.kt (new), PdfReaderFragment.kt (new), strings.xml
+- **Next:** Sprint 8 — Comics pipeline (CBZ/CBR) or gaze tracking spike.
 - **Blockers:** none

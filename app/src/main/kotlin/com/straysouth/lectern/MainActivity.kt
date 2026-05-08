@@ -41,9 +41,11 @@ class MainActivity : AppCompatActivity() {
                     // Process death resets to null — user lands on library and resumes
                     // from DataStore-persisted locator on next open. Intentional.
                     var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
+                    var currentBookFormat by rememberSaveable { mutableStateOf<String?>(null) }
 
                     BackHandler(enabled = currentBookId != null) {
                         currentBookId = null
+                        currentBookFormat = null
                     }
 
                     val bookId = currentBookId
@@ -52,10 +54,11 @@ class MainActivity : AppCompatActivity() {
                             viewModel = libraryViewModel,
                             onBookSelected = { book ->
                                 currentBookId = book.id
+                                currentBookFormat = book.format
                             },
                         )
                     } else {
-                        ReaderScreen(bookId = bookId)
+                        ReaderScreen(bookId = bookId, format = currentBookFormat ?: "EPUB")
                     }
                 }
             }

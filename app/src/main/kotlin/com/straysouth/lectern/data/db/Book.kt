@@ -11,4 +11,5 @@ data class Book(
     val coverPath: String?,
     val addedAt: Long?,
     val lastOpenedAt: Long?,
+    val format: String,          // "EPUB" | "PDF" — set at import, never null
 )

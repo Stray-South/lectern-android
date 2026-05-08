@@ -14,6 +14,7 @@ import com.straysouth.lectern.R
 @Composable
 fun ReaderScreen(
     bookId: String,
+    format: String,
     modifier: Modifier = Modifier,
 ) {
     val cdReader = stringResource(R.string.cd_reader)
@@ -21,15 +22,22 @@ fun ReaderScreen(
         modifier = modifier
             .fillMaxSize()
             // mergeDescendants = false (default) — TalkBack must traverse into the
-            // Fragment's WebView accessibility tree. Verify with TalkBack audit before merge.
+            // Fragment's WebView / Compose accessibility tree.
             .semantics(mergeDescendants = false) { contentDescription = cdReader },
     ) {
-        // fillMaxSize is mandatory — zero-size container causes blank WebView (Discussion #513)
-        // AndroidFragment removal is handled by fragment-compose DisposableEffect when
-        // this composable leaves the composition (i.e. currentBookId → null in MainActivity).
-        AndroidFragment<EpubReaderFragment>(
-            modifier = Modifier.fillMaxSize(),
-            arguments = bundleOf(EpubReaderFragment.ARG_BOOK_ID to bookId),
-        )
+        if (format == "PDF") {
+            // fillMaxSize is mandatory — zero-size container causes blank rendering.
+            AndroidFragment<PdfReaderFragment>(
+                modifier = Modifier.fillMaxSize(),
+                arguments = bundleOf(PdfReaderFragment.ARG_BOOK_ID to bookId),
+            )
+        } else {
+            // fillMaxSize is mandatory — zero-size container causes blank WebView (Discussion #513).
+            // AndroidFragment removal handled by fragment-compose DisposableEffect.
+            AndroidFragment<EpubReaderFragment>(
+                modifier = Modifier.fillMaxSize(),
+                arguments = bundleOf(EpubReaderFragment.ARG_BOOK_ID to bookId),
+            )
+        }
     }
 }

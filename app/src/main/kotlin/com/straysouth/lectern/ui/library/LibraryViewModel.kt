@@ -1,6 +1,7 @@
 package com.straysouth.lectern.ui.library
 
 import android.app.Application
+import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -58,30 +59,61 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            val result = pubRepository.open(uri)
-            if (result.isFailure) {
-                Log.e("LibraryViewModel", "Cannot open EPUB: $uri", result.exceptionOrNull())
-                _isImporting.value = false
-                return@launch
+            val format = detectFormat(uri, getApplication<Application>().contentResolver)
+            val id = UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString()
+
+            if (format == FORMAT_PDF) {
+                val title = uri.lastPathSegment
+                    ?.substringBeforeLast('.')
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "Untitled"
+                bookDao.upsert(
+                    Book(
+                        id = id,
+                        title = title,
+                        filePath = uri.toString(),
+                        coverPath = null,
+                        addedAt = System.currentTimeMillis(),
+                        lastOpenedAt = null,
+                        format = FORMAT_PDF,
+                    ),
+                )
+            } else {
+                val result = pubRepository.open(uri)
+                if (result.isFailure) {
+                    Log.e("LibraryViewModel", "Cannot open publication: $uri", result.exceptionOrNull())
+                    _isImporting.value = false
+                    return@launch
+                }
+                val pub = result.getOrThrow()
+                val title = pub.metadata.title?.takeIf { it.isNotBlank() }
+                    ?: uri.lastPathSegment
+                    ?: "Untitled"
+                pub.close()
+                bookDao.upsert(
+                    Book(
+                        id = id,
+                        title = title,
+                        filePath = uri.toString(),
+                        coverPath = null,
+                        addedAt = System.currentTimeMillis(),
+                        lastOpenedAt = null,
+                        format = FORMAT_EPUB,
+                    ),
+                )
             }
-
-            val pub = result.getOrThrow()
-            val title = pub.metadata.title?.takeIf { it.isNotBlank() }
-                ?: uri.lastPathSegment
-                ?: "Untitled"
-            pub.close()
-
-            bookDao.upsert(
-                Book(
-                    id = UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString(),
-                    title = title,
-                    filePath = uri.toString(),
-                    coverPath = null,
-                    addedAt = System.currentTimeMillis(),
-                    lastOpenedAt = null,
-                ),
-            )
             _isImporting.value = false
+        }
+    }
+
+    companion object {
+        const val FORMAT_EPUB = "EPUB"
+        const val FORMAT_PDF = "PDF"
+
+        fun detectFormat(uri: Uri, contentResolver: ContentResolver): String {
+            val mime = contentResolver.getType(uri)
+            val ext = uri.lastPathSegment?.substringAfterLast('.')?.lowercase()
+            return if (mime == "application/pdf" || ext == "pdf") FORMAT_PDF else FORMAT_EPUB
         }
     }
 }
