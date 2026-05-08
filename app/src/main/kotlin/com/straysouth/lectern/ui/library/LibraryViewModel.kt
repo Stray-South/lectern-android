@@ -7,6 +7,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.straysouth.lectern.R
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.Book
 import com.straysouth.lectern.data.repository.PublicationRepository
@@ -70,19 +71,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val format = detectFormat(uri, getApplication<Application>().contentResolver)
             if (format == null) {
                 Log.e("LibraryViewModel", "Unsupported format: $uri")
-                _importError.value = "Unsupported file format"
+                _importError.value = getApplication<Application>().getString(R.string.import_error_unsupported_format)
                 _isImporting.value = false
                 return@launch
             }
 
             val id = UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString()
 
-            if (format == FORMAT_EPUB) {
-                importEpub(uri, id)
-            } else {
-                importByFilename(uri, id, format)
+            try {
+                if (format == FORMAT_EPUB) {
+                    importEpub(uri, id)
+                } else {
+                    importByFilename(uri, id, format)
+                }
+            } finally {
+                _isImporting.value = false
             }
-            _isImporting.value = false
         }
     }
 
@@ -91,6 +95,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val result = pubRepository.open(uri)
         if (result.isFailure) {
             Log.e("LibraryViewModel", "Cannot open publication: $uri", result.exceptionOrNull())
+            _importError.value = getApplication<Application>().getString(R.string.import_error_open_error)
             return
         }
         val pub = result.getOrThrow()

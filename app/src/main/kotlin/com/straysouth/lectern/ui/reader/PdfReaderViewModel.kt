@@ -137,6 +137,11 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         super.onCleared()
+        // Capture the currently-displayed bitmap on the main thread before dispatching
+        // cleanup. The current bitmap may still be referenced by Compose's rendering
+        // pipeline — exclude it from recycling and let it be GC'd naturally once all
+        // Compose references drop. Older bitmaps in the queue are safe to recycle.
+        val currentBitmap = _pageBitmap.value
         // Post cleanup to ioSerial so it runs AFTER any in-flight renderPage completes.
         // ioSerial is serial (limitedParallelism(1)) — ordering is guaranteed.
         // A fresh CoroutineScope is used because viewModelScope is already cancelled here.
@@ -145,7 +150,7 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
             renderer = null
             pfd?.close()
             pfd = null
-            bitmapQueue.forEach { it.recycle() }
+            bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
             bitmapQueue.clear()
         }
     }

@@ -187,13 +187,18 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
 
     override fun onCleared() {
         super.onCleared()
+        // Capture the currently-displayed bitmap on the main thread before dispatching
+        // cleanup. The current bitmap may still be referenced by Compose's rendering
+        // pipeline — exclude it from recycling and let it be GC'd naturally once all
+        // Compose references drop. Older bitmaps in the queue are safe to recycle.
+        val currentBitmap = _pageBitmap.value
         // Post cleanup to ioSerial — guarantees it runs AFTER any in-flight renderPage.
         CoroutineScope(ioSerial).launch {
             zipFile?.close()
             zipFile = null
             rarCacheFile?.delete()
             rarCacheFile = null
-            bitmapQueue.forEach { it.recycle() }
+            bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
             bitmapQueue.clear()
         }
     }

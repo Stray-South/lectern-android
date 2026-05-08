@@ -35,4 +35,5 @@
     <string name="cd_comics_error">Comic error</string>
     <string name="cd_comics_page_view">Comic page viewer</string>
     <string name="import_error_unsupported_format">Unsupported file format</string>
+    <string name="import_error_open_error">Unable to open book</string>
 </resources>
