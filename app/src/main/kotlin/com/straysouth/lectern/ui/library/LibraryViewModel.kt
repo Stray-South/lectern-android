@@ -10,14 +10,21 @@ import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.R
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.Book
+import com.straysouth.lectern.data.repository.ComicsPageRepository
+import com.straysouth.lectern.data.repository.LocatorRepository
+import com.straysouth.lectern.data.repository.PdfPageRepository
 import com.straysouth.lectern.data.repository.PublicationRepository
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -25,6 +32,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val pubRepository = PublicationRepository(application)
     private val bookDao = AppDatabase.getInstance(application).bookDao()
     private val readingProgressDao = AppDatabase.getInstance(application).readingProgressDao()
+    private val locatorRepository = LocatorRepository(application)
+    private val pdfPageRepository = PdfPageRepository(application)
+    private val comicsPageRepository = ComicsPageRepository(application)
 
     val books: StateFlow<List<Book>> =
         bookDao.observeAll()
@@ -50,6 +60,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError.asStateFlow()
+
+    // Emits the id of a book that was just deleted. Collected by MainActivity to
+    // navigate back to the library if the deleted book is currently open.
+    private val _deletedBookId = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val deletedBookId: SharedFlow<String> = _deletedBookId.asSharedFlow()
 
     fun clearImportError() {
         _importError.value = null
@@ -87,6 +102,35 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             } finally {
                 _isImporting.value = false
             }
+        }
+    }
+
+    fun deleteBook(book: Book) {
+        viewModelScope.launch {
+            val id = book.id
+            val filePath = book.filePath
+            // Ordering: Room rows → DataStore keys → release URI permission → cache file.
+            // This minimises the window where a still-open reader ViewModel could observe
+            // a missing Row while its file handles remain valid.
+            bookDao.deleteById(id)
+            readingProgressDao.deleteByBookId(id)
+            locatorRepository.remove(id)
+            pdfPageRepository.remove(id)
+            comicsPageRepository.remove(id)
+            if (filePath != null) {
+                val uri = Uri.parse(filePath)
+                runCatching {
+                    getApplication<Application>().contentResolver
+                        .releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                // CBZ/CBR cache file — format-agnostic UUID key; no-op for EPUB/PDF.
+                val cacheFile = File(
+                    getApplication<Application>().cacheDir,
+                    UUID.nameUUIDFromBytes(filePath.toByteArray()).toString(),
+                )
+                if (cacheFile.exists()) cacheFile.delete()
+            }
+            _deletedBookId.emit(id)
         }
     }
 
