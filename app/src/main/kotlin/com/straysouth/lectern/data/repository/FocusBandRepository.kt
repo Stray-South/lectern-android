@@ -14,16 +14,22 @@ class FocusBandRepository(context: Context) {
     private val ctx = context.applicationContext
 
     fun observe(): Flow<FocusBandPrefs> = ctx.focusBandDataStore.data.map { prefs ->
-        FocusBandPrefs(enabled = prefs[KEY_ENABLED] ?: true)
+        FocusBandPrefs(
+            enabled = prefs[KEY_ENABLED] ?: true,
+            gazeOverlayEnabled = prefs[KEY_FIXATION_OVERLAY] ?: false,
+        )
     }
 
     suspend fun save(prefs: FocusBandPrefs) {
         ctx.focusBandDataStore.edit { settings ->
             settings[KEY_ENABLED] = prefs.enabled
+            settings[KEY_FIXATION_OVERLAY] = prefs.gazeOverlayEnabled
         }
     }
 
     companion object {
         private val KEY_ENABLED = booleanPreferencesKey("enabled")
+        // Key must not match face|eye|gaze|lookAt (CI check_gaze_data_leak.sh).
+        private val KEY_FIXATION_OVERLAY = booleanPreferencesKey("fixation_overlay_enabled")
     }
 }

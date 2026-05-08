@@ -248,9 +248,10 @@ class EpubReaderFragment : Fragment() {
                             gazeViewModel.toggleGaze(hasPermission = hasPermission)
                         },
                     )
-                    // TODO(ADR-AND-L): Focus Band V2 visual — deferred to V3.
-                    // When a native BasicText surface exists, replace the above with:
-                    //   bandCenterY = if (gazeState is GazeState.Tracking) gazeState.gazePoint.y else null
+                    // TODO(ADR-AND-L): Focus Band V2 — deferred to V3.
+                    // V1 pixel overlay is GazeFocusBandOverlay in ReaderOverlay.kt (Sprint 13).
+                    // V2: when a native BasicText surface exists, replace with:
+                    //   bandCenterY = gazePoint.y → getLineForOffset → drawRect dim above/below
                 }
             }
         }

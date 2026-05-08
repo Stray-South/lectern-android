@@ -93,6 +93,13 @@ internal fun TtsBar(
                 enabled = focusBandPrefs.enabled,
                 onToggle = { onFocusBandChange(focusBandPrefs.copy(enabled = !focusBandPrefs.enabled)) },
             )
+
+            GazeOverlayChip(
+                enabled = focusBandPrefs.gazeOverlayEnabled,
+                onToggle = {
+                    onFocusBandChange(focusBandPrefs.copy(gazeOverlayEnabled = !focusBandPrefs.gazeOverlayEnabled))
+                },
+            )
         }
     }
 }
@@ -134,6 +141,17 @@ private fun FocusBandChip(enabled: Boolean, onToggle: () -> Unit) {
         selected = enabled,
         onClick = onToggle,
         label = { Text(stringResource(R.string.label_focus_band)) },
+        modifier = Modifier.heightIn(min = 32.dp),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GazeOverlayChip(enabled: Boolean, onToggle: () -> Unit) {
+    FilterChip(
+        selected = enabled,
+        onClick = onToggle,
+        label = { Text(stringResource(R.string.label_gaze_overlay)) },
         modifier = Modifier.heightIn(min = 32.dp),
     )
 }

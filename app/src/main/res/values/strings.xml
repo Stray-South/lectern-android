@@ -28,6 +28,7 @@
     <string name="cd_tts_stop">Stop</string>
     <string name="label_focus_band">Focus Band</string>
     <string name="tts_engine_unavailable">Text-to-speech not available on this device</string>
+    <string name="label_gaze_overlay">Gaze line</string>
     <string name="cd_tts_dismiss">Dismiss</string>
     <string name="cd_anchor_dismiss">Dismiss reading anchor</string>
     <string name="cd_pdf_loading">Loading PDF</string>

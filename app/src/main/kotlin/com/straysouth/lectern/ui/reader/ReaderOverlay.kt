@@ -3,6 +3,7 @@ package com.straysouth.lectern.ui.reader
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +34,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -143,6 +148,14 @@ private fun ReadyOverlay(
 ) {
     var showPanel by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
+        // V1 pixel overlay — drawn first so toolbar/TtsBar render above it.
+        // ADR-AND-L Sprint 13 amendment: semi-transparent band at gazePoint.y.
+        GazeFocusBandOverlay(
+            gazeState = gazeState,
+            enabled = focusBandPrefs.gazeOverlayEnabled,
+            modifier = Modifier.fillMaxSize(),
+        )
+
         ReaderToolbar(
             anchorActive = anchorActive,
             gazeState = gazeState,
@@ -176,6 +189,39 @@ private fun ReadyOverlay(
                 onDismiss = { showPanel = false },
             )
         }
+    }
+}
+
+// Warm amber at ~15% alpha — matches FOCUS_BAND_TINT palette in EpubReaderFragment.
+private val GAZE_BAND_COLOR = Color(0x26FFE082)
+private val GAZE_BAND_HEIGHT = 52.dp
+
+/**
+ * V1 gaze→line overlay (ADR-AND-L Sprint 13 amendment).
+ * Draws a semi-transparent horizontal band at calibrated gazePoint.y.
+ * Not line-semantically aware — pure pixel overlay over the WebView.
+ *
+ * TODO(ADR-AND-L): Focus Band V2 — deferred to V3.
+ * When a native BasicText surface exists, replace with:
+ *   bandCenterY = gazePoint.y → getLineForOffset → drawRect dim above/below
+ */
+@Composable
+private fun GazeFocusBandOverlay(
+    gazeState: GazeState,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (!enabled) return
+    val tracking = gazeState as? GazeState.Tracking ?: return
+    val bandY = tracking.gazePoint.y
+    val bandHeightPx = with(LocalDensity.current) { GAZE_BAND_HEIGHT.toPx() }
+    Canvas(modifier = modifier) {
+        val halfBand = bandHeightPx / 2f
+        drawRect(
+            color = GAZE_BAND_COLOR,
+            topLeft = Offset(0f, bandY - halfBand),
+            size = Size(size.width, bandHeightPx),
+        )
     }
 }
 

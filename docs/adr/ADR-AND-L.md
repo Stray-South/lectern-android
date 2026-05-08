@@ -1,8 +1,8 @@
-# ADR-AND-L: Focus Band V2 scope boundary — WebView limitation
+# ADR-AND-L: Focus Band scope boundary — WebView limitation
 
-**Status:** Accepted  
-**Date:** 2026-05-08  
-**Sprint:** 11
+**Status:** Amended  
+**Date:** 2026-05-08 (Sprint 11) / 2026-05-08 (Sprint 13 amendment)  
+**Sprint:** 11 (original), 13 (V1 pixel overlay added)
 
 ## Context
 
@@ -26,35 +26,53 @@ would require:
 
 ## Decision
 
-Focus Band V2 (gaze-driven) **does not apply to the EPUB WebView path** in V1.
+### V1 — Pixel-Y overlay (Sprint 13, shipped)
+
+A semi-transparent horizontal band is drawn on the Compose overlay layer at
+`gazePoint.y` (calibrated screen-space pixels). This is a pure pixel overlay —
+it has no semantic relationship to EPUB text content. It provides a visual
+"where is my eye" cue without any WebView interaction.
+
+Spec:
+- Height: 52 dp
+- Color: warm amber at ~15% alpha (`0x26FFE082`)
+- Enabled by a separate `FocusBandPrefs.gazeOverlayEnabled` flag (default OFF)
+- Coordinate space: edge-to-edge (`enableEdgeToEdge()` confirmed in MainActivity);
+  `gazePoint.y` from calibration aligns with ComposeView Y — no transform needed
+- Coexists with the TTS sentence-level Readium decoration (separate mechanism)
+
+### V2 — Precise line-level highlight (deferred to V3)
+
+Focus Band V2 (gaze-driven) **does not apply to the EPUB WebView path**.
 
 Sprint 11 delivers:
 - Full `GazeProvider` infrastructure (CameraX + MediaPipe + ridge calibration)
-- `GazeState.Tracking(gazePoint)` emitted at ~30fps
+- `GazeState.Tracking(gazePoint, irisU, irisV)` emitted at ~30fps
 - A gaze-active indicator in the reader toolbar
-- The `bandCenterY` derivedStateOf plumbing in `GazeViewModel`
 
-The visual Focus Band V2 (band dims above/below the fixated line) is deferred
-until a native Compose text surface exists for body text rendering. This is
-tagged **V3** in the phase sequencing table.
+The visual Focus Band V2 (band dims above/below the fixated line using
+`TextLayoutResult.getLineTop/Bottom()`) is deferred until a native Compose
+text surface exists for body text rendering. This is tagged **V3**.
 
-Sites that DO support Focus Band V2 today: none (no native body-text surface
-exists yet in Sprint 11). Sites that will support it: a future plain-text /
-reflow reader composable using `BasicText` + `drawWithContent`.
+Sites that DO support V2 today: none (no native body-text surface exists).
+Sites that will support it: a future plain-text / reflow reader composable
+using `BasicText` + `drawWithContent`.
 
-## Code marker
+## Code markers
 
-Locations in code where the V2 visual path would plug in are marked:
+V1 pixel overlay lives in `ReaderOverlay.kt` as `GazeFocusBandOverlay`.
+
+Locations where the V2 precise-line path would plug in are marked:
 ```kotlin
-// TODO(ADR-AND-L): Focus Band V2 visual — deferred to V3.
-// When a native BasicText surface exists, replace this with:
-//   bandCenterY = gazePoint.y → getLineForOffset → drawRect dim
+// TODO(ADR-AND-L): Focus Band V2 — deferred to V3.
+// When a native BasicText surface exists, replace GazeFocusBandOverlay with:
+//   bandCenterY = gazePoint.y → getLineForOffset → drawRect dim above/below
 ```
 
 ## Consequences
 
-- EPUB readers see gaze tracking infrastructure but no visual Focus Band V2.
+- EPUB readers see V1 pixel overlay (Sprint 13) + full gaze infrastructure.
+- V1 overlay gives a "where is my eye" cue; it is not line-semantically aware.
 - PDF and Comics readers (bitmap rendering) similarly cannot use the V2 path.
-- The calibration and GazeProvider are fully functional and testable via the
-  gaze indicator and `GazeState` flow.
 - No performance cost from attempting a WebView JS bridge at 30fps.
+- V1 overlay defaults OFF (`gazeOverlayEnabled = false`); user opts in.
