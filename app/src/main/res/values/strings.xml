@@ -40,4 +40,7 @@
     <string name="delete_book_message">Remove \"%1$s\" from your library?</string>
     <string name="delete_book_confirm">Remove</string>
     <string name="cd_delete_book">Delete book</string>
+    <string name="sort_added">Sort: Added</string>
+    <string name="sort_last_opened">Sort: Last opened</string>
+    <string name="cd_sort_toggle">Toggle sort order</string>
 </resources>

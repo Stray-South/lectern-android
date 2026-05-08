@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
                             onBookSelected = { book ->
                                 currentBookId = book.id
                                 currentBookFormat = book.format
+                                libraryViewModel.recordOpened(book.id)
                             },
                         )
                     } else {
