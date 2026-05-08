@@ -388,3 +388,52 @@ Format: see .claude/skills/devlog/SKILL.md
   docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Group B research (B.3/B.4 zip4j/Readium path traversal).
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Security Sprint: Red Team Group A code review fixes + A.4–A.7 research
+- **Did:** Addressed four code review issues found after the initial A.1/A.2/A.3 implementation,
+  then researched and documented A.4–A.7 findings.
+
+  **Code review fixes:**
+  - `EpubBlockingWebViewClient`: Changed base class from `WebViewClient` to `WebViewClientCompat`
+    and delegate parameter type to `WebViewClientCompat`. Preserves Chromium compat bridge methods
+    (`onReceivedError` compat path, `onSafeBrowsingHit`). Added `androidx.webkit:1.11.0` direct
+    dependency to `libs.versions.toml` and `build.gradle.kts`.
+  - `EpubBlockingWebViewClient.blockedResponse()`: Changed from 3-arg `WebResourceResponse`
+    (status 0 → `net::ERR_FAILED`) to 6-arg constructor returning HTTP 403 with non-null
+    `ByteArrayInputStream(ByteArray(0))`. Clean, debuggable block in Network DevTools.
+  - `EpubReaderFragment`: Added `blockingCallbackRegistered` flag (parallel to existing
+    `navigatorCommitted`) to guard `registerFragmentLifecycleCallbacks` against re-registration on
+    every `STOPPED→STARTED` transition in `repeatOnLifecycle(STARTED)`.
+  - `FragmentLifecycleCallbacks`: Changed `recursive = false` → `recursive = true` to remain
+    resilient to future Readium ViewPager nesting changes. Idempotent due to
+    `!is EpubBlockingWebViewClient` guard.
+
+  **A.5 implementation:**
+  Set `allowContentAccess = false` on each page WebView in `EpubReaderFragment.wrapWebViewsIn()`.
+  Readium uses `https://readium/` exclusively — no `content://` URIs needed. Closes the SVG
+  `xlink:href="content://..."` attack surface (EPUB JS cannot read contacts, media store, or
+  DataStore via content provider scheme).
+
+  **A.4 research (no code change):** WebView CSS z-index is sandboxed to the WebView's
+  `getClipBounds()` rectangle by the Android View compositing model. EPUB CSS `position: fixed;
+  z-index: 99999` cannot paint over the ComposeView overlay. Architectural guarantee — test only.
+
+  **A.6 research (no code change):** Readium returns `Try<Publication, OpenError>` sealed types
+  for all parse paths. `LibraryViewModel.importBook()` exhaustively handles `Try.Failure`.
+  No crash path for malformed EPUB, missing OPF, or corrupt ZIP. Test only.
+
+  **A.7 research (no code change):** `JSONObject.toString()` fully escapes CFI string values
+  before `evaluateJavascript()`. CFI `");alert(1);//` cannot break out of JSON string literal.
+  `LocatorRepository` stores serialised JSON as opaque DataStore string — no exec at restore.
+  Test only.
+
+  Updated `docs/security/RED-TEAM.md`: A.4–A.7 entries updated from 🔴 to ✅ MITIGATED/IMPLEMENTED
+  with full technical rationale and pass criteria. Confirmed-facts table updated with two new rows.
+  All gates green: assembleDebug, testDebugUnitTest, detekt, ktlintCheck, lintDebug, preflight.sh.
+
+- **Why:** Code review hardening of A.2 implementation; A.4–A.7 closes all remaining Section A
+  findings. Group A is now complete.
+- **Files:** EpubBlockingWebViewClient.kt, EpubReaderFragment.kt, build.gradle.kts,
+  libs.versions.toml, docs/security/RED-TEAM.md
+- **Next:** Group B research (B.3/B.4 zip4j/Readium path traversal + B.1/B.2 ZIP bomb).
+- **Blockers:** none

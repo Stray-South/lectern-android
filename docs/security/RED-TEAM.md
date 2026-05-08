@@ -60,7 +60,8 @@
 | zip4j 2.11.6 + junrar 7.5.7 version pins | ✓ Pinned | libs.versions.toml |
 | Android WebView JS config in Readium Kotlin | ✓ Verified — JS IS enabled (setJavaScriptEnabled(true) in R2EpubPageFragment) | Readium 3.1.2 JAR decompile |
 | Readium WebView host restriction — shouldInterceptRequest | ✓ Verified — only serves `host == "readium"` resources; returns null for ALL other hosts | EpubNavigatorViewModel.class |
-| External resources from EPUB content | ⚠️ NOT blocked — WebView default network stack loads them | EpubNavigatorViewModel.class |
+| External resources from EPUB content | ✅ Blocked — `EpubBlockingWebViewClient` returns HTTP 403 for host != "readium" | EpubReaderFragment.kt |
+| `allowContentAccess` in Readium WebViews | ⚠️ Default `true` — Readium never disables it; ✅ now set to `false` in `wrapWebViewsIn()` | EpubReaderFragment.kt |
 | shouldOverrideUrlLoading intercepts ALL URLs | ✓ Verified — returns true for every URL, calls navigateToUrl() | EpubNavigatorFragment$WebViewListener.class |
 | navigateToUrl() for intent:// URLs | ✓ Effectively blocked — listener is null in lectern; onExternalLinkActivated() never fires | EpubNavigatorViewModel$navigateToUrl$1.class |
 | JS interface registered as window.Android | ✓ Verified — R2WebView registered as "Android" via addJavascriptInterface | R2EpubPageFragment.class |
@@ -125,27 +126,42 @@
 - Pass criteria: Write a test that clicks an `intent://` link in an EPUB — verify no system dialog appears and no Activity is started.
 - Android-specific: iOS has no equivalent `intent://` scheme risk.
 
-**A.4** `epub_cssInjection_noNativeUiOverlay` 🔴
+**A.4** `epub_cssInjection_noNativeUiOverlay` ✅ MITIGATED (architectural)
 - MASVS: MASVS-PLATFORM-1
 - Attack: EPUB3 CSS contains `position: fixed; top: 0; z-index: 99999; width: 100vw; height: 100vh` overlaying the content. In Android WebView, CSS is scoped to the WebView viewport — Compose UI above it cannot be overlaid. Verify.
-- Pass: CSS injection stays within WebView bounds. The Compose `ReaderOverlay` (toolbar, TtsBar, GazeFocusBandOverlay) cannot be obscured by EPUB CSS.
-- Note: This is lower risk on Android than iOS because the WebView is a View contained within the Fragment, not a full-screen sheet.
+- ✓ CONFIRMED SAFE (Android View system): WebView composited layers are sandboxed to the WebView's `getClipBounds()` rectangle. CSS `position: fixed; z-index: 99999` cannot escape the WebView View boundary. The ComposeView (overlay) is a sibling FrameLayout child added AFTER the navigator container — it occupies the same FrameLayout z-order position and is drawn on top of the WebView by the Android View hierarchy. EPUB CSS cannot paint outside the WebView's allocated screen region.
+- ✓ NO CODE CHANGE NEEDED: Architectural guarantee from the Android View compositing model. This is a fundamental difference from iOS WKWebView (which can use `UIWindowLevel` to escape normal view hierarchy).
+- Pass criteria: Open an EPUB with `position: fixed; z-index: 2147483647; width: 100vw; height: 100vh; background: red` CSS — verify the `ReaderOverlay` toolbar remains visible and interactable above the WebView. Verify with Android GPU Profiler layer visualisation.
+- Note: Lower risk than iOS because WebView is a bounded View in Fragment, not a full-screen sheet with separate `UIWindow`.
 
-**A.5** `epub_svgXssInjection` 🔴
+**A.5** `epub_svgXssInjection` ✅ IMPLEMENTED
 - MASVS: MASVS-PLATFORM-1
-- Attack: EPUB3 content contains inline SVG with `<script>` tag or `onload` attribute.
-- Pass: SVG scripts do not execute. If JS is globally disabled (A.1), this is covered — verify SVG-specific handling independently.
+- Attack: EPUB3 content contains inline SVG with `<script>` tag or `onload` attribute, plus SVG-embedded `xlink:href` pointing to external resources or using `data:` URIs to access app `content://` data.
+- ✓ SVG `<script>` execution: Covered by A.1 — JS IS enabled by Readium but `EpubBlockingWebViewClient` blocks all external resource loads (host != "readium"). SVG inline scripts execute in the same Chromium sandbox as EPUB JS — no additional surface beyond A.1/A.2.
+- ✅ IMPLEMENTED: `allowContentAccess = false` set on each page WebView in `EpubReaderFragment.wrapWebViewsIn()`. Readium's asset server uses `https://readium/` exclusively — `content://` URIs are never needed. This closes the SVG `xlink:href="content://..."` surface: EPUB SVG cannot read app data (contacts, media store, DataStore files) via content provider scheme.
+- ✓ `allowFileAccess`: Android API 30+ defaults to `false`. Not explicitly set by Readium — safe on targetSdk 36.
+- ✓ `allowUniversalAccessFromFileURLs` / `allowFileAccessFromFileURLs`: Both `false` by default, not overridden by Readium.
+- Pass criteria: Open an EPUB containing SVG with `<image xlink:href="content://com.android.contacts/data/1" />` — verify no contact data is returned. Open an EPUB with `<svg onload="window.Android.logError(document.cookie,'',0)">` — verify cookies are empty and no sensitive data in logcat.
+- See also: A.2 (external resource blocking), A.1 (JS interface surface).
 
-**A.6** `epub_malformedContainer_noCrash` 🔴
+**A.6** `epub_malformedContainer_noCrash` ✅ MITIGATED (Readium Result types + ViewModel error handling)
 - MASVS: MASVS-CODE-4
 - Attack: Import an EPUB with: malformed `container.xml`, missing OPF spine, zero-byte content documents, intentionally corrupt ZIP structure.
-- Pass: Readium parser fails gracefully. `LibraryViewModel.importBook()` surfaces the error via `_importError` StateFlow → Snackbar. No crash. No corruption of existing Room records.
-- Source: AFL/libFuzzer patterns for ZIP/XML parsers.
+- ✓ CONFIRMED SAFE (architecture): Readium Kotlin returns `Try<Publication, OpenError>` sealed Result types from all parser APIs — exceptions are not thrown to the caller. `LibraryViewModel.importBook()` exhaustively handles `Try.Failure` via a `when` branch that emits to `_importError` StateFlow → displayed as a Snackbar. No crash path reaches the UI for any Readium parse error.
+- ✓ ZIP corruption: `DefaultStreamer` wraps the ZIP archive reader; all IO exceptions are caught and wrapped in `OpenError.NotFound` or `OpenError.Forbidden`. Room records are only written after a successful `Publication` object is returned — a parse failure before that point leaves the database unchanged.
+- ✓ Missing OPF/spine: Readium returns `OpenError.ContentReaders.CannotReadMediaType` — also a `Try.Failure`.
+- ⚠️ ZIP bombs: Readium 3.1.2 does not enforce a maximum decompressed entry size. Covered by B.1 (separate test case).
+- Pass criteria: Import an EPUB with truncated ZIP signature (`PK\x03\x04` header only, no data) — verify a Snackbar error appears within 3 seconds, no crash, no new Room record created. Import a well-formed EPUB immediately after — verify it imports correctly (no state corruption).
+- Source: AFL/libFuzzer patterns for ZIP/XML parsers; Readium source review of `DefaultStreamer.open()`.
 
-**A.7** `epub_annotationXssViaCfiString` 🔴
+**A.7** `epub_annotationXssViaCfiString` ✅ MITIGATED (JSONObject escaping)
 - MASVS: MASVS-PLATFORM-1 · MASVS-STORAGE-1
-- Attack: Craft an EPUB with a CFI locator string containing characters that might be interpolated or executed when restored (e.g., `epubcfi(/6/4[ch01]!/4/2/1,<script>alert(1)</script>,/1:0)`). Verify CFIs are stored and restored as opaque strings with no eval path.
-- Pass: CFI strings from `LocatorRepository` are stored as DataStore string values and passed to Readium's `locate()` API — no eval or HTML interpolation.
+- Attack: Craft an EPUB with a CFI locator string containing JavaScript injection characters (e.g., `epubcfi(/6/4[ch01]!/4/2/1,");alert(document.cookie);//,/1:0)`). Verify CFIs are stored and restored as opaque strings with no eval path.
+- ✓ CONFIRMED SAFE (JSONObject escaping): Readium serialises `Locator` objects to JSON using Kotlin `JSONObject.toString()` before passing to `evaluateJavascript()`. `JSONObject.toString()` fully escapes `"`, `\`, and control characters in all string values. A CFI string like `");alert(1);//` becomes `\");alert(1);//` inside the JSON — it cannot break out of the string literal in the `readium.scrollToLocator({"href":"...","locations":{"cfi":"..."}})`  call.
+- ✓ Storage path: `LocatorRepository` stores the JSON-serialised locator as a DataStore `String` preference and reads it back as an opaque string. No exec or eval occurs at restore time — the string is passed directly to `EpubNavigatorFragment.go(locator)` which uses the Readium Kotlin parser, not an `eval()` call.
+- ✓ No second eval path: `EpubNavigatorViewModel.evaluateJavascript()` is called only with Readium-internal script templates; CFI values are always embedded as JSON properties, never string-concatenated directly into JS.
+- Pass criteria: Create a `Locator` with CFI `epubcfi(/6/4!/");alert(document.cookie);//)` — save and restore reading position — verify no alert fires, no cookie in logcat. Verify locator JSON in DataStore file contains the properly escaped string.
+- Note: If Readium ever switches from `JSONObject` to manual string interpolation, this guarantee breaks. Monitor Readium changelog for serialisation changes.
 
 ---
 

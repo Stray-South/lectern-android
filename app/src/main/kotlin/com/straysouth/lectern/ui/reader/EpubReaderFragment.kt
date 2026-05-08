@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.Decoration
 import android.webkit.WebView
+import androidx.webkit.WebViewClientCompat
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 
 class EpubReaderFragment : Fragment() {
@@ -49,6 +50,13 @@ class EpubReaderFragment : Fragment() {
     // repeatOnLifecycle(STARTED) relaunches its block on every STOPPED→STARTED transition;
     // without this flag the navigator would be replaced (and position reset) on every foreground.
     private var navigatorCommitted = false
+
+    // SECURITY A.2: Guards FragmentLifecycleCallbacks registration so it runs exactly once.
+    // Same pattern as navigatorCommitted — repeatOnLifecycle re-enters on every STARTED cycle
+    // and FragmentManager does not deduplicate registrations. Re-registering would accumulate
+    // redundant callbacks (each firing on every page-fragment view creation) and leak the
+    // anonymous object closures held by the child FragmentManager across lifecycle transitions.
+    private var blockingCallbackRegistered = false
 
     companion object {
         // Public so ReaderScreen can build the arguments Bundle via AndroidFragment.
@@ -129,22 +137,28 @@ class EpubReaderFragment : Fragment() {
                         // onSelectionStart/End, getViewportWidth, logError. The logError interface
                         // writes to Logcat but is harmless on release builds (debuggable=false).
                         // No file system, content://, or network capabilities are exposed.
-                        fragment.childFragmentManager.registerFragmentLifecycleCallbacks(
-                            object : FragmentManager.FragmentLifecycleCallbacks() {
-                                override fun onFragmentViewCreated(
-                                    fm: FragmentManager,
-                                    f: Fragment,
-                                    v: View,
-                                    savedInstanceState: Bundle?,
-                                ) {
-                                    // R2EpubPageFragment is internal to the Readium module —
-                                    // we cannot reference it directly. Instead, walk the view
-                                    // tree of every child fragment looking for WebViews.
-                                    wrapWebViewsIn(v)
-                                }
-                            },
-                            /* recursive = */ false,
-                        )
+                        if (!blockingCallbackRegistered) {
+                            fragment.childFragmentManager.registerFragmentLifecycleCallbacks(
+                                object : FragmentManager.FragmentLifecycleCallbacks() {
+                                    override fun onFragmentViewCreated(
+                                        fm: FragmentManager,
+                                        f: Fragment,
+                                        v: View,
+                                        savedInstanceState: Bundle?,
+                                    ) {
+                                        // R2EpubPageFragment is internal to the Readium module —
+                                        // we cannot reference it directly. Instead, walk the view
+                                        // tree of every child fragment looking for WebViews.
+                                        wrapWebViewsIn(v)
+                                    }
+                                },
+                                // recursive=true: resilient to future Readium nesting changes in
+                                // R2PagerAdapter. The !is EpubBlockingWebViewClient guard in
+                                // wrapWebViewsIn prevents double-wrapping regardless of depth.
+                                /* recursive = */ true,
+                            )
+                            blockingCallbackRegistered = true
+                        }
 
                         launch {
                             // StateFlow already skips equal values; no distinctUntilChanged needed.
@@ -245,9 +259,16 @@ class EpubReaderFragment : Fragment() {
         if (root is WebView) {
             // webViewClient (API 26+) returns the current client; wrapping is idempotent.
             val existing = root.webViewClient
-            if (existing !is EpubBlockingWebViewClient) {
+            // Readium sets a WebViewClientCompat subclass. Only wrap if not already wrapped
+            // and if the delegate is the expected compat type (guards against unknown clients).
+            if (existing !is EpubBlockingWebViewClient && existing is WebViewClientCompat) {
                 root.setWebViewClient(EpubBlockingWebViewClient(existing))
             }
+            // SECURITY A.5: content:// access is true by default and Readium never disables it.
+            // Readium's asset server uses https://readium/ exclusively — no content:// URIs are
+            // needed. Explicitly disabling closes the surface for EPUB JS calling content://
+            // URIs to access app data (contacts, media store, etc.).
+            root.settings.allowContentAccess = false
         } else if (root is ViewGroup) {
             for (i in 0 until root.childCount) {
                 wrapWebViewsIn(root.getChildAt(i))

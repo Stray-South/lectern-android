@@ -5,6 +5,7 @@ composeBom = "2026.04.01"
 room = "2.8.4"
 datastore = "1.2.1"
 appcompat = "1.7.0"
+webkit = "1.11.0"
 fragmentCompose = "1.8.9"
 readium = "3.1.2"
 cameraX = "1.4.0"
@@ -36,6 +37,7 @@ activity-compose = { group = "androidx.activity", name = "activity-compose", ver
 lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version = "2.8.7" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.15.0" }
 appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 fragment-compose = { group = "androidx.fragment", name = "fragment-compose", version.ref = "fragmentCompose" }
 readium-shared = { group = "org.readium.kotlin-toolkit", name = "readium-shared", version.ref = "readium" }
 readium-streamer = { group = "org.readium.kotlin-toolkit", name = "readium-streamer", version.ref = "readium" }
