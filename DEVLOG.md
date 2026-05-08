@@ -160,5 +160,25 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** libs.versions.toml, build.gradle.kts, LibraryViewModel.kt, LibraryScreen.kt,
   ReaderScreen.kt, ComicsPageRepository.kt (new), ComicsReaderViewModel.kt (new),
   ComicsReaderFragment.kt (new), strings.xml
-- **Next:** Sprint 9 — TBD (gaze tracking spike, annotations, or search).
+- **Next:** Sprint 9 — Book deletion.
+- **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 9 Book deletion
+- **Did:** Full book deletion pipeline. BookDao: `deleteById`. ReadingProgressDao: `deleteByBookId`
+  (no FK cascade — explicit delete required). LocatorRepository, PdfPageRepository,
+  ComicsPageRepository, AnchorRepository: each gains `remove(bookId)` via DataStore `prefs.remove(key)`.
+  LibraryViewModel: `deleteBook(book)` — deletion ordering: Room rows → DataStore keys (all 4 stores)
+  → `releasePersistableUriPermission` (wrapped in `runCatching` for SecurityException safety) →
+  cache file delete on `Dispatchers.IO`; `_deletedBookId MutableSharedFlow(replay=1)` + `acknowledgeDeletedBook()`
+  clears replay cache after each handled emission (prevents spurious close on re-import of same URI).
+  LibraryScreen: `BookRow` gains `combinedClickable` with `onLongClick`; `LibraryContent` holds
+  `bookPendingDelete` state; `DeleteBookDialog` private composable (M3 AlertDialog).
+  MainActivity: `LaunchedEffect(Unit)` collects `deletedBookId`; nulls `currentBookId`/`currentBookFormat`
+  if the open book is deleted; calls `acknowledgeDeletedBook()` after each emission.
+- **Why:** Sprint 9 target — users can remove books; all per-book storage is fully cleaned up including
+  URI permissions, cache files, and the EPUB visual anchor DataStore key.
+- **Files:** BookDao.kt, ReadingProgressDao.kt, LocatorRepository.kt, PdfPageRepository.kt,
+  ComicsPageRepository.kt, AnchorRepository.kt, LibraryViewModel.kt, LibraryScreen.kt,
+  MainActivity.kt, strings.xml, ComicsReaderViewModel.kt, PdfReaderViewModel.kt
+- **Next:** Sprint 10 — TBD (annotations, search, or gaze spike).
 - **Blockers:** none
