@@ -37,8 +37,9 @@ import java.util.UUID
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val pubRepository = PublicationRepository(application)
-    private val bookDao = AppDatabase.getInstance(application).bookDao()
-    private val readingProgressDao = AppDatabase.getInstance(application).readingProgressDao()
+    private val db = AppDatabase.getInstance(application)
+    private val bookDao = db.bookDao()
+    private val readingProgressDao = db.readingProgressDao()
     private val locatorRepository = LocatorRepository(application)
     private val pdfPageRepository = PdfPageRepository(application)
     private val comicsPageRepository = ComicsPageRepository(application)
@@ -85,7 +86,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private val _isImporting = MutableStateFlow(false)
-    val isImporting: StateFlow<Boolean> = _isImporting
+    val isImporting: StateFlow<Boolean> = _isImporting.asStateFlow()
 
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError.asStateFlow()
@@ -128,7 +129,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            val id = UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString()
+            val id = bookCacheId(uri.toString())
 
             try {
                 if (format == FORMAT_EPUB) {
@@ -165,7 +166,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 withContext(Dispatchers.IO) {
                     val cacheFile = File(
                         getApplication<Application>().cacheDir,
-                        UUID.nameUUIDFromBytes(filePath.toByteArray()).toString(),
+                        bookCacheId(filePath),
                     )
                     if (cacheFile.exists()) cacheFile.delete()
                     book.coverPath?.let { File(it).delete() }
@@ -229,6 +230,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         const val FORMAT_PDF = "PDF"
         const val FORMAT_CBZ = "CBZ"
         const val FORMAT_CBR = "CBR"
+
+        // Stable cache-file name derived from a URI or file-path string.
+        // Explicit UTF-8 encoding avoids platform-default-charset drift.
+        fun bookCacheId(key: String): String =
+            UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8)).toString()
 
         // Extension is the primary signal for comics — system MIME types for CBZ/CBR
         // are not standardised and vary across file managers.
