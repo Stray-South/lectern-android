@@ -146,12 +146,16 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         // ioSerial is serial (limitedParallelism(1)) — ordering is guaranteed.
         // A fresh CoroutineScope is used because viewModelScope is already cancelled here.
         CoroutineScope(ioSerial).launch {
-            renderer?.close()
-            renderer = null
-            pfd?.close()
-            pfd = null
-            bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
-            bitmapQueue.clear()
+            try {
+                renderer?.close()
+                renderer = null
+                pfd?.close()
+                pfd = null
+                bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
+                bitmapQueue.clear()
+            } catch (e: Exception) {
+                Log.e("PdfReaderViewModel", "Error during cleanup", e)
+            }
         }
     }
 }

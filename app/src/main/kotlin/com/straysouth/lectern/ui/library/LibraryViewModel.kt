@@ -95,7 +95,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val result = pubRepository.open(uri)
         if (result.isFailure) {
             Log.e("LibraryViewModel", "Cannot open publication: $uri", result.exceptionOrNull())
-            _importError.value = getApplication<Application>().getString(R.string.import_error_open_error)
+            _importError.value = getApplication<Application>().getString(R.string.import_error_epub_open)
             return
         }
         val pub = result.getOrThrow()

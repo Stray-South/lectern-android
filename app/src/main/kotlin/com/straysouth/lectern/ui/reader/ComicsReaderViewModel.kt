@@ -194,12 +194,16 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
         val currentBitmap = _pageBitmap.value
         // Post cleanup to ioSerial — guarantees it runs AFTER any in-flight renderPage.
         CoroutineScope(ioSerial).launch {
-            zipFile?.close()
-            zipFile = null
-            rarCacheFile?.delete()
-            rarCacheFile = null
-            bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
-            bitmapQueue.clear()
+            try {
+                zipFile?.close()
+                zipFile = null
+                rarCacheFile?.delete()
+                rarCacheFile = null
+                bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
+                bitmapQueue.clear()
+            } catch (e: Exception) {
+                Log.e("ComicsReaderViewModel", "Error during cleanup", e)
+            }
         }
     }
 
