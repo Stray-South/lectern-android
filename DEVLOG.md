@@ -205,5 +205,38 @@ Format: see .claude/skills/devlog/SKILL.md
   correctness hardening against mutable-state exposure and charset-drift in cache lookups.
 - **Files:** libs.versions.toml, build.gradle.kts, LibraryViewModel.kt, LibraryScreen.kt,
   BookDao.kt, MainActivity.kt, strings.xml, cover_placeholder.xml (new)
-- **Next:** Sprint 11 — TBD.
+- **Next:** Sprint 11 — Gaze tracking pipeline.
+- **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 11 Gaze tracking pipeline
+- **Did:** End-to-end gaze infrastructure: CameraX 1.4.0 + MediaPipe Tasks Vision
+  0.10.35 face landmark detection, ridge regression calibration (EJML 0.44.0),
+  1€ filter smoothing, DataStore-persisted calibration weights.
+  New files: GazeState (sealed, Tracking carries raw irisU/V + calibrated PointF),
+  GazeProvider (interface), CalibrationPoint/Result, OneEuroFilter, GazeProviderImpl,
+  GazeViewModel (activity-scoped), CalibrationScreen (3×3 dot overlay), CalibrationRepository.
+  GazeProviderImpl: `Dispatchers.Default.limitedParallelism(1)` serial confined dispatcher
+  (RULES.md requirement); `OUTPUT_IMAGE_FORMAT_RGBA_8888` (MediaPipe BitmapImageBuilder
+  requirement); `proxy.use{}` ImageProxy close contract; `SystemClock.uptimeMillis()`
+  monotonic timestamps; thermal throttle gated to API 29+ via `Build.VERSION_CODES.Q`.
+  CalibrationRepository keys: "weights_x" / "weights_y" — pass `check_gaze_data_leak.sh`.
+  Iris averaging: average of lm468+lm473 (both centers) per ADR-AND-L.
+  ReaderOverlay: RemoveRedEye icon (filled when tracking, outlined otherwise).
+  EpubReaderFragment: `activityViewModels()` GazeViewModel; real CAMERA permission
+  check in `onGazeToggle`.
+  ADR-AND-L.md: Focus Band V2 visual deferred to V3 (WebView has no TextLayoutResult).
+  scripts/download_models.sh: downloads face_landmarker.task (~3.6MB) on demand.
+  Code-review fixes: calibration correctness (was passing screen-space gazePoint as
+  iris UV input, poisoning regression); stop() uses suspendCancellableCoroutine (no
+  blocking .get()); ridge() uses check() for degenerate-data error; DataStore key scan
+  added to check_gaze_data_leak.sh.
+- **Why:** Sprint 11 target — gaze infrastructure + calibration UI + reader indicator.
+  Foundation for Focus Band V2 (Sprint 12+) and scroll-by-gaze (V3).
+- **Files:** gradle/libs.versions.toml, app/build.gradle.kts, AndroidManifest.xml,
+  data_extraction_rules.xml, GazeState.kt, GazeProvider.kt, CalibrationPoint.kt,
+  CalibrationResult.kt, OneEuroFilter.kt, GazeProviderImpl.kt, GazeViewModel.kt,
+  CalibrationScreen.kt, CalibrationRepository.kt, ReaderOverlay.kt,
+  EpubReaderFragment.kt, MainActivity.kt, strings.xml, docs/adr/ADR-AND-L.md,
+  scripts/download_models.sh, scripts/check_gaze_data_leak.sh
+- **Next:** Sprint 12 — TBD.
 - **Blockers:** none
