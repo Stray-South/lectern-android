@@ -4,14 +4,20 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.straysouth.lectern.R
+import com.straysouth.lectern.ui.theme.LecternTheme
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
@@ -21,7 +27,7 @@ class EpubReaderFragment : Fragment() {
 
     private val viewModel: EpubReaderViewModel by viewModels()
 
-    private var navigatorFragment: EpubNavigatorFragment? = null
+    private lateinit var overlay: ComposeView
 
     companion object {
         // Public so ReaderScreen can build the arguments Bundle via AndroidFragment.
@@ -77,13 +83,29 @@ class EpubReaderFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = FrameLayout(requireContext()).apply {
-        id = CONTAINER_ID
+    ): View {
+        val root = FrameLayout(requireContext())
+
+        val navigatorContainer = FrameLayout(requireContext()).apply {
+            id = CONTAINER_ID
+        }
+        root.addView(navigatorContainer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+
+        overlay = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                LecternTheme {
+                    val state by viewModel.state.collectAsState()
+                    ReaderOverlay(
+                        state = state,
+                        onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
+                    )
+                }
+            }
+        }
+        root.addView(overlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+
+        return root
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        navigatorFragment =
-            childFragmentManager.findFragmentByTag(TAG_NAVIGATOR) as? EpubNavigatorFragment
-    }
 }

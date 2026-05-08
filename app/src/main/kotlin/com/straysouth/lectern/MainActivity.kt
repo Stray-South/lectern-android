@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.straysouth.lectern.ui.library.LibraryScreen
@@ -30,10 +31,11 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContent {
             LecternTheme {
+                val cdApp = stringResource(R.string.cd_app)
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
-                        .semantics { contentDescription = "Lectern" },
+                        .semantics { contentDescription = cdApp },
                     color = MaterialTheme.colorScheme.background,
                 ) {
                     // Process death resets to null — user lands on library and resumes

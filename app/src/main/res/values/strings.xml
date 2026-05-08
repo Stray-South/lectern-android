@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lectern</string>
+    <string name="no_books_yet">No books yet</string>
+    <string name="book_title_untitled">Untitled</string>
+    <string name="cd_library">Library screen</string>
+    <string name="cd_app">Lectern</string>
+    <string name="cd_reader">Reader</string>
+    <string name="cd_import_book">Import book</string>
+    <string name="cd_reader_loading">Loading book</string>
+    <string name="cd_reader_error">Reader error</string>
+    <string name="btn_back_to_library">Back to library</string>
 </resources>

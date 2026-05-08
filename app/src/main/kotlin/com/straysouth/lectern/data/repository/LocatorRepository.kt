@@ -1,6 +1,7 @@
 package com.straysouth.lectern.data.repository
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -27,7 +28,9 @@ class LocatorRepository(context: Context) {
     fun observe(bookId: String): Flow<Locator?> =
         context.readerPrefs.data.map { prefs ->
             prefs[keyFor(bookId)]?.let { json ->
-                runCatching { Locator.fromJSON(JSONObject(json)) }.getOrNull()
+                runCatching { Locator.fromJSON(JSONObject(json)) }
+                    .onFailure { Log.w("LocatorRepository", "Failed to parse locator for $bookId", it) }
+                    .getOrNull()
             }
         }
 

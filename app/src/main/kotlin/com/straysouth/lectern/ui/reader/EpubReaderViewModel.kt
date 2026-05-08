@@ -2,6 +2,7 @@ package com.straysouth.lectern.ui.reader
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.data.db.AppDatabase
@@ -42,6 +43,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             val filePath = bookDao.getById(bookId)?.filePath
             if (filePath == null) {
+                _loading.set(false)
                 _state.value = State.Error("Book not found")
                 return@launch
             }
@@ -55,13 +57,17 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                         navigatorFactory = EpubNavigatorFactory(publication),
                         initialLocator = savedLocator,
                     )
+                    _loading.set(false)
                 }
                 .onFailure { error ->
-                    _state.value = State.Error(error.message ?: "Failed to open publication")
+                    _loading.set(false)
+                    Log.e("EpubReaderViewModel", "Failed to open publication", error)
+                    _state.value = State.Error("Failed to open publication")
                 }
         }
     }
 
+    // Called by the reader once EpubNavigatorFragment.currentLocator is observed.
     fun saveLocator(bookId: String, locator: Locator) {
         viewModelScope.launch {
             locatorRepository.save(bookId, locator)

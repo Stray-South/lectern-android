@@ -2,7 +2,7 @@
 
 An AuDHD-first reading app for Android. Native Kotlin 2.3.21 / Jetpack Compose.
 
-**Status:** In development — Sprint 1 scaffold complete.
+**Status:** In development — Sprint 2 EPUB reader complete.
 
 **iOS version:** [Stray-South/lectern-ios](https://github.com/Stray-South/lectern-ios)
 
@@ -12,7 +12,7 @@ An AuDHD-first reading app for Android. Native Kotlin 2.3.21 / Jetpack Compose.
 |---|---|
 | Language | Kotlin 2.3.21 |
 | UI | Jetpack Compose + Material 3 |
-| EPUB | Readium Kotlin 3.1.2 (Sprint 2) |
+| EPUB | Readium Kotlin 3.1.2 ✅ |
 | Persistence | Room 2.8.4 + DataStore 1.2.1 |
 | Gaze | MediaPipe Face Landmarker 0.10.32 (Sprint 6) |
 | Min SDK | API 26 (Android 8.0) |
