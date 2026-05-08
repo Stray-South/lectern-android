@@ -14,6 +14,9 @@ interface ReadingProgressDao {
     @Query("SELECT * FROM reading_progress WHERE bookId = :bookId LIMIT 1")
     suspend fun getForBook(bookId: String): ReadingProgress?
 
+    @Query("SELECT * FROM reading_progress")
+    fun observeAll(): Flow<List<ReadingProgress>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(progress: ReadingProgress)
 }

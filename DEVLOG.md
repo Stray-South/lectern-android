@@ -74,3 +74,20 @@ Format: see .claude/skills/devlog/SKILL.md
   strings.xml, config/detekt/detekt.yml
 - **Next:** Sprint 5 — spaced retrieval / highlights persistence.
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 5 Reading position persistence + library progress
+- **Did:** ReadingProgressDao: added observeAll() returning Flow<List<ReadingProgress>>.
+  EpubReaderViewModel: dual-write in saveLocator() — LocatorRepository (DataStore, CFI
+  locator for navigation restore on next open) + ReadingProgressDao (Room, totalProgression
+  for library display). EpubReaderFragment: setupNavigator() now collects fragment.currentLocator
+  (StateFlow — no distinctUntilChanged needed; operator fusion handles deduplication) and
+  calls viewModel.saveLocator on each emission. LibraryViewModel: progressByBookId
+  StateFlow<Map<String,Double>> built from readingProgressDao.observeAll(). LibraryScreen:
+  book rows replaced with BookRow private composable showing title + LinearProgressIndicator
+  when progress is non-null; BookRow extraction keeps LibraryScreen under LongMethod threshold.
+- **Why:** Sprint 5 target — reader position survives process death; library shows per-book
+  reading progress without a separate network call.
+- **Files:** ReadingProgressDao.kt, EpubReaderViewModel.kt, EpubReaderFragment.kt,
+  LibraryViewModel.kt, LibraryScreen.kt
+- **Next:** Sprint 6 — spaced retrieval / highlights persistence.
+- **Blockers:** none

@@ -12,6 +12,7 @@ import com.straysouth.lectern.data.repository.PublicationRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -20,6 +21,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val pubRepository = PublicationRepository(application)
     private val bookDao = AppDatabase.getInstance(application).bookDao()
+    private val readingProgressDao = AppDatabase.getInstance(application).readingProgressDao()
 
     val books: StateFlow<List<Book>> =
         bookDao.observeAll()
@@ -28,6 +30,17 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = emptyList(),
             )
+
+    val progressByBookId: StateFlow<Map<String, Double>> =
+        readingProgressDao.observeAll()
+            .map { rows ->
+                rows.mapNotNull { r ->
+                    val id = r.bookId ?: return@mapNotNull null
+                    val p = r.totalProgression ?: return@mapNotNull null
+                    id to p
+                }.toMap()
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private val _isImporting = MutableStateFlow(false)
     val isImporting: StateFlow<Boolean> = _isImporting

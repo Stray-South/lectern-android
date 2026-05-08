@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.data.db.AppDatabase
+import com.straysouth.lectern.data.db.ReadingProgress
 import com.straysouth.lectern.data.repository.LocatorRepository
 import com.straysouth.lectern.data.repository.PublicationRepository
 import com.straysouth.lectern.data.repository.TtsPrefs
@@ -52,6 +53,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private val typographyRepository = TypographyRepository(application)
     private val ttsRepository = TtsRepository(application)
     private val bookDao = AppDatabase.getInstance(application).bookDao()
+    private val readingProgressDao = AppDatabase.getInstance(application).readingProgressDao()
 
     sealed class State {
         object Loading : State()
@@ -119,10 +121,20 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // Called by the reader once EpubNavigatorFragment.currentLocator is observed.
+    // Called on every page turn. Dual-writes: LocatorRepository for navigation restore
+    // on next open; ReadingProgressDao for totalProgression display in the library.
     fun saveLocator(bookId: String, locator: Locator) {
         viewModelScope.launch {
             locatorRepository.save(bookId, locator)
+            readingProgressDao.upsert(
+                ReadingProgress(
+                    id = bookId,
+                    bookId = bookId,
+                    locatorJson = locator.toJSON().toString(),
+                    totalProgression = locator.locations.totalProgression,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
         }
     }
 

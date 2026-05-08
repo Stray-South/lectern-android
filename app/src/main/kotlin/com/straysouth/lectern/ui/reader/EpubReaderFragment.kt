@@ -86,6 +86,14 @@ class EpubReaderFragment : Fragment() {
                         navigatorFragment =
                             childFragmentManager.findFragmentByTag(TAG_NAVIGATOR)
                                 as? EpubNavigatorFragment
+                        // Persist position on every page turn.
+                        val bookId = arguments?.getString(ARG_BOOK_ID) ?: return@collect
+                        val fragment = navigatorFragment ?: return@collect
+                        launch {
+                            // StateFlow already skips equal values; no distinctUntilChanged needed.
+                            fragment.currentLocator
+                                .collect { locator -> viewModel.saveLocator(bookId, locator) }
+                        }
                     }
             }
         }

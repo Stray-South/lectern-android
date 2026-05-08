@@ -4,8 +4,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +19,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,6 +44,7 @@ fun LibraryScreen(
 ) {
     val books by viewModel.books.collectAsState()
     val isImporting by viewModel.isImporting.collectAsState()
+    val progressByBookId by viewModel.progressByBookId.collectAsState()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -83,18 +88,38 @@ fun LibraryScreen(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(books, key = { it.id }) { book ->
                         val title = book.title ?: stringResource(R.string.book_title_untitled)
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clickable(role = Role.Button) { onBookSelected(book) }
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        BookRow(
+                            title = title,
+                            progress = progressByBookId[book.id],
+                            onClick = { onBookSelected(book) },
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BookRow(
+    title: String,
+    progress: Double?,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button) { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(text = title, style = MaterialTheme.typography.bodyLarge)
+        if (progress != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { progress.toFloat() },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
