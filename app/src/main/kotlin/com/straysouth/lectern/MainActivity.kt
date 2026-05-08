@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +43,16 @@ class MainActivity : AppCompatActivity() {
                     // from DataStore-persisted locator on next open. Intentional.
                     var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
                     var currentBookFormat by rememberSaveable { mutableStateOf<String?>(null) }
+
+                    // Navigate back to library if the currently-open book is deleted.
+                    LaunchedEffect(Unit) {
+                        libraryViewModel.deletedBookId.collect { deletedId ->
+                            if (currentBookId == deletedId) {
+                                currentBookId = null
+                                currentBookFormat = null
+                            }
+                        }
+                    }
 
                     BackHandler(enabled = currentBookId != null) {
                         currentBookId = null

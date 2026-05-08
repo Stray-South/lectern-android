@@ -36,4 +36,8 @@
     <string name="cd_comics_page_view">Comic page viewer</string>
     <string name="import_error_unsupported_format">Unsupported file format</string>
     <string name="import_error_epub_open">Unable to open book</string>
+    <string name="delete_book_title">Remove book</string>
+    <string name="delete_book_message">Remove \"%1$s\" from your library?</string>
+    <string name="delete_book_confirm">Remove</string>
+    <string name="cd_delete_book">Delete book</string>
 </resources>

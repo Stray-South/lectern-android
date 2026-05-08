@@ -153,7 +153,7 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                 pfd = null
                 bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
                 bitmapQueue.clear()
-            } catch (e: Exception) {
+            } catch (e: java.io.IOException) {
                 Log.e("PdfReaderViewModel", "Error during cleanup", e)
             }
         }

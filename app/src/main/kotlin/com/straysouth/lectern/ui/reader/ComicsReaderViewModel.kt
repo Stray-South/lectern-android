@@ -201,7 +201,7 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
                 rarCacheFile = null
                 bitmapQueue.forEach { if (it !== currentBitmap) it.recycle() }
                 bitmapQueue.clear()
-            } catch (e: Exception) {
+            } catch (e: java.io.IOException) {
                 Log.e("ComicsReaderViewModel", "Error during cleanup", e)
             }
         }
