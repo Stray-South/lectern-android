@@ -14,3 +14,5 @@ build/
 .cxx
 local.properties
 *.hprof
+# MediaPipe model file — download via scripts/download_models.sh
+app/src/main/assets/face_landmarker.task

@@ -75,6 +75,12 @@ dependencies {
     implementation(libs.junrar)
     implementation(libs.coil.compose)
     implementation(libs.coil.android)
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.mediapipe.tasks.vision)
+    implementation(libs.ejml.all)
 
     ksp(libs.room.compiler)
 

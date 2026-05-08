@@ -4,6 +4,12 @@
     <!-- Internet only for future Supabase sync (V2) — not used in V1 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Gaze tracking — front camera required at runtime, optional at install -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+    <!-- required=false: tablets without a front camera are not filtered from Play Store -->
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+
     <!-- TTS — queries installed TTS engines -->
     <queries>
         <intent>
