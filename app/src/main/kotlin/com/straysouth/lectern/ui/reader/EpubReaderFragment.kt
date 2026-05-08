@@ -35,6 +35,11 @@ class EpubReaderFragment : Fragment() {
     // and apply TTS word decorations.
     private var navigatorFragment: EpubNavigatorFragment? = null
 
+    // Guards the childFragmentManager.commit so it runs exactly once per Fragment instance.
+    // repeatOnLifecycle(STARTED) relaunches its block on every STOPPED→STARTED transition;
+    // without this flag the navigator would be replaced (and position reset) on every foreground.
+    private var navigatorCommitted = false
+
     companion object {
         // Public so ReaderScreen can build the arguments Bundle via AndroidFragment.
         // Direct instantiation is not supported — use AndroidFragment<EpubReaderFragment>
@@ -57,14 +62,14 @@ class EpubReaderFragment : Fragment() {
         // True only on config change: ViewModel survived, existing navigator is functional.
         val isConfigChange = viewModel.state.value is EpubReaderViewModel.State.Ready
         viewModel.load(bookId)
-        setupNavigator(isConfigChange)
+        setupNavigator(isConfigChange, bookId)
         setupTypographyObserver()
         setupTtsObserver()
     }
 
     // ── Private lifecycle helpers ─────────────────────────────────────────────
 
-    private fun setupNavigator(isConfigChange: Boolean) {
+    private fun setupNavigator(isConfigChange: Boolean, bookId: String) {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.state
@@ -76,18 +81,17 @@ class EpubReaderFragment : Fragment() {
                                 initialLocator = state.initialLocator,
                                 initialPreferences = state.initialTypography,
                             )
-                        if (!isConfigChange) {
+                        if (!isConfigChange && !navigatorCommitted) {
                             childFragmentManager.commit {
                                 setReorderingAllowed(true)
                                 replace(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
                             }
                             childFragmentManager.executePendingTransactions()
+                            navigatorCommitted = true
                         }
                         navigatorFragment =
                             childFragmentManager.findFragmentByTag(TAG_NAVIGATOR)
                                 as? EpubNavigatorFragment
-                        // Persist position on every page turn.
-                        val bookId = arguments?.getString(ARG_BOOK_ID) ?: return@collect
                         val fragment = navigatorFragment ?: return@collect
                         launch {
                             // StateFlow already skips equal values; no distinctUntilChanged needed.

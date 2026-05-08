@@ -23,7 +23,6 @@ import kotlinx.coroutines.launch
 import org.readium.navigator.media.tts.TtsNavigator
 import org.readium.navigator.media.tts.TtsNavigatorFactory
 import org.readium.navigator.media.tts.android.AndroidTtsEngine
-import org.readium.navigator.media.tts.android.AndroidTtsEngineProvider
 import org.readium.navigator.media.tts.android.AndroidTtsPreferences
 import org.readium.navigator.media.tts.android.AndroidTtsPreferencesEditor
 import org.readium.navigator.media.tts.android.AndroidTtsSettings
@@ -101,8 +100,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                     _publication = publication
                     bookDao.updateLastOpened(bookId, System.currentTimeMillis())
                     val app = getApplication<Application>()
-                    // Android-specific companion invoke: TtsNavigatorFactory(Application, Publication)
-                    // uses AndroidTtsEngineProvider internally with all defaults.
+                    // Android-specific companion invoke: uses AndroidTtsEngineProvider internally.
                     val ttsFactory: AndroidTtsFactory? = TtsNavigatorFactory(app, publication)
                     _state.value = State.Ready(
                         publication = publication,

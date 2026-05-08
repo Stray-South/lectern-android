@@ -110,7 +110,7 @@ private fun BookRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clickable(role = Role.Button) { onClick() }
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(text = title, style = MaterialTheme.typography.bodyLarge)
