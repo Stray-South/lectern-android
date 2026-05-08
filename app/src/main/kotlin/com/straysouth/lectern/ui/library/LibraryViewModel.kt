@@ -69,8 +69,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     // navigate back to the library if the deleted book is currently open.
     // replay=1 ensures the emission is not lost if the Activity recreates (rotation)
     // between the delete coroutine firing and the new LaunchedEffect subscribing.
+    // Call acknowledgeDeletedBook() after handling the emission so the replayed id
+    // is cleared — prevents spurious navigation if the same file is re-imported.
     private val _deletedBookId = MutableSharedFlow<String>(replay = 1)
     val deletedBookId: SharedFlow<String> = _deletedBookId.asSharedFlow()
+
+    fun acknowledgeDeletedBook() {
+        _deletedBookId.resetReplayCache()
+    }
 
     fun clearImportError() {
         _importError.value = null

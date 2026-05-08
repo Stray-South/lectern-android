@@ -45,12 +45,16 @@ class MainActivity : AppCompatActivity() {
                     var currentBookFormat by rememberSaveable { mutableStateOf<String?>(null) }
 
                     // Navigate back to library if the currently-open book is deleted.
+                    // acknowledgeDeletedBook() clears the replay cache so a re-imported
+                    // file with the same URI (and thus the same UUID) does not
+                    // spuriously close the newly-opened reader.
                     LaunchedEffect(Unit) {
                         libraryViewModel.deletedBookId.collect { deletedId ->
                             if (currentBookId == deletedId) {
                                 currentBookId = null
                                 currentBookFormat = null
                             }
+                            libraryViewModel.acknowledgeDeletedBook()
                         }
                     }
 
