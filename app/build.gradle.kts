@@ -73,6 +73,8 @@ dependencies {
     implementation(libs.kotlinx.serialization)
     implementation(libs.zip4j)
     implementation(libs.junrar)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.android)
 
     ksp(libs.room.compiler)
 
