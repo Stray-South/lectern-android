@@ -295,3 +295,27 @@ Format: see .claude/skills/devlog/SKILL.md
   or PDF typography controls).
 - **Blockers:** CalibrationScreen is scaffolded but has no navigation entry point — gaze
   calibration is unreachable in the running app.
+
+## 2026-05-08T00:00Z — Sprint 14 CalibrationScreen entry point
+- **Did:** Wired the previously unreachable CalibrationScreen into the running app.
+  `internal const val CALIBRATION_TOTAL_POINTS = GRID_COLS * GRID_COLS` added to
+  CalibrationScreen.kt — single source of truth used by both the screen and the call sites.
+  `onCalibrate: () -> Unit` added to `ReaderOverlay`, `ReadyOverlay`, and `ReaderToolbar`
+  signatures. `Icons.Filled.CenterFocusStrong` `IconButton` added to `ReaderToolbar` inside
+  `AnimatedVisibility(visible = gazeEnabled)` (200ms fade, same pattern as anchor dismiss) —
+  calibrate button only appears when the camera is already running. `EpubReaderFragment` wires
+  `onCalibrate = { gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS) }`.
+  `AppContent` (MainActivity) collects `calibrationUiState` and `gazeState`; renders
+  `CalibrationScreen` as a full-screen overlay (Surface alpha=0.95) when state is not Idle.
+  Placement is at Activity `setContent` level — correct coordinate root for `positionInRoot()`
+  dot measurements (edge-to-edge window). `BackHandler` cancels calibration on back press;
+  LIFO ordering vs. the reader BackHandler documented inline.
+  Review fix: `CalibrationHeader` now uses `state.totalPoints` instead of a local recomputation
+  from `GRID_COLS * GRID_COLS` — stays correct if `startCalibration()` is called with a
+  non-default count.
+- **Why:** Sprint 14 target — calibration is the prerequisite for any gaze feature; making
+  it reachable closes the last Sprint 11 gap.
+- **Files:** CalibrationScreen.kt, ReaderOverlay.kt, EpubReaderFragment.kt, MainActivity.kt,
+  strings.xml
+- **Next:** Sprint 15 — TBD.
+- **Blockers:** none
