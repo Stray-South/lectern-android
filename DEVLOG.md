@@ -138,3 +138,27 @@ Format: see .claude/skills/devlog/SKILL.md
   PdfReaderViewModel.kt (new), PdfReaderFragment.kt (new), strings.xml
 - **Next:** Sprint 8 — Comics pipeline (CBZ/CBR) or gaze tracking spike.
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 8 Comics pipeline (CBZ/CBR)
+- **Did:** zip4j 2.11.6 and junrar 7.5.7 added as dependencies. `detectFormat()`
+  extended: extension-primary detection (cbz/cbr before MIME — MIME unreliable across
+  file managers); single `return when` expression to satisfy detekt ReturnCount ≤ 2.
+  LibraryScreen: `IMPORT_MIME_TYPES` extracted as private file-level constant including
+  `application/vnd.comicbook+zip` and `application/vnd.comicbook-rar`. LibraryViewModel:
+  `importBook()` refactored — `importEpub()`, `importByFilename()`, `book()` extracted as
+  private helpers; keeps importBook under LongMethod threshold. ReaderScreen: CBZ/CBR branch
+  added alongside PDF/EPUB. ComicsPageRepository: DataStore `"comics_page_prefs"` mirrors
+  PdfPageRepository. ComicsReaderViewModel: `ioSerial = Dispatchers.IO.limitedParallelism(1)`;
+  `ZipFile`/`Archive` held open across page turns (not reopened per page); `uriToFile()` copies
+  content:// URIs to cache dir (zip4j/junrar require `java.io.File`); `UnsupportedRarV5Exception`
+  caught → user-facing "Convert to CBZ" message; `saveProgress()` called outside `withContext`
+  (Room/DataStore main-safe per RULES.md); `onCleared()` cleanup via `CoroutineScope(ioSerial).launch`
+  (guarantees no race with in-flight renderPage). ComicsReaderFragment: ComposeView Fragment;
+  horizontal swipe gesture (50px threshold); Loading/Error/ComicsPageView composables; page indicator.
+- **Why:** Sprint 8 target — CBZ/CBR comics readable alongside EPUB/PDF; library progress bar
+  works for comics; handles RAR5 gracefully with user-actionable error.
+- **Files:** libs.versions.toml, build.gradle.kts, LibraryViewModel.kt, LibraryScreen.kt,
+  ReaderScreen.kt, ComicsPageRepository.kt (new), ComicsReaderViewModel.kt (new),
+  ComicsReaderFragment.kt (new), strings.xml
+- **Next:** Sprint 9 — TBD (gaze tracking spike, annotations, or search).
+- **Blockers:** none

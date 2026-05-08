@@ -31,4 +31,6 @@
     <string name="cd_pdf_loading">Loading PDF</string>
     <string name="cd_pdf_error">PDF error</string>
     <string name="label_page_of">%1$d of %2$d</string>
+    <string name="cd_comics_loading">Loading comic</string>
+    <string name="cd_comics_error">Comic error</string>
 </resources>

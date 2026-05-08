@@ -71,6 +71,8 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.serialization)
+    implementation(libs.zip4j)
+    implementation(libs.junrar)
 
     ksp(libs.room.compiler)
 

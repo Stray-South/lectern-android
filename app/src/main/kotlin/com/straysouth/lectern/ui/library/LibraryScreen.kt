@@ -36,6 +36,13 @@ import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.R
 import com.straysouth.lectern.data.db.Book
 
+private val IMPORT_MIME_TYPES = arrayOf(
+    "application/epub+zip",
+    "application/pdf",
+    "application/vnd.comicbook+zip",
+    "application/vnd.comicbook-rar",
+)
+
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
@@ -56,7 +63,7 @@ fun LibraryScreen(
         modifier = modifier.semantics { contentDescription = cdLibrary },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { if (!isImporting) launcher.launch(arrayOf("application/epub+zip", "application/pdf")) },
+                onClick = { if (!isImporting) launcher.launch(IMPORT_MIME_TYPES) },
             ) {
                 if (isImporting) {
                     CircularProgressIndicator(

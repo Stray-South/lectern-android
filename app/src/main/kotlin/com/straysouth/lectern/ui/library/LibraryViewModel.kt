@@ -62,58 +62,67 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val format = detectFormat(uri, getApplication<Application>().contentResolver)
             val id = UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString()
 
-            if (format == FORMAT_PDF) {
-                val title = uri.lastPathSegment
-                    ?.substringBeforeLast('.')
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "Untitled"
-                bookDao.upsert(
-                    Book(
-                        id = id,
-                        title = title,
-                        filePath = uri.toString(),
-                        coverPath = null,
-                        addedAt = System.currentTimeMillis(),
-                        lastOpenedAt = null,
-                        format = FORMAT_PDF,
-                    ),
-                )
+            if (format == FORMAT_EPUB) {
+                importEpub(uri, id)
             } else {
-                val result = pubRepository.open(uri)
-                if (result.isFailure) {
-                    Log.e("LibraryViewModel", "Cannot open publication: $uri", result.exceptionOrNull())
-                    _isImporting.value = false
-                    return@launch
-                }
-                val pub = result.getOrThrow()
-                val title = pub.metadata.title?.takeIf { it.isNotBlank() }
-                    ?: uri.lastPathSegment
-                    ?: "Untitled"
-                pub.close()
-                bookDao.upsert(
-                    Book(
-                        id = id,
-                        title = title,
-                        filePath = uri.toString(),
-                        coverPath = null,
-                        addedAt = System.currentTimeMillis(),
-                        lastOpenedAt = null,
-                        format = FORMAT_EPUB,
-                    ),
-                )
+                importByFilename(uri, id, format)
             }
             _isImporting.value = false
         }
     }
 
+    // Imports via Readium to extract publication title.
+    private suspend fun importEpub(uri: Uri, id: String) {
+        val result = pubRepository.open(uri)
+        if (result.isFailure) {
+            Log.e("LibraryViewModel", "Cannot open publication: $uri", result.exceptionOrNull())
+            _isImporting.value = false
+            return
+        }
+        val pub = result.getOrThrow()
+        val title = pub.metadata.title?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment
+            ?: "Untitled"
+        pub.close()
+        bookDao.upsert(book(id, uri, title, FORMAT_EPUB))
+    }
+
+    // Imports PDF/CBZ/CBR using filename as title (no Readium call).
+    private suspend fun importByFilename(uri: Uri, id: String, format: String) {
+        val title = uri.lastPathSegment
+            ?.substringBeforeLast('.')
+            ?.takeIf { it.isNotBlank() }
+            ?: "Untitled"
+        bookDao.upsert(book(id, uri, title, format))
+    }
+
+    private fun book(id: String, uri: Uri, title: String, format: String) = Book(
+        id = id,
+        title = title,
+        filePath = uri.toString(),
+        coverPath = null,
+        addedAt = System.currentTimeMillis(),
+        lastOpenedAt = null,
+        format = format,
+    )
+
     companion object {
         const val FORMAT_EPUB = "EPUB"
         const val FORMAT_PDF = "PDF"
+        const val FORMAT_CBZ = "CBZ"
+        const val FORMAT_CBR = "CBR"
 
+        // Extension is the primary signal for comics — system MIME types for CBZ/CBR
+        // are not standardised and vary across file managers.
         fun detectFormat(uri: Uri, contentResolver: ContentResolver): String {
-            val mime = contentResolver.getType(uri)
             val ext = uri.lastPathSegment?.substringAfterLast('.')?.lowercase()
-            return if (mime == "application/pdf" || ext == "pdf") FORMAT_PDF else FORMAT_EPUB
+            val mime = contentResolver.getType(uri)
+            return when {
+                ext == "cbz" || mime == "application/vnd.comicbook+zip" -> FORMAT_CBZ
+                ext == "cbr" || mime == "application/vnd.comicbook-rar" -> FORMAT_CBR
+                ext == "pdf" || mime == "application/pdf" -> FORMAT_PDF
+                else -> FORMAT_EPUB
+            }
         }
     }
 }

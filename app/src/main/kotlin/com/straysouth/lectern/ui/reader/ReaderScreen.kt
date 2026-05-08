@@ -21,23 +21,23 @@ fun ReaderScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            // mergeDescendants = false (default) — TalkBack must traverse into the
-            // Fragment's WebView / Compose accessibility tree.
+            // mergeDescendants = false — TalkBack must traverse the Fragment's accessibility tree.
             .semantics(mergeDescendants = false) { contentDescription = cdReader },
     ) {
-        if (format == "PDF") {
-            // fillMaxSize is mandatory — zero-size container causes blank rendering.
-            AndroidFragment<PdfReaderFragment>(
+        when (format) {
+            "PDF" -> AndroidFragment<PdfReaderFragment>(
                 modifier = Modifier.fillMaxSize(),
                 arguments = bundleOf(PdfReaderFragment.ARG_BOOK_ID to bookId),
             )
-        } else {
-            // fillMaxSize is mandatory — zero-size container causes blank WebView (Discussion #513).
-            // AndroidFragment removal handled by fragment-compose DisposableEffect.
-            AndroidFragment<EpubReaderFragment>(
+            "CBZ", "CBR" -> AndroidFragment<ComicsReaderFragment>(
                 modifier = Modifier.fillMaxSize(),
-                arguments = bundleOf(EpubReaderFragment.ARG_BOOK_ID to bookId),
+                arguments = bundleOf(ComicsReaderFragment.ARG_BOOK_ID to bookId),
             )
+            else -> // fillMaxSize mandatory — zero-size causes blank WebView (Discussion #513).
+                AndroidFragment<EpubReaderFragment>(
+                    modifier = Modifier.fillMaxSize(),
+                    arguments = bundleOf(EpubReaderFragment.ARG_BOOK_ID to bookId),
+                )
         }
     }
 }
