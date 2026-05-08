@@ -79,6 +79,7 @@ class EpubReaderFragment : Fragment() {
         setupTypographyObserver()
         setupTtsObserver()
         setupAnchorObserver()
+        setupGazeTtsBridge()
     }
 
     // ── Private lifecycle helpers ─────────────────────────────────────────────
@@ -156,6 +157,26 @@ class EpubReaderFragment : Fragment() {
                         emptyList()
                     }
                     navigatorFragment?.applyDecorations(bandDecorations, FOCUS_BAND_DECORATION_GROUP)
+                }
+            }
+        }
+    }
+
+    /**
+     * Pauses gaze inference while TTS is actively playing; resumes on pause/stop.
+     * Uses pauseAnalysis/resumeAnalysis (clearAnalyzer/setAnalyzer) — ~0 ms, no
+     * CameraX rebind, no GPU delegate teardown. Cuts CPU/thermal load on low-end
+     * minSdk 26 hardware when both pipelines would otherwise run concurrently.
+     */
+    private fun setupGazeTtsBridge() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.ttsUiState.collect { state ->
+                    if (state is TtsUiState.Active && state.isPlaying) {
+                        gazeViewModel.pauseForTts()
+                    } else {
+                        gazeViewModel.resumeFromTts()
+                    }
                 }
             }
         }

@@ -55,6 +55,9 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
     private var lifecycleOwner: LifecycleOwner? = null
     private var provider: GazeProvider? = null
     private val pendingCalibrationPoints = mutableListOf<CalibrationPoint>()
+    // True while TTS is playing and has suppressed gaze inference. Cleared by stopGazeInternal()
+    // so a manual gaze-off during TTS does not leave the flag dangling.
+    private var gazePausedByTts = false
 
     /** Called from MainActivity.onCreate() — must be set before toggleGaze(). */
     fun attachLifecycleOwner(owner: LifecycleOwner) {
@@ -82,6 +85,30 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 _needsPermission.value = true
             }
+        }
+    }
+
+    /**
+     * Called by EpubReaderFragment's TTS bridge when TTS starts playing.
+     * Stops frame delivery without tearing down CameraX or the GPU delegate (~0 ms).
+     * No-op if gaze is disabled or already paused by TTS.
+     */
+    fun pauseForTts() {
+        if (_gazeEnabled.value && !gazePausedByTts) {
+            provider?.pauseAnalysis()
+            gazePausedByTts = true
+        }
+    }
+
+    /**
+     * Called by EpubReaderFragment's TTS bridge when TTS pauses or stops.
+     * Restores frame delivery; state updates to Tracking on next analyzed frame.
+     * No-op if gaze was not paused by TTS.
+     */
+    fun resumeFromTts() {
+        if (gazePausedByTts) {
+            gazePausedByTts = false
+            provider?.resumeAnalysis()
         }
     }
 
@@ -141,6 +168,7 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun stopGazeInternal() {
+        gazePausedByTts = false   // clear TTS flag so re-enable works cleanly
         _gazeEnabled.value = false
         _gazeState.value = GazeState.Paused
         viewModelScope.launch {

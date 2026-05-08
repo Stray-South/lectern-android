@@ -58,6 +58,9 @@ class GazeProviderImpl(
     private var landmarker: FaceLandmarker? = null
     private var calibration: CalibrationResult? = null
     private val analysisExecutor = Executors.newSingleThreadExecutor()
+    // Stored as a field so pauseAnalysis/resumeAnalysis can clear/restore the analyzer
+    // without tearing down the CameraX binding or the GPU delegate.
+    private var imageAnalysis: ImageAnalysis? = null
     private val filterX = OneEuroFilter(freq = 30.0)
     private val filterY = OneEuroFilter(freq = 30.0)
 
@@ -83,8 +86,21 @@ class GazeProviderImpl(
         analysisExecutor.shutdown()
         landmarker?.close()
         landmarker = null
+        imageAnalysis = null
         _state.value = GazeState.Paused
         scope.cancel()
+    }
+
+    override fun pauseAnalysis() {
+        // clearAnalyzer() is thread-safe per CameraX contract. Camera stays bound;
+        // GPU delegate stays warm — resume is ~0 ms with no re-init cost.
+        imageAnalysis?.clearAnalyzer()
+        _state.value = GazeState.Paused
+    }
+
+    override fun resumeAnalysis() {
+        // Re-attach analyzer; state updates to Tracking on next analyzed frame.
+        imageAnalysis?.setAnalyzer(analysisExecutor, ::analyzeFrame)
     }
 
     /**
@@ -151,6 +167,7 @@ class GazeProviderImpl(
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
             .also { it.setAnalyzer(analysisExecutor, ::analyzeFrame) }
+        imageAnalysis = analysis
         withContext(Dispatchers.Main) {
             provider.unbindAll()
             provider.bindToLifecycle(
