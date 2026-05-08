@@ -32,9 +32,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.R
 import com.straysouth.lectern.gaze.CalibrationPoint
+import com.straysouth.lectern.gaze.GazeState
 
 private const val GRID_COLS = 3
-private const val GRID_ROWS = 3
 private val GRID_FRACTIONS = listOf(0.1f, 0.5f, 0.9f)
 private val DOT_SIZE = 24.dp
 private val DOT_COLOR = Color(0xFFFF6B35)  // warm orange — visible on all reader themes
@@ -49,12 +49,12 @@ private val DOT_COLOR = Color(0xFFFF6B35)  // warm orange — visible on all rea
 @Composable
 fun CalibrationScreen(
     state: CalibrationUiState,
-    gazeState: com.straysouth.lectern.gaze.GazeState,
+    gazeState: GazeState,
     onRecordPoint: (CalibrationPoint) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val totalPoints = GRID_COLS * GRID_ROWS
+    val totalPoints = GRID_COLS * GRID_COLS
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -65,7 +65,6 @@ fun CalibrationScreen(
                 is CalibrationUiState.Collecting -> {
                     CalibrationDot(
                         pointIndex = state.pointIndex,
-                        totalPoints = totalPoints,
                         gazeState = gazeState,
                         onConfirm = onRecordPoint,
                         modifier = Modifier.fillMaxSize(),
@@ -73,23 +72,20 @@ fun CalibrationScreen(
                     CalibrationHeader(
                         pointIndex = state.pointIndex,
                         totalPoints = totalPoints,
-                        onCancel = onCancel,
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = 32.dp),
                     )
                 }
-                is CalibrationUiState.Done -> {
+                is CalibrationUiState.Done ->
                     CalibrationDoneContent(
                         onDismiss = onCancel,
                         modifier = Modifier.align(Alignment.Center),
                     )
-                }
-                is CalibrationUiState.CalibrationError -> {
+                is CalibrationUiState.CalibrationError ->
                     CalibrationErrorContent(
                         message = state.message,
                         onDismiss = onCancel,
                         modifier = Modifier.align(Alignment.Center),
                     )
-                }
                 else -> { /* Idle — should not show */ }
             }
         }
@@ -99,8 +95,7 @@ fun CalibrationScreen(
 @Composable
 private fun CalibrationDot(
     pointIndex: Int,
-    totalPoints: Int,
-    gazeState: com.straysouth.lectern.gaze.GazeState,
+    gazeState: GazeState,
     onConfirm: (CalibrationPoint) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -108,95 +103,73 @@ private fun CalibrationDot(
     val row = pointIndex / GRID_COLS
     val fractionX = GRID_FRACTIONS[col]
     val fractionY = GRID_FRACTIONS[row]
-
     val density = LocalDensity.current
     var dotScreenX by remember { mutableStateOf(0f) }
     var dotScreenY by remember { mutableStateOf(0f) }
-
-    // The gaze point at the time the user taps — captured from the current GazeState.
-    val currentGazeIrisU: Float
-    val currentGazeIrisV: Float
-    if (gazeState is com.straysouth.lectern.gaze.GazeState.Tracking) {
-        // Normalise screen-space gaze point back to a proxy iris coordinate.
-        // In practice CalibrationPoint.irisU/V come from the raw landmark callback;
-        // here we pass the already-inferred screen point which the ViewModel will
-        // unpack. For calibration, we need raw iris coords — GazeViewModel should
-        // expose the last raw iris position. For V1 we use a simplified path:
-        // the CalibrationScreen signals the ViewModel with the current gaze point
-        // and the ViewModel's GazeProviderImpl exposes the last iris reading.
-        currentGazeIrisU = gazeState.gazePoint.x
-        currentGazeIrisV = gazeState.gazePoint.y
-    } else {
-        currentGazeIrisU = fractionX
-        currentGazeIrisV = fractionY
-    }
+    val irisUV = gazeIrisUV(gazeState, fractionX, fractionY)
 
     Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .onGloballyPositioned { coords ->
-                    val pos = coords.positionInRoot()
-                    val sizePx = with(density) { DOT_SIZE.toPx() }
-                    dotScreenX = pos.x + coords.size.width * fractionX - sizePx / 2
-                    dotScreenY = pos.y + coords.size.height * fractionY - sizePx / 2
-                },
-        )
+        DotPositionMeasurer(fractionX, fractionY) { x, y -> dotScreenX = x; dotScreenY = y }
         val cdDot = stringResource(R.string.cd_gaze_calibrate)
         Box(
             modifier = Modifier
-                .offset {
-                    val sizePx = DOT_SIZE.toPx().toInt()
-                    IntOffset(
-                        (dotScreenX).toInt(),
-                        (dotScreenY).toInt(),
-                    )
-                }
+                .offset { IntOffset(dotScreenX.toInt(), dotScreenY.toInt()) }
                 .size(DOT_SIZE)
                 .background(DOT_COLOR, CircleShape)
                 .semantics { contentDescription = cdDot },
         )
-
         Button(
             onClick = {
-                onConfirm(
-                    CalibrationPoint(
-                        screenX = dotScreenX + with(density) { DOT_SIZE.toPx() / 2 },
-                        screenY = dotScreenY + with(density) { DOT_SIZE.toPx() / 2 },
-                        irisU = currentGazeIrisU,
-                        irisV = currentGazeIrisV,
-                    ),
-                )
+                val halfDot = with(density) { DOT_SIZE.toPx() / 2 }
+                onConfirm(CalibrationPoint(dotScreenX + halfDot, dotScreenY + halfDot, irisUV.first, irisUV.second))
             },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp),
-        ) {
-            Text(stringResource(R.string.gaze_calibration_confirm_point))
-        }
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp),
+        ) { Text(stringResource(R.string.gaze_calibration_confirm_point)) }
     }
 }
+
+/** Invisible full-size box that measures dot screen position on layout. */
+@Composable
+private fun DotPositionMeasurer(
+    fractionX: Float,
+    fractionY: Float,
+    onPosition: (x: Float, y: Float) -> Unit,
+) {
+    val density = LocalDensity.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                val halfDotPx = with(density) { DOT_SIZE.toPx() / 2 }
+                onPosition(
+                    pos.x + coords.size.width * fractionX - halfDotPx,
+                    pos.y + coords.size.height * fractionY - halfDotPx,
+                )
+            },
+    )
+}
+
+private fun gazeIrisUV(state: GazeState, fallbackU: Float, fallbackV: Float): Pair<Float, Float> =
+    if (state is GazeState.Tracking) state.gazePoint.x to state.gazePoint.y
+    else fallbackU to fallbackV
 
 @Composable
 private fun CalibrationHeader(
     pointIndex: Int,
     totalPoints: Int,
-    onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = stringResource(R.string.gaze_calibration_title),
-            style = MaterialTheme.typography.titleMedium,
-        )
+        Text(stringResource(R.string.gaze_calibration_title), style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = stringResource(R.string.gaze_calibration_point_of, pointIndex + 1, totalPoints),
+            stringResource(R.string.gaze_calibration_point_of, pointIndex + 1, totalPoints),
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = stringResource(R.string.gaze_calibration_instruction),
+            stringResource(R.string.gaze_calibration_instruction),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -206,14 +179,9 @@ private fun CalibrationHeader(
 @Composable
 private fun CalibrationDoneContent(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = stringResource(R.string.gaze_calibration_complete),
-            style = MaterialTheme.typography.titleMedium,
-        )
+        Text(stringResource(R.string.gaze_calibration_complete), style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onDismiss) {
-            Text(stringResource(android.R.string.ok))
-        }
+        Button(onClick = onDismiss) { Text(stringResource(android.R.string.ok)) }
     }
 }
 
@@ -224,14 +192,8 @@ private fun CalibrationErrorContent(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.error,
-        )
+        Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onDismiss) {
-            Text(stringResource(android.R.string.ok))
-        }
+        Button(onClick = onDismiss) { Text(stringResource(android.R.string.ok)) }
     }
 }

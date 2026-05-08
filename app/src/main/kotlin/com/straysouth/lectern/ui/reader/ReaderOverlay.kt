@@ -16,7 +16,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.TextFormat
+import androidx.compose.material.icons.outlined.RemoveRedEye
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -39,6 +41,7 @@ import com.straysouth.lectern.R
 import com.straysouth.lectern.data.repository.FocusBandPrefs
 import com.straysouth.lectern.data.repository.TtsPrefs
 import com.straysouth.lectern.data.repository.TypographyPrefs
+import com.straysouth.lectern.gaze.GazeState
 
 @Composable
 internal fun ReaderOverlay(
@@ -48,6 +51,8 @@ internal fun ReaderOverlay(
     ttsPrefs: TtsPrefs,
     focusBandPrefs: FocusBandPrefs,
     anchorActive: Boolean,
+    gazeState: GazeState,
+    gazeEnabled: Boolean,
     onBack: () -> Unit,
     onTypographyChange: (TypographyPrefs) -> Unit,
     onTtsPlay: () -> Unit,
@@ -56,6 +61,7 @@ internal fun ReaderOverlay(
     onTtsSpeedChange: (Double) -> Unit,
     onFocusBandChange: (FocusBandPrefs) -> Unit,
     onAnchorDismiss: () -> Unit,
+    onGazeToggle: () -> Unit,
 ) {
     when (state) {
         EpubReaderViewModel.State.Loading -> LoadingOverlay()
@@ -66,6 +72,8 @@ internal fun ReaderOverlay(
             ttsPrefs = ttsPrefs,
             focusBandPrefs = focusBandPrefs,
             anchorActive = anchorActive,
+            gazeState = gazeState,
+            gazeEnabled = gazeEnabled,
             onBack = onBack,
             onTypographyChange = onTypographyChange,
             onTtsPlay = onTtsPlay,
@@ -74,6 +82,7 @@ internal fun ReaderOverlay(
             onTtsSpeedChange = onTtsSpeedChange,
             onFocusBandChange = onFocusBandChange,
             onAnchorDismiss = onAnchorDismiss,
+            onGazeToggle = onGazeToggle,
         )
     }
 }
@@ -117,6 +126,8 @@ private fun ReadyOverlay(
     ttsPrefs: TtsPrefs,
     focusBandPrefs: FocusBandPrefs,
     anchorActive: Boolean,
+    gazeState: GazeState,
+    gazeEnabled: Boolean,
     onBack: () -> Unit,
     onTypographyChange: (TypographyPrefs) -> Unit,
     onTtsPlay: () -> Unit,
@@ -125,14 +136,18 @@ private fun ReadyOverlay(
     onTtsSpeedChange: (Double) -> Unit,
     onFocusBandChange: (FocusBandPrefs) -> Unit,
     onAnchorDismiss: () -> Unit,
+    onGazeToggle: () -> Unit,
 ) {
     var showPanel by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
         ReaderToolbar(
             anchorActive = anchorActive,
+            gazeState = gazeState,
+            gazeEnabled = gazeEnabled,
             onBack = onBack,
             onTypography = { showPanel = true },
             onAnchorDismiss = onAnchorDismiss,
+            onGazeToggle = onGazeToggle,
             modifier = Modifier.align(Alignment.TopStart),
         )
 
@@ -163,9 +178,12 @@ private fun ReadyOverlay(
 @Composable
 private fun ReaderToolbar(
     anchorActive: Boolean,
+    gazeState: GazeState,
+    gazeEnabled: Boolean,
     onBack: () -> Unit,
     onTypography: () -> Unit,
     onAnchorDismiss: () -> Unit,
+    onGazeToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Semi-opaque so the reader text remains visible beneath.
@@ -182,6 +200,18 @@ private fun ReaderToolbar(
             val cdTypography = stringResource(R.string.cd_typography)
             IconButton(onClick = onTypography, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Filled.TextFormat, contentDescription = cdTypography)
+            }
+            // Gaze toggle — filled eye = tracking active, outlined = off.
+            val cdGaze = stringResource(R.string.cd_gaze_toggle)
+            val isTracking = gazeEnabled && gazeState is GazeState.Tracking
+            IconButton(onClick = onGazeToggle, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    imageVector = if (isTracking) Icons.Filled.RemoveRedEye
+                                  else Icons.Outlined.RemoveRedEye,
+                    contentDescription = cdGaze,
+                    tint = if (isTracking) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurface,
+                )
             }
             // Anchor dismiss — visible with ≤200ms fade per AuDHD design rules.
             AnimatedVisibility(

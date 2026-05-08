@@ -1,15 +1,20 @@
 package com.straysouth.lectern
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,6 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.core.content.ContextCompat
+import com.straysouth.lectern.data.db.Book
+import com.straysouth.lectern.ui.gaze.GazeViewModel
 import com.straysouth.lectern.ui.library.LibraryScreen
 import com.straysouth.lectern.ui.library.LibraryViewModel
 import com.straysouth.lectern.ui.reader.ReaderScreen
@@ -26,9 +34,15 @@ import com.straysouth.lectern.ui.theme.LecternTheme
 class MainActivity : AppCompatActivity() {
 
     private val libraryViewModel: LibraryViewModel by viewModels()
+    private val gazeViewModel: GazeViewModel by viewModels()
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> gazeViewModel.onPermissionResult(granted) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        gazeViewModel.attachLifecycleOwner(this)
         enableEdgeToEdge()
         setContent {
             LecternTheme {
@@ -39,43 +53,73 @@ class MainActivity : AppCompatActivity() {
                         .semantics { contentDescription = cdApp },
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    // Process death resets to null — user lands on library and resumes
-                    // from DataStore-persisted locator on next open. Intentional.
-                    var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
-                    var currentBookFormat by rememberSaveable { mutableStateOf<String?>(null) }
-
-                    // Navigate back to library if the currently-open book is deleted.
-                    // acknowledgeDeletedBook() clears the replay cache so a re-imported
-                    // file with the same URI (and thus the same UUID) does not
-                    // spuriously close the newly-opened reader.
-                    LaunchedEffect(Unit) {
-                        libraryViewModel.deletedBookId.collect { deletedId ->
-                            if (currentBookId == deletedId) {
-                                currentBookId = null
-                                currentBookFormat = null
-                            }
-                            libraryViewModel.acknowledgeDeletedBook()
-                        }
+                    GazePermissionEffect(gazeViewModel) {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     }
+                    AppContent(libraryViewModel, gazeViewModel, ::hasCameraPermission)
+                }
+            }
+        }
+    }
 
-                    BackHandler(enabled = currentBookId != null) {
-                        currentBookId = null
-                        currentBookFormat = null
-                    }
+    private fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+}
 
-                    val bookId = currentBookId
-                    if (bookId == null) {
-                        LibraryScreen(
-                            viewModel = libraryViewModel,
-                            onBookSelected = { book ->
-                                currentBookId = book.id
-                                currentBookFormat = book.format
-                                libraryViewModel.recordOpened(book.id)
-                            },
-                        )
-                    } else {
-                        ReaderScreen(bookId = bookId, format = currentBookFormat ?: "EPUB")
-                    }
+@Composable
+private fun GazePermissionEffect(vm: GazeViewModel, launchRequest: () -> Unit) {
+    val needsPermission by vm.needsPermission.collectAsState()
+    LaunchedEffect(needsPermission) {
+        if (needsPermission) launchRequest()
+    }
+}
+
+@Composable
+private fun AppContent(
+    libraryViewModel: LibraryViewModel,
+    gazeViewModel: GazeViewModel,
+    hasCameraPermission: () -> Boolean,
+) {
+    var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
+    var currentBookFormat by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Navigate back to library if the currently-open book is deleted.
+    // acknowledgeDeletedBook() clears the replay cache so re-importing the same
+    // URI does not spuriously close the newly-opened reader.
+    LaunchedEffect(Unit) {
+        libraryViewModel.deletedBookId.collect { deletedId ->
+            if (currentBookId == deletedId) {
+                currentBookId = null
+                currentBookFormat = null
+            }
+            libraryViewModel.acknowledgeDeletedBook()
+        }
+    }
+
+    BackHandler(enabled = currentBookId != null) {
+        currentBookId = null
+        currentBookFormat = null
+    }
+
+    val bookId = currentBookId
+    if (bookId == null) {
+        LibraryScreen(
+            viewModel = libraryViewModel,
+            onBookSelected = { book: Book ->
+                currentBookId = book.id
+                currentBookFormat = book.format
+                libraryViewModel.recordOpened(book.id)
+            },
+        )
+    } else {
+        ReaderScreen(bookId = bookId, format = currentBookFormat ?: "EPUB")
+        // Wire gaze toggle permission check — Fragment calls toggleGaze(hasPermission)
+        // directly; needsPermission StateFlow triggers the launcher above.
+        LaunchedEffect(Unit) {
+            gazeViewModel.needsPermission.collect { needs ->
+                if (needs && hasCameraPermission()) {
+                    gazeViewModel.onPermissionResult(true)
                 }
             }
         }

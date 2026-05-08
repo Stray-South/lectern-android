@@ -12,12 +12,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commit
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.straysouth.lectern.R
+import com.straysouth.lectern.ui.gaze.GazeViewModel
 import com.straysouth.lectern.ui.theme.LecternTheme
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterIsInstance
@@ -29,6 +31,7 @@ import org.readium.r2.navigator.epub.EpubNavigatorFragment
 class EpubReaderFragment : Fragment() {
 
     private val viewModel: EpubReaderViewModel by viewModels()
+    private val gazeViewModel: GazeViewModel by activityViewModels()
 
     private lateinit var overlay: ComposeView
 
@@ -190,6 +193,8 @@ class EpubReaderFragment : Fragment() {
                     val ttsPrefs by viewModel.ttsPrefs.collectAsState()
                     val focusBandPrefs by viewModel.focusBandPrefs.collectAsState()
                     val anchorLocator by viewModel.anchorLocator.collectAsState()
+                    val gazeState by gazeViewModel.gazeState.collectAsState()
+                    val gazeEnabled by gazeViewModel.gazeEnabled.collectAsState()
                     ReaderOverlay(
                         state = state,
                         typographyPrefs = typographyPrefs,
@@ -197,6 +202,8 @@ class EpubReaderFragment : Fragment() {
                         ttsPrefs = ttsPrefs,
                         focusBandPrefs = focusBandPrefs,
                         anchorActive = anchorLocator != null,
+                        gazeState = gazeState,
+                        gazeEnabled = gazeEnabled,
                         onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
                         onTypographyChange = viewModel::updateTypography,
                         onTtsPlay = { viewModel.startTts() },
@@ -205,7 +212,13 @@ class EpubReaderFragment : Fragment() {
                         onTtsSpeedChange = viewModel::updateTtsSpeed,
                         onFocusBandChange = viewModel::updateFocusBand,
                         onAnchorDismiss = viewModel::clearAnchor,
+                        // onGazeToggle is wired from MainActivity via ReaderScreen args;
+                        // the Fragment accesses it through the ViewModel toggle path.
+                        onGazeToggle = { gazeViewModel.toggleGaze(hasPermission = true) },
                     )
+                    // TODO(ADR-AND-L): Focus Band V2 visual — deferred to V3.
+                    // When a native BasicText surface exists, replace the above with:
+                    //   bandCenterY = if (gazeState is GazeState.Tracking) gazeState.gazePoint.y else null
                 }
             }
         }

@@ -27,9 +27,9 @@ class CalibrationRepository(context: Context) {
     /** Returns stored calibration, or null if the device has never been calibrated. */
     suspend fun load(): CalibrationResult? {
         val prefs = ctx.calibrationDataStore.data.first()
-        val wx = prefs[KEY_WEIGHTS_X]?.toDoubleArray() ?: return null
-        val wy = prefs[KEY_WEIGHTS_Y]?.toDoubleArray() ?: return null
-        return CalibrationResult(wx, wy)
+        return prefs[KEY_WEIGHTS_X]?.toDoubleArray()?.let { wx ->
+            prefs[KEY_WEIGHTS_Y]?.toDoubleArray()?.let { wy -> CalibrationResult(wx, wy) }
+        }
     }
 
     suspend fun clear() {
