@@ -49,25 +49,22 @@ class EpubReaderFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val bookId = arguments?.getString(ARG_BOOK_ID)
-
-        // Dummy factory must be set before super.onCreate() so the FragmentManager
-        // can safely restore EpubNavigatorFragment on config change or process death.
-        // The real factory is installed below once the publication is loaded.
+        // Dummy factory must be set before super.onCreate() so FragmentManager can
+        // safely restore EpubNavigatorFragment on config change or process death.
         childFragmentManager.fragmentFactory = EpubNavigatorFragment.createDummyFactory()
         super.onCreate(savedInstanceState)
-
-        if (bookId == null) {
-            // Null bookId is a programming error — AndroidFragment should always supply it.
-            // Leave the Fragment inert; BackHandler in MainActivity handles navigation back.
-            return
-        }
+        if (bookId == null) return
         // True only on config change: ViewModel survived, existing navigator is functional.
         val isConfigChange = viewModel.state.value is EpubReaderViewModel.State.Ready
         viewModel.load(bookId)
+        setupNavigator(isConfigChange)
+        setupTypographyObserver()
+        setupTtsObserver()
+    }
 
-        // STARTED guarantees mStateSaved and mStopped are both false — safe for commit().
-        // take(1) makes this a one-shot action; the findFragmentByTag guard prevents
-        // double-add if STARTED restarts (e.g. returning from back stack).
+    // ── Private lifecycle helpers ─────────────────────────────────────────────
+
+    private fun setupNavigator(isConfigChange: Boolean) {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.state
@@ -84,18 +81,17 @@ class EpubReaderFragment : Fragment() {
                                 setReorderingAllowed(true)
                                 replace(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), TAG_NAVIGATOR)
                             }
+                            childFragmentManager.executePendingTransactions()
                         }
-                        childFragmentManager.executePendingTransactions()
                         navigatorFragment =
                             childFragmentManager.findFragmentByTag(TAG_NAVIGATOR)
                                 as? EpubNavigatorFragment
                     }
             }
         }
+    }
 
-        // Push live typography changes to the navigator. navigatorFragment is null until
-        // the Ready collector above fires, so early emissions are no-ops — that is correct
-        // because initialTypography already bakes the startup prefs into the factory.
+    private fun setupTypographyObserver() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.typographyPrefs.collect { prefs ->
@@ -103,10 +99,9 @@ class EpubReaderFragment : Fragment() {
                 }
             }
         }
+    }
 
-        // Apply TTS word highlight decorations. navigatorFragment null-safety covers the
-        // window before the Ready state collector fires. Decoration list is empty when
-        // tokenLocator is null (TtsUiState.Idle or first emission) to clear any stale mark.
+    private fun setupTtsObserver() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.ttsUiState.collect { state ->
