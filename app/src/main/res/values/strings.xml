@@ -43,4 +43,13 @@
     <string name="sort_added">Sort: Added</string>
     <string name="sort_last_opened">Sort: Last opened</string>
     <string name="cd_sort_toggle">Toggle sort order</string>
+    <string name="cd_gaze_toggle">Toggle gaze tracking</string>
+    <string name="cd_gaze_calibrate">Gaze calibration target</string>
+    <string name="cd_gaze_tracking">Gaze tracking active</string>
+    <string name="gaze_calibration_title">Gaze calibration</string>
+    <string name="gaze_calibration_instruction">Look at the dot, then tap Confirm</string>
+    <string name="gaze_calibration_point_of">Point %1$d of %2$d</string>
+    <string name="gaze_calibration_complete">Calibration complete</string>
+    <string name="gaze_calibration_confirm_point">Confirm</string>
+    <string name="gaze_permission_rationale">Camera access is needed for gaze-assisted reading</string>
 </resources>
