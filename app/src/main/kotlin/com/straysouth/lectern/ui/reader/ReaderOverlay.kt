@@ -60,6 +60,7 @@ internal fun ReaderOverlay(
     onTtsStop: () -> Unit,
     onTtsSpeedChange: (Double) -> Unit,
     onFocusBandChange: (FocusBandPrefs) -> Unit,
+    onDismissTtsUnavailable: () -> Unit,
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
 ) {
@@ -81,6 +82,7 @@ internal fun ReaderOverlay(
             onTtsStop = onTtsStop,
             onTtsSpeedChange = onTtsSpeedChange,
             onFocusBandChange = onFocusBandChange,
+            onDismissTtsUnavailable = onDismissTtsUnavailable,
             onAnchorDismiss = onAnchorDismiss,
             onGazeToggle = onGazeToggle,
         )
@@ -135,6 +137,7 @@ private fun ReadyOverlay(
     onTtsStop: () -> Unit,
     onTtsSpeedChange: (Double) -> Unit,
     onFocusBandChange: (FocusBandPrefs) -> Unit,
+    onDismissTtsUnavailable: () -> Unit,
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
 ) {
@@ -160,6 +163,7 @@ private fun ReadyOverlay(
             onStop = onTtsStop,
             onSpeedChange = onTtsSpeedChange,
             onFocusBandChange = onFocusBandChange,
+            onDismissUnavailable = onDismissTtsUnavailable,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 16.dp),

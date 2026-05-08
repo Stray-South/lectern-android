@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -41,6 +42,7 @@ internal fun TtsBar(
     onStop: () -> Unit,
     onSpeedChange: (Double) -> Unit,
     onFocusBandChange: (FocusBandPrefs) -> Unit,
+    onDismissUnavailable: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -59,8 +61,11 @@ internal fun TtsBar(
                     text = stringResource(R.string.tts_engine_unavailable),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(start = 8.dp),
                 )
+                IconButton(onClick = onDismissUnavailable, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_tts_dismiss))
+                }
                 return@Row
             }
 

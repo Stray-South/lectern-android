@@ -219,7 +219,9 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
             }.onFailure { error ->
+                // Engine initialisation race or device-level failure — surface same as no engine.
                 Log.w("EpubReaderViewModel", "TTS unavailable: $error")
+                _ttsUiState.value = TtsUiState.EngineUnavailable
             }
         }
     }
@@ -234,6 +236,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun stopTts() {
         cleanUpTts()
+    }
+
+    /** Clears the EngineUnavailable banner — user has acknowledged it. */
+    fun dismissTtsUnavailable() {
+        if (_ttsUiState.value is TtsUiState.EngineUnavailable) {
+            _ttsUiState.value = TtsUiState.Idle
+        }
     }
 
     fun updateTtsSpeed(speed: Double) {

@@ -216,6 +216,7 @@ class EpubReaderFragment : Fragment() {
                         onTtsStop = viewModel::stopTts,
                         onTtsSpeedChange = viewModel::updateTtsSpeed,
                         onFocusBandChange = viewModel::updateFocusBand,
+                        onDismissTtsUnavailable = viewModel::dismissTtsUnavailable,
                         onAnchorDismiss = viewModel::clearAnchor,
                         // onGazeToggle is wired from MainActivity via ReaderScreen args;
                         // the Fragment accesses it through the ViewModel toggle path.
