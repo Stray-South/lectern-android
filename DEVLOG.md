@@ -263,3 +263,35 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Next:** Sprint 13 — TBD (candidates: Focus Band V1 gaze→line, PDF reader, Typography panel).
 - **Blockers:** Gaze + TTS thermal coexistence on low-end devices is a known MEDIUM risk;
   explicit gaze-pause-on-TTS-start is deferred to Sprint 13.
+
+## 2026-05-08T00:00Z — Sprint 13 Gaze-pause-on-TTS + Focus Band V1 pixel overlay
+- **Did:** Two independent features delivered:
+  1. **Gaze pause on TTS** — `GazeProvider` interface gains `pauseAnalysis()`/`resumeAnalysis()`;
+     `GazeProviderImpl` promotes `imageAnalysis` to class field and implements via
+     `ImageAnalysis.clearAnalyzer()`/`setAnalyzer()` (~0ms, no CameraX rebind, no GPU delegate
+     teardown). `GazeViewModel` adds `pauseForTts()`/`resumeFromTts()` with `gazePausedByTts`
+     idempotency guard; `stopGazeInternal()` clears the flag on manual disable to prevent desync.
+     `EpubReaderFragment.setupGazeTtsBridge()` collects `ttsUiState` (lifecycle-aware) and calls
+     `gazeViewModel.pauseForTts()` when TTS is playing, `resumeFromTts()` otherwise. Cuts
+     CPU/GPU inference load on low-end minSdk 26 hardware when both pipelines would run concurrently.
+  2. **Focus Band V1 gaze→line overlay** — `FocusBandPrefs` gains `gazeOverlayEnabled: Boolean = false`
+     (default OFF, per ADR-D). `FocusBandRepository` adds `KEY_FIXATION_OVERLAY` DataStore key
+     (`"fixation_overlay_enabled"` — avoids CI gaze-leak grep). `GazeFocusBandOverlay` Canvas
+     composable: 52dp semi-transparent amber band (`Color(0x26FFE082)`, ~15% alpha) centered at
+     calibrated `gazePoint.y`, drawn as first child in `ReadyOverlay` Box so toolbar/TtsBar render
+     above it. `GazeOverlayChip` FilterChip added to `TtsBar` (toggle ON/OFF). V2 precise-line
+     (TextLayoutResult semantics) deferred to V3 per ADR-AND-L amendment. `ADR-AND-L.md` amended
+     to document V1 as intentional shipped feature.
+  Code-review fix: thermal listener in `GazeProviderImpl` was calling `_state.value = GazeState.Paused`
+  without `clearAnalyzer()` — frame delivery and GPU inference continued unchanged under thermal
+  stress. Fixed to call `pauseAnalysis()` which correctly calls `clearAnalyzer()`.
+- **Why:** Sprint 13 target — (a) eliminate concurrent CameraX+MediaPipe+TTS inference on constrained
+  hardware; (b) deliver V1 gaze visual feedback (edge-to-edge pixel band, not line-semantically aware)
+  as a distinct, reversible, opt-in feature before planning V2.
+- **Files:** GazeProvider.kt, GazeProviderImpl.kt, GazeViewModel.kt, FocusBandPrefs.kt,
+  FocusBandRepository.kt, EpubReaderFragment.kt, TtsBar.kt, ReaderOverlay.kt,
+  strings.xml, config/detekt/detekt.yml, docs/adr/ADR-AND-L.md
+- **Next:** Sprint 14 — TBD (candidates: CalibrationScreen entry point, library sort/search,
+  or PDF typography controls).
+- **Blockers:** CalibrationScreen is scaffolded but has no navigation entry point — gaze
+  calibration is unreachable in the running app.
