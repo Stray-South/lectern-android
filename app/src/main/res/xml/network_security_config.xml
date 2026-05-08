@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Explicit network security policy for Lectern Android.
+
+    cleartextTrafficPermitted="false": blocks all cleartext HTTP from the app process,
+    including from the Readium WebView. Android 9+ enforces this by default; this file
+    makes the policy explicit and extends it to Android 8 (our minSdk 26).
+
+    Readium's publication server uses https://readium/ (local, intercepted by
+    shouldInterceptRequest before any real network connection) — not affected.
+
+    See RED-TEAM.md §H.1 and §A.2.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

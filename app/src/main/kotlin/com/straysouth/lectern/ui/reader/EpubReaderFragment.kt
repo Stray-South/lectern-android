@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commit
 import androidx.fragment.app.viewModels
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.Decoration
+import android.webkit.WebView
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 
 class EpubReaderFragment : Fragment() {
@@ -92,6 +94,11 @@ class EpubReaderFragment : Fragment() {
                     .filterIsInstance<EpubReaderViewModel.State.Ready>()
                     .take(1)
                     .collect { state ->
+                        // SECURITY A.3: listener intentionally null — no EpubNavigatorFragment.Listener
+                        // is passed to createFragmentFactory(). This means onExternalLinkActivated()
+                        // is never called for external/scheme URLs, so intent:// and market:// links
+                        // from EPUB content cannot fire Android Intents. Any future listener MUST
+                        // allowlist only https/http schemes before calling startActivity().
                         childFragmentManager.fragmentFactory =
                             state.navigatorFactory.createFragmentFactory(
                                 initialLocator = state.initialLocator,
@@ -109,6 +116,36 @@ class EpubReaderFragment : Fragment() {
                             childFragmentManager.findFragmentByTag(TAG_NAVIGATOR)
                                 as? EpubNavigatorFragment
                         val fragment = navigatorFragment ?: return@collect
+
+                        // SECURITY A.2: Block external resource loads from EPUB content.
+                        // R2EpubPageFragment instances are created lazily by ViewPager as the user
+                        // navigates between chapters. We wrap each page's WebViewClient as its view
+                        // is created so all pages — including those not yet instantiated — are covered.
+                        // EpubBlockingWebViewClient blocks any host other than "readium" (Readium's
+                        // local publication server) while delegating all other callbacks unchanged.
+                        //
+                        // SECURITY A.1: JS is enabled by Readium (required for decorations/MathML).
+                        // window.Android exposes: onTap, onDrag*, onKey, onDecorationActivated,
+                        // onSelectionStart/End, getViewportWidth, logError. The logError interface
+                        // writes to Logcat but is harmless on release builds (debuggable=false).
+                        // No file system, content://, or network capabilities are exposed.
+                        fragment.childFragmentManager.registerFragmentLifecycleCallbacks(
+                            object : FragmentManager.FragmentLifecycleCallbacks() {
+                                override fun onFragmentViewCreated(
+                                    fm: FragmentManager,
+                                    f: Fragment,
+                                    v: View,
+                                    savedInstanceState: Bundle?,
+                                ) {
+                                    // R2EpubPageFragment is internal to the Readium module —
+                                    // we cannot reference it directly. Instead, walk the view
+                                    // tree of every child fragment looking for WebViews.
+                                    wrapWebViewsIn(v)
+                                }
+                            },
+                            /* recursive = */ false,
+                        )
+
                         launch {
                             // StateFlow already skips equal values; no distinctUntilChanged needed.
                             fragment.currentLocator
@@ -192,6 +229,28 @@ class EpubReaderFragment : Fragment() {
                     } ?: emptyList()
                     navigatorFragment?.applyDecorations(decorations, ANCHOR_DECORATION_GROUP)
                 }
+            }
+        }
+    }
+
+    /**
+     * Recursively walks [root] and wraps the client of every [WebView] found with
+     * [EpubBlockingWebViewClient], unless already wrapped (idempotent on config change).
+     *
+     * We cannot reference R2EpubPageFragment (Readium internal class) directly, so view
+     * traversal is the only public-API way to reach the WebView. The guard against
+     * double-wrapping ensures repeatOnLifecycle re-entry and config changes are safe.
+     */
+    private fun wrapWebViewsIn(root: View) {
+        if (root is WebView) {
+            // webViewClient (API 26+) returns the current client; wrapping is idempotent.
+            val existing = root.webViewClient
+            if (existing !is EpubBlockingWebViewClient) {
+                root.setWebViewClient(EpubBlockingWebViewClient(existing))
+            }
+        } else if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                wrapWebViewsIn(root.getChildAt(i))
             }
         }
     }

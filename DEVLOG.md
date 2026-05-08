@@ -319,3 +319,72 @@ Format: see .claude/skills/devlog/SKILL.md
   strings.xml
 - **Next:** Sprint 15 — TBD.
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Security Research: Red Team Group A (Readium WebView)
+- **Did:** Deep decompile of Readium Kotlin 3.1.2 compiled JARs (`~/.gradle/caches/9.5.0/transforms/`)
+  to confirm or refute Group A red team tests (A.1–A.3) from `docs/security/RED-TEAM.md`.
+  Examined: `R2EpubPageFragment.class`, `R2BasicWebView.class`, `EpubNavigatorFragment$WebViewListener.class`,
+  `EpubNavigatorViewModel.class`, `EpubNavigatorViewModel$navigateToUrl$1.class`,
+  `WebViewServer.class`, `HyperlinkNavigator$Listener.class`, `EpubNavigatorFactory.class`.
+
+  **A.1 (JS enabled — CONFIRMED risk):** `setJavaScriptEnabled(true)` called in R2EpubPageFragment.
+  `R2WebView` registered as `window.Android` via `addJavascriptInterface`. Exposed methods:
+  onTap, onDecorationActivated, onDragStart/Move/End, onKey, onSelectionStart/End, getViewportWidth,
+  **logError** (⚠️ arbitrary string from EPUB JS written to Logcat). Top-level JS navigations blocked
+  by shouldOverrideUrlLoading. Subframe/fetch not blocked.
+
+  **A.2 (external resources NOT blocked — CONFIRMED risk, priority HIGH):**
+  `WebViewServer.shouldInterceptRequest()` returns `null` for any `host != "readium"`.
+  WebView falls back to default network stack → EPUB `<img>` and `<script>` tags can reach
+  external servers. No `network_security_config.xml` compounds this on Android 8 (cleartext HTTP
+  allowed). Reading-behaviour tracking beacon is a realistic threat for AuDHD users.
+
+  **A.3 (intent:// injection — effectively mitigated, fragile):**
+  `shouldOverrideUrlLoading` catches all link clicks. `navigateToUrl()` calls
+  `onExternalLinkActivated()` on the listener — but lectern passes `listener = null` to
+  `createFragmentFactory()`, so the method never fires. No Intent is dispatched. Fragile:
+  adding any listener without scheme validation would reopen the risk.
+
+  Updated `docs/security/RED-TEAM.md`: confirmed-facts table expanded with 8 new rows; A.1/A.2/A.3
+  entries updated from 🔴 to ⚠️ with full technical detail and pass criteria.
+- **Why:** Phase 1 red team research plan — Letter-at-a-time approach starting with Group A (WebView
+  attack surface), the highest-priority cluster with shared research context.
+- **Files:** docs/security/RED-TEAM.md (research notes only — no app code changed)
+- **Next:** Group B research (B.3/B.4 — zip4j path traversal + Readium streamer ZIP handling),
+  then Group J (J.1/J.2 — gaze data persistence regression), then Group F (F.1 version pins).
+- **Blockers:** none
+
+## 2026-05-08T00:00Z — Security Sprint: Red Team Group A implementation (A.1/A.2/A.3)
+- **Did:** Implemented fixes for Phase 1 Group A red team findings.
+
+  **A.2 (HIGH — external resource blocking):** New `EpubBlockingWebViewClient` wraps
+  Readium's internal `WebViewClient` (set by `R2EpubPageFragment`) to block all
+  `shouldInterceptRequest` calls whose host is not "readium". Registered via
+  `FragmentManager.FragmentLifecycleCallbacks` on `fragment.childFragmentManager` in
+  `EpubReaderFragment.setupNavigator()`. Covers all chapters including lazily-instantiated
+  ViewPager pages. Idempotent — `existing !is EpubBlockingWebViewClient` guard prevents
+  double-wrapping on config change. Cannot reference `R2EpubPageFragment` directly (Kotlin
+  `internal` cross-module enforcement); uses view-tree traversal to locate `WebView` instances.
+  Also added `network_security_config.xml` with `cleartextTrafficPermitted="false"` for
+  defense-in-depth HTTP blocking on Android 8 (minSdk 26), wired in `AndroidManifest.xml`.
+
+  **A.3 (fragile mitigation — documented):** Added `SECURITY A.3` comment in
+  `EpubReaderFragment.setupNavigator()` at the `createFragmentFactory()` call, documenting
+  the null-listener invariant and the scheme-allowlist requirement for any future listener.
+
+  **A.1 (accepted risk — documented):** Added `SECURITY A.1` comment in
+  `EpubReaderFragment.setupNavigator()` documenting the `window.Android` JS interface surface,
+  the methods it exposes, and why `logError` is acceptable on release builds.
+
+  **Bonus fix:** `data_extraction_rules.xml` had invalid `domain="dataDir"` (not a recognised
+  Android backup domain). Corrected to `domain="file"` — the DataStore `files/datastore/`
+  path is correctly under the `file` domain.
+
+- **Why:** Phase 1 red team remediations — A.2 closes the highest-priority tracking-beacon
+  attack surface (AuDHD user reading behaviour leakage). A.1/A.3 are
+  documentation-only mitigations where the risk is either accepted or already blocked.
+- **Files:** EpubBlockingWebViewClient.kt (new), EpubReaderFragment.kt,
+  network_security_config.xml (new), AndroidManifest.xml, data_extraction_rules.xml,
+  docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Group B research (B.3/B.4 zip4j/Readium path traversal).
+- **Blockers:** none
