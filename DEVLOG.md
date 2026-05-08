@@ -182,3 +182,28 @@ Format: see .claude/skills/devlog/SKILL.md
   MainActivity.kt, strings.xml, ComicsReaderViewModel.kt, PdfReaderViewModel.kt
 - **Next:** Sprint 10 — TBD (annotations, search, or gaze spike).
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 10 Cover thumbnails, last-opened sort, Coil 3.1.0
+- **Did:** EPUB cover extraction: `extractAndSaveCover(pub, id)` calls `pub.cover()`
+  before `pub.close()` (returns null after close), saves bitmap to `filesDir/cover_$id.png`
+  (persistent, not cacheDir). `deleteBook()` folds `book.coverPath` File delete into the
+  existing `withContext(Dispatchers.IO)` block alongside cache-file cleanup.
+  Last-opened sort: `SortOrder` enum (ADDED/LAST_OPENED); `_sortOrder MutableStateFlow`;
+  `toggleSortOrder()`; `books` StateFlow rebuilt with `flatMapLatest` routing to
+  `observeAll()` or `observeAllByLastOpened()` (COALESCE null → 0 DESC). BookDao:
+  `observeAllByLastOpened()` query added. `recordOpened(id)` called in MainActivity
+  `onBookSelected` — updates `lastOpenedAt` so sort order reflects actual reading events.
+  Coil 3.1.0: `coil-compose` + `coil-android` from `io.coil-kt.coil3` group; `BookRow`
+  gains `AsyncImage(model = coverPath?.let { File(it) })` with `cover_placeholder.xml`
+  fallback (warm off-white #FAF8F4, grey spine). `SortToggleRow` composable with TextButton
+  shows current sort label; contentDescription uses `cd_sort_toggle` (toggle action, not
+  state mirror). `LibraryFab` extracted as private composable to keep `LibraryScreen` under
+  60-line LongMethod limit. Hardening: `isImporting` exposed via `.asStateFlow()`;
+  `AppDatabase.getInstance` called once; `bookCacheId(key)` helper with explicit
+  `Charsets.UTF_8` replaces two inline `UUID.nameUUIDFromBytes` call sites.
+- **Why:** Sprint 10 target — cover art in library list; sort by recently read;
+  correctness hardening against mutable-state exposure and charset-drift in cache lookups.
+- **Files:** libs.versions.toml, build.gradle.kts, LibraryViewModel.kt, LibraryScreen.kt,
+  BookDao.kt, MainActivity.kt, strings.xml, cover_placeholder.xml (new)
+- **Next:** Sprint 11 — TBD.
+- **Blockers:** none
