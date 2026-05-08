@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.lingala.zip4j.ZipFile
 import java.io.File
+import java.util.UUID
 
 class ComicsReaderViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -42,12 +43,21 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
     private val _pageBitmap = MutableStateFlow<Bitmap?>(null)
     val pageBitmap: StateFlow<Bitmap?> = _pageBitmap
 
-    // ZipFile / Archive are not thread-safe — all I/O serialised on one IO thread.
+    // ZipFile is not thread-safe — all I/O serialised on one IO thread.
+    // rarArchive is NOT held open; Archive is re-created per renderPage (see renderPage).
     private val ioSerial = Dispatchers.IO.limitedParallelism(1)
 
-    // Exactly one of these is non-null at runtime, depending on format.
     private var zipFile: ZipFile? = null
-    private var rarArchive: Archive? = null
+
+    // For CBR: store the local File reference (not the Archive itself).
+    // junrar Archive uses stateful forward-only reads; re-opening per renderPage is
+    // the only safe way to support non-sequential page access.
+    private var rarCacheFile: File? = null
+
+    // Tracks decoded bitmaps for safe recycling. Compose may still be drawing the
+    // previous bitmap when renderPage assigns a new one — never recycle at assignment
+    // time. Keep at most 2 entries; recycle the oldest when the queue exceeds the cap.
+    private val bitmapQueue = ArrayDeque<Bitmap>()
 
     // Sorted image entry names for stable page order.
     private var pageEntries: List<String> = emptyList()
@@ -89,7 +99,10 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun nextPage() {
-        val next = (_currentPage.value + 1).coerceAtMost((pageCount - 1).coerceAtLeast(0))
+        // pageCount == 0 cannot be reached here: State.Ready is only set after
+        // pageCount > 0 is verified in load(). nextPage is only reachable from
+        // ComicsPageView which is only shown in State.Ready.
+        val next = (_currentPage.value + 1).coerceAtMost(pageCount - 1)
         if (next == _currentPage.value) return
         _currentPage.value = next
         viewModelScope.launch {
@@ -113,14 +126,8 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
     private fun openArchive(filePath: String, format: String) {
         val ctx = getApplication<Application>()
         if (format == "CBR") {
-            // junrar requires a java.io.File — copy to cache if URI is a content URI.
-            val file = uriToFile(filePath, ctx)
-            val archive = Archive(file)
-            rarArchive = archive
-            pageEntries = archive.fileHeaders
-                .filter { !it.isDirectory && isImageFile(it.fileName) }
-                .sortedWith(compareBy(naturalOrder()) { it.fileName })
-                .map { it.fileName }
+            // Store the File reference only — Archive is opened fresh per renderPage.
+            rarCacheFile = uriToFile(filePath, ctx)
         } else {
             val zip = ZipFile(uriToFile(filePath, ctx))
             zipFile = zip
@@ -128,19 +135,38 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
                 .filter { !it.isDirectory && isImageFile(it.fileName) }
                 .sortedWith(compareBy(naturalOrder()) { it.fileName })
                 .map { it.fileName }
+            return
+        }
+        // CBR: open a temporary Archive to enumerate entries, then close immediately.
+        Archive(rarCacheFile).use { rar ->
+            pageEntries = rar.fileHeaders
+                .filter { !it.isDirectory && isImageFile(it.fileName) }
+                .sortedWith(compareBy(naturalOrder()) { it.fileName })
+                .map { it.fileName }
         }
     }
 
-    // Must run on ioSerial — shared archive handle is not thread-safe.
+    // Must run on ioSerial — shared ZipFile handle is not thread-safe.
+    // CBR: a fresh Archive is opened and closed per call to satisfy junrar's
+    // sequential-read contract across non-sequential page navigation.
     private fun renderPage(index: Int) {
         val entry = pageEntries.getOrNull(index) ?: return
         val bmp = zipFile?.let { zip ->
             zip.getInputStream(zip.getFileHeader(entry)).use { BitmapFactory.decodeStream(it) }
-        } ?: rarArchive?.let { rar ->
-            val header = rar.fileHeaders.first { it.fileName == entry }
-            rar.getInputStream(header).use { BitmapFactory.decodeStream(it) }
+        } ?: rarCacheFile?.let { file ->
+            Archive(file).use { rar ->
+                val header = rar.fileHeaders.first { it.fileName == entry }
+                rar.getInputStream(header).use { BitmapFactory.decodeStream(it) }
+            }
         }
-        if (bmp != null) _pageBitmap.value = bmp
+        if (bmp != null) {
+            _pageBitmap.value = bmp
+            bitmapQueue.addLast(bmp)
+            // Recycle bitmaps beyond the 2-entry cap. The retained entries cover the
+            // currently-displayed frame and one prior, ensuring Compose never draws a
+            // recycled bitmap even during recomposition.
+            if (bitmapQueue.size > 2) bitmapQueue.removeFirst().recycle()
+        }
     }
 
     // Room and DataStore are main-safe suspend functions — no withContext needed (RULES.md).
@@ -165,8 +191,10 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
         CoroutineScope(ioSerial).launch {
             zipFile?.close()
             zipFile = null
-            rarArchive?.close()
-            rarArchive = null
+            rarCacheFile?.delete()
+            rarCacheFile = null
+            bitmapQueue.forEach { it.recycle() }
+            bitmapQueue.clear()
         }
     }
 
@@ -178,10 +206,12 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
 
         // Converts a content:// URI to a java.io.File by copying to cache.
         // zip4j and junrar both require a File, not an InputStream.
+        // Cache key is a UUID derived from the full URI string to prevent collisions
+        // between different books that share the same filename.
         private fun uriToFile(filePath: String, ctx: android.content.Context): File {
             val uri = Uri.parse(filePath)
             if (uri.scheme == "file") return File(uri.path ?: filePath)
-            val name = uri.lastPathSegment ?: "comic"
+            val name = UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString()
             val cache = File(ctx.cacheDir, name)
             if (!cache.exists()) {
                 ctx.contentResolver.openInputStream(uri)?.use { input ->

@@ -33,4 +33,6 @@
     <string name="label_page_of">%1$d of %2$d</string>
     <string name="cd_comics_loading">Loading comic</string>
     <string name="cd_comics_error">Comic error</string>
+    <string name="cd_comics_page_view">Comic page viewer</string>
+    <string name="import_error_unsupported_format">Unsupported file format</string>
 </resources>

@@ -13,6 +13,7 @@ import com.straysouth.lectern.data.repository.PublicationRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -46,6 +47,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _isImporting = MutableStateFlow(false)
     val isImporting: StateFlow<Boolean> = _isImporting
 
+    private val _importError = MutableStateFlow<String?>(null)
+    val importError: StateFlow<String?> = _importError.asStateFlow()
+
+    fun clearImportError() {
+        _importError.value = null
+    }
+
     fun importBook(uri: Uri) {
         if (_isImporting.value) return
         _isImporting.value = true
@@ -60,6 +68,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val format = detectFormat(uri, getApplication<Application>().contentResolver)
+            if (format == null) {
+                Log.e("LibraryViewModel", "Unsupported format: $uri")
+                _importError.value = "Unsupported file format"
+                _isImporting.value = false
+                return@launch
+            }
+
             val id = UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString()
 
             if (format == FORMAT_EPUB) {
@@ -76,7 +91,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val result = pubRepository.open(uri)
         if (result.isFailure) {
             Log.e("LibraryViewModel", "Cannot open publication: $uri", result.exceptionOrNull())
-            _isImporting.value = false
             return
         }
         val pub = result.getOrThrow()
@@ -114,14 +128,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
         // Extension is the primary signal for comics — system MIME types for CBZ/CBR
         // are not standardised and vary across file managers.
-        fun detectFormat(uri: Uri, contentResolver: ContentResolver): String {
+        // Returns null for unrecognised formats — callers must handle the null case.
+        fun detectFormat(uri: Uri, contentResolver: ContentResolver): String? {
             val ext = uri.lastPathSegment?.substringAfterLast('.')?.lowercase()
             val mime = contentResolver.getType(uri)
             return when {
                 ext == "cbz" || mime == "application/vnd.comicbook+zip" -> FORMAT_CBZ
                 ext == "cbr" || mime == "application/vnd.comicbook-rar" -> FORMAT_CBR
                 ext == "pdf" || mime == "application/pdf" -> FORMAT_PDF
-                else -> FORMAT_EPUB
+                ext == "epub" || mime == "application/epub+zip" -> FORMAT_EPUB
+                else -> null
             }
         }
     }

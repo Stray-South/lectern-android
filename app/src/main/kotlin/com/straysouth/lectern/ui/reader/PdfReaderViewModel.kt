@@ -47,6 +47,11 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
     private var bookId: String? = null
     private var pageCount: Int = 0
 
+    // Tracks decoded bitmaps for safe recycling. Compose may still be drawing the
+    // previous bitmap when renderPage assigns a new one — never recycle at assignment
+    // time. Keep at most 2 entries; recycle the oldest when the queue exceeds the cap.
+    private val bitmapQueue = ArrayDeque<Bitmap>()
+
     fun load(id: String) {
         bookId = id
         viewModelScope.launch {
@@ -110,6 +115,8 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
         page.close()
         _pageBitmap.value = bmp
+        bitmapQueue.addLast(bmp)
+        if (bitmapQueue.size > 2) bitmapQueue.removeFirst().recycle()
     }
 
     // Room and DataStore are both main-safe suspend functions — no withContext needed.
@@ -138,6 +145,8 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
             renderer = null
             pfd?.close()
             pfd = null
+            bitmapQueue.forEach { it.recycle() }
+            bitmapQueue.clear()
         }
     }
 }

@@ -143,10 +143,12 @@ private fun ComicsPageView(
     onNextPage: () -> Unit,
     onPrevPage: () -> Unit,
 ) {
+    val cd = stringResource(R.string.cd_comics_page_view)
     var dragTotal by remember { mutableFloatStateOf(0f) }
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .semantics(mergeDescendants = false) { contentDescription = cd }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { dragTotal = 0f },

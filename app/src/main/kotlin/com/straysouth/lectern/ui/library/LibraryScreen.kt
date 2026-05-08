@@ -22,10 +22,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -52,6 +57,15 @@ fun LibraryScreen(
     val books by viewModel.books.collectAsState()
     val isImporting by viewModel.isImporting.collectAsState()
     val progressByBookId by viewModel.progressByBookId.collectAsState()
+    val importError by viewModel.importError.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(importError) {
+        val msg = importError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        viewModel.clearImportError()
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -61,6 +75,11 @@ fun LibraryScreen(
 
     Scaffold(
         modifier = modifier.semantics { contentDescription = cdLibrary },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(snackbarData = data)
+            }
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { if (!isImporting) launcher.launch(IMPORT_MIME_TYPES) },
@@ -80,27 +99,38 @@ fun LibraryScreen(
             }
         },
     ) { contentPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-        ) {
-            if (books.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.no_books_yet),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(books, key = { it.id }) { book ->
-                        val title = book.title ?: stringResource(R.string.book_title_untitled)
-                        BookRow(
-                            title = title,
-                            progress = progressByBookId[book.id],
-                            onClick = { onBookSelected(book) },
-                        )
-                    }
+        LibraryContent(
+            books = books,
+            progressByBookId = progressByBookId,
+            onBookSelected = onBookSelected,
+            modifier = Modifier.padding(contentPadding),
+        )
+    }
+}
+
+@Composable
+private fun LibraryContent(
+    books: List<Book>,
+    progressByBookId: Map<String, Double>,
+    onBookSelected: (Book) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier.fillMaxSize()) {
+        if (books.isEmpty()) {
+            Text(
+                text = stringResource(R.string.no_books_yet),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(books, key = { it.id }) { book ->
+                    val title = book.title ?: stringResource(R.string.book_title_untitled)
+                    BookRow(
+                        title = title,
+                        progress = progressByBookId[book.id],
+                        onClick = { onBookSelected(book) },
+                    )
                 }
             }
         }
