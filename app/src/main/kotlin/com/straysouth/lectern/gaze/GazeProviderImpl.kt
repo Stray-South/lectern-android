@@ -246,7 +246,9 @@ class GazeProviderImpl(
                 PowerManager.THERMAL_STATUS_EMERGENCY,
                 PowerManager.THERMAL_STATUS_SHUTDOWN -> {
                     Log.w(TAG, "Thermal status $status — pausing gaze analysis")
-                    _state.value = GazeState.Paused
+                    // clearAnalyzer stops frame delivery and CPU/GPU inference load.
+                    // State-only change was insufficient — frames kept processing.
+                    pauseAnalysis()
                 }
                 else -> { /* allow analysis to continue */ }
             }
