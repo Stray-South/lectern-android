@@ -22,4 +22,8 @@ interface BookDao {
 
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    // COALESCE maps null lastOpenedAt to 0 so never-opened books sort last.
+    @Query("SELECT * FROM books ORDER BY COALESCE(lastOpenedAt, 0) DESC")
+    fun observeAllByLastOpened(): Flow<List<Book>>
 }

@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -40,13 +41,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val comicsPageRepository = ComicsPageRepository(application)
     private val anchorRepository = AnchorRepository(application)
 
-    val books: StateFlow<List<Book>> =
-        bookDao.observeAll()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = emptyList(),
-            )
+    enum class SortOrder { ADDED, LAST_OPENED }
+
+    private val _sortOrder = MutableStateFlow(SortOrder.ADDED)
+    val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
+
+    fun toggleSortOrder() {
+        _sortOrder.value = if (_sortOrder.value == SortOrder.ADDED) SortOrder.LAST_OPENED else SortOrder.ADDED
+    }
+
+    val books: StateFlow<List<Book>> = _sortOrder
+        .flatMapLatest { order ->
+            if (order == SortOrder.ADDED) bookDao.observeAll()
+            else bookDao.observeAllByLastOpened()
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList(),
+        )
 
     val progressByBookId: StateFlow<Map<String, Double>> =
         readingProgressDao.observeAll()
@@ -58,6 +71,15 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }.toMap()
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    // Updates lastOpenedAt so last-opened sort reflects when books were read.
+    // EpubReaderViewModel also calls updateLastOpened on open — the duplicate
+    // call from MainActivity is idempotent (same timestamp within milliseconds).
+    fun recordOpened(id: String) {
+        viewModelScope.launch {
+            bookDao.updateLastOpened(id, System.currentTimeMillis())
+        }
+    }
 
     private val _isImporting = MutableStateFlow(false)
     val isImporting: StateFlow<Boolean> = _isImporting
