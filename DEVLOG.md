@@ -54,3 +54,23 @@ Format: see .claude/skills/devlog/SKILL.md
   build.gradle.kts
 - **Next:** Sprint 4 — TTS with word-level highlighting.
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Sprint 4 TTS with word-level highlighting
+- **Did:** TtsRepository (DataStore doublePreferencesKey "speed"). TtsPrefs data
+  class (speed: Double = 1.0). TtsUiState sealed class (Idle / Active(isPlaying,
+  tokenLocator)). TtsBar Composable: Play/Pause IconButton, AnimatedVisibility Stop
+  button, SpeedChips FilterChip row (0.5×/1×/1.5×/2×). EpubReaderViewModel: private
+  typealiases AndroidTtsFactory/AndroidTtsNav; State.Ready carries ttsFactory?;
+  startTts() creates TtsNavigatorFactory(app, publication), starts navigator, collects
+  combine(playback, location) to drive TtsUiState; pauseTts/stopTts/updateTtsSpeed;
+  cleanUpTts() cancels collection job and closes navigator. EpubReaderFragment: amber
+  40% highlight decoration applied via applyDecorations() when tokenLocator non-null,
+  cleared on Idle. ReaderOverlay: TtsBar at BottomCenter. detekt config: LongParameterList
+  ignoreAnnotated Composable.
+- **Why:** Sprint 4 target — word-level TTS highlighting for AuDHD readers, using
+  Readium TtsNavigator for CFI-accurate locator tracking.
+- **Files:** TtsPrefs.kt (new), TtsRepository.kt (new), TtsUiState.kt (new),
+  TtsBar.kt (new), EpubReaderViewModel.kt, EpubReaderFragment.kt, ReaderOverlay.kt,
+  strings.xml, config/detekt/detekt.yml
+- **Next:** Sprint 5 — spaced retrieval / highlights persistence.
+- **Blockers:** none

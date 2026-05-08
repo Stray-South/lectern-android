@@ -4,6 +4,11 @@ build:
     complexity: 2
     naming: 1
 
+complexity:
+  LongParameterList:
+    # Composable functions legitimately have many parameters — suppress for @Composable.
+    ignoreAnnotated: ['Composable']
+
 naming:
   FunctionNaming:
     # Compose @Composable functions follow PascalCase by convention

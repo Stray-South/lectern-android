@@ -23,4 +23,7 @@
     <string name="typography_theme_light">Light</string>
     <string name="typography_theme_sepia">Sepia</string>
     <string name="typography_theme_dark">Dark</string>
+    <string name="cd_tts_play">Play</string>
+    <string name="cd_tts_pause">Pause</string>
+    <string name="cd_tts_stop">Stop</string>
 </resources>

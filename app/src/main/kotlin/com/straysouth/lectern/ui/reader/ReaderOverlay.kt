@@ -31,19 +31,36 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.R
+import com.straysouth.lectern.data.repository.TtsPrefs
 import com.straysouth.lectern.data.repository.TypographyPrefs
 
 @Composable
 internal fun ReaderOverlay(
     state: EpubReaderViewModel.State,
     typographyPrefs: TypographyPrefs,
+    ttsUiState: TtsUiState,
+    ttsPrefs: TtsPrefs,
     onBack: () -> Unit,
     onTypographyChange: (TypographyPrefs) -> Unit,
+    onTtsPlay: () -> Unit,
+    onTtsPause: () -> Unit,
+    onTtsStop: () -> Unit,
+    onTtsSpeedChange: (Double) -> Unit,
 ) {
     when (state) {
         EpubReaderViewModel.State.Loading -> LoadingOverlay()
         is EpubReaderViewModel.State.Error -> ErrorOverlay(message = state.message, onBack = onBack)
-        is EpubReaderViewModel.State.Ready -> ReadyOverlay(typographyPrefs, onBack, onTypographyChange)
+        is EpubReaderViewModel.State.Ready -> ReadyOverlay(
+            typographyPrefs = typographyPrefs,
+            ttsUiState = ttsUiState,
+            ttsPrefs = ttsPrefs,
+            onBack = onBack,
+            onTypographyChange = onTypographyChange,
+            onTtsPlay = onTtsPlay,
+            onTtsPause = onTtsPause,
+            onTtsStop = onTtsStop,
+            onTtsSpeedChange = onTtsSpeedChange,
+        )
     }
 }
 
@@ -82,8 +99,14 @@ private fun ErrorOverlay(message: String, onBack: () -> Unit) {
 @Composable
 private fun ReadyOverlay(
     typographyPrefs: TypographyPrefs,
+    ttsUiState: TtsUiState,
+    ttsPrefs: TtsPrefs,
     onBack: () -> Unit,
     onTypographyChange: (TypographyPrefs) -> Unit,
+    onTtsPlay: () -> Unit,
+    onTtsPause: () -> Unit,
+    onTtsStop: () -> Unit,
+    onTtsSpeedChange: (Double) -> Unit,
 ) {
     var showPanel by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
@@ -104,6 +127,19 @@ private fun ReadyOverlay(
                 }
             }
         }
+
+        TtsBar(
+            state = ttsUiState,
+            prefs = ttsPrefs,
+            onPlay = onTtsPlay,
+            onPause = onTtsPause,
+            onStop = onTtsStop,
+            onSpeedChange = onTtsSpeedChange,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp),
+        )
+
         if (showPanel) {
             TypographyPanel(
                 prefs = typographyPrefs,

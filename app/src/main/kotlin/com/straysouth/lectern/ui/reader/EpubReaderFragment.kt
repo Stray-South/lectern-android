@@ -1,5 +1,6 @@
 package com.straysouth.lectern.ui.reader
 
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -21,6 +22,7 @@ import com.straysouth.lectern.ui.theme.LecternTheme
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
+import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 
 class EpubReaderFragment : Fragment() {
@@ -29,7 +31,8 @@ class EpubReaderFragment : Fragment() {
 
     private lateinit var overlay: ComposeView
 
-    // Assigned once the navigator fragment is committed; used to submit live pref updates.
+    // Assigned once the navigator fragment is committed; used to submit live pref updates
+    // and apply TTS word decorations.
     private var navigatorFragment: EpubNavigatorFragment? = null
 
     companion object {
@@ -38,7 +41,10 @@ class EpubReaderFragment : Fragment() {
         // with arguments = bundleOf(ARG_BOOK_ID to bookId).
         const val ARG_BOOK_ID = "book_id"
         private const val TAG_NAVIGATOR = "epub_navigator"
+        private const val TTS_DECORATION_GROUP = "tts"
         private val CONTAINER_ID get() = R.id.epub_reader_container
+        // Amber at 40% alpha — accessible on both light and dark Readium themes.
+        private val TTS_HIGHLIGHT_TINT = Color.argb(102, 255, 215, 0)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +102,29 @@ class EpubReaderFragment : Fragment() {
                 }
             }
         }
+
+        // Apply TTS word highlight decorations. navigatorFragment null-safety covers the
+        // window before the Ready state collector fires. Decoration list is empty when
+        // tokenLocator is null (TtsUiState.Idle or first emission) to clear any stale mark.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.ttsUiState.collect { state ->
+                    val locator = (state as? TtsUiState.Active)?.tokenLocator
+                    val decorations = if (locator != null) {
+                        listOf(
+                            Decoration(
+                                id = "tts_word",
+                                locator = locator,
+                                style = Decoration.Style.Highlight(tint = TTS_HIGHLIGHT_TINT),
+                            ),
+                        )
+                    } else {
+                        emptyList()
+                    }
+                    navigatorFragment?.applyDecorations(decorations, TTS_DECORATION_GROUP)
+                }
+            }
+        }
     }
 
     override fun onCreateView(
@@ -116,11 +145,19 @@ class EpubReaderFragment : Fragment() {
                 LecternTheme {
                     val state by viewModel.state.collectAsState()
                     val typographyPrefs by viewModel.typographyPrefs.collectAsState()
+                    val ttsUiState by viewModel.ttsUiState.collectAsState()
+                    val ttsPrefs by viewModel.ttsPrefs.collectAsState()
                     ReaderOverlay(
                         state = state,
                         typographyPrefs = typographyPrefs,
+                        ttsUiState = ttsUiState,
+                        ttsPrefs = ttsPrefs,
                         onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
                         onTypographyChange = viewModel::updateTypography,
+                        onTtsPlay = { viewModel.startTts() },
+                        onTtsPause = viewModel::pauseTts,
+                        onTtsStop = viewModel::stopTts,
+                        onTtsSpeedChange = viewModel::updateTtsSpeed,
                     )
                 }
             }
