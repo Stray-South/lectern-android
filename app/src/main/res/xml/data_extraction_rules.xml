@@ -5,8 +5,11 @@
         <exclude domain="database" path="." />
         <exclude domain="file" path="." />
     </cloud-backup>
-    <!-- D2D transfer exclusions: calibration weights must not transfer to a new device -->
+    <!-- D2D transfer exclusions: device-specific preferences must not carry over -->
     <device-transfer>
+        <!-- Calibration weights are specific to this device's camera geometry -->
         <exclude domain="dataDir" path="files/datastore/calibration_prefs.preferences_pb" />
+        <!-- TTS speed preference: new device may have different default engine characteristics -->
+        <exclude domain="dataDir" path="files/datastore/tts_prefs.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

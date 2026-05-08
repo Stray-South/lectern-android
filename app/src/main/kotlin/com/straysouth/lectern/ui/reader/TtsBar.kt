@@ -54,6 +54,16 @@ internal fun TtsBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            if (state is TtsUiState.EngineUnavailable) {
+                Text(
+                    text = stringResource(R.string.tts_engine_unavailable),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+                return@Row
+            }
+
             PlayPauseButton(state = state, onPlay = onPlay, onPause = onPause)
 
             AnimatedVisibility(visible = state is TtsUiState.Active) {

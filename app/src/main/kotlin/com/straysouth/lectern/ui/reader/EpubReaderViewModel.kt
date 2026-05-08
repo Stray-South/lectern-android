@@ -177,7 +177,12 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // ── TTS ──────────────────────────────────────────────────────────────────
 
     fun startTts(initialLocator: Locator? = null) {
-        val factory = (_state.value as? State.Ready)?.ttsFactory ?: return
+        val factory = (_state.value as? State.Ready)?.ttsFactory
+        if (factory == null) {
+            // No TTS engine installed or available (e.g. Samsung One UI 7+).
+            _ttsUiState.value = TtsUiState.EngineUnavailable
+            return
+        }
         // If navigator already exists, resume only if not already playing
         _ttsNavigator?.let { nav ->
             if (!nav.playback.value.playWhenReady) nav.play()

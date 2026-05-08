@@ -209,7 +209,9 @@ class EpubReaderFragment : Fragment() {
                         gazeEnabled = gazeEnabled,
                         onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
                         onTypographyChange = viewModel::updateTypography,
-                        onTtsPlay = { viewModel.startTts() },
+                        // Pass current navigator position so TTS starts where the user is reading,
+                        // not at the beginning of the book. Null if navigator not yet attached.
+                        onTtsPlay = { viewModel.startTts(navigatorFragment?.currentLocator?.value) },
                         onTtsPause = viewModel::pauseTts,
                         onTtsStop = viewModel::stopTts,
                         onTtsSpeedChange = viewModel::updateTtsSpeed,
