@@ -95,22 +95,7 @@ fun LibraryScreen(
             }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { if (!isImporting) launcher.launch(IMPORT_MIME_TYPES) },
-            ) {
-                if (isImporting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = stringResource(R.string.cd_import_book),
-                    )
-                }
-            }
+            LibraryFab(isImporting = isImporting, onImport = { launcher.launch(IMPORT_MIME_TYPES) })
         },
     ) { contentPadding ->
         LibraryContent(
@@ -122,6 +107,24 @@ fun LibraryScreen(
             onToggleSortOrder = { viewModel.toggleSortOrder() },
             modifier = Modifier.padding(contentPadding),
         )
+    }
+}
+
+@Composable
+private fun LibraryFab(isImporting: Boolean, onImport: () -> Unit) {
+    FloatingActionButton(onClick = { if (!isImporting) onImport() }) {
+        if (isImporting) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = MaterialTheme.colorScheme.onPrimary,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = stringResource(R.string.cd_import_book),
+            )
+        }
     }
 }
 
@@ -187,9 +190,10 @@ private fun SortToggleRow(sortOrder: SortOrder, onToggle: () -> Unit) {
         val label = stringResource(
             if (sortOrder == SortOrder.ADDED) R.string.sort_added else R.string.sort_last_opened,
         )
+        val cdSortToggle = stringResource(R.string.cd_sort_toggle)
         TextButton(
             onClick = onToggle,
-            modifier = Modifier.semantics { contentDescription = label },
+            modifier = Modifier.semantics { contentDescription = cdSortToggle },
         ) {
             Text(label, style = MaterialTheme.typography.labelMedium)
         }
