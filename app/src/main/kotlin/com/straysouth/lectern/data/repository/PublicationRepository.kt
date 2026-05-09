@@ -5,14 +5,16 @@ import android.net.Uri
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.asset.AssetRetriever
-import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
 
 class PublicationRepository(context: Context) {
 
     private val appContext = context.applicationContext
-    private val httpClient = DefaultHttpClient()
+    // SECURITY B.8: BlockingHttpClient prevents Readium from making outbound HTTPS calls if an
+    // EPUB references a remote OPF URL. V1 sources all content from local content:// URIs;
+    // no legitimate HTTP fetch is needed. See RED-TEAM.md §B.8.
+    private val httpClient = BlockingHttpClient
     private val assetRetriever = AssetRetriever(appContext.contentResolver, httpClient)
     private val publicationOpener = PublicationOpener(
         publicationParser = DefaultPublicationParser(

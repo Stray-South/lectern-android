@@ -480,3 +480,33 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Execute B.2 and B.8 fixes.
 - **Blockers:** none
+
+## 2026-05-09T00:00Z — Security Sprint: Group B fixes (B.2 BitmapFactory + B.8 BlockingHttpClient)
+- **Did:** Executed fixes for the two Group B code findings.
+
+  **B.2 (BitmapFactory OOM):** Replaced single-pass `BitmapFactory.decodeStream()` in
+  `ComicsReaderViewModel` with two-pass decode: `renderZipPage()` and `renderRarPage()` (split
+  from `renderPage()` to keep cyclomatic complexity under detekt threshold). Pass 1 uses
+  `inJustDecodeBounds = true` to read image header only (≤ 4 KB, no pixel allocation). Pass 2
+  decodes with `inSampleSize` computed by `calculateInSampleSize()` to cap both axes at
+  `MAX_BITMAP_DIM = 2048` (worst-case 16 MB allocation). zip4j supports independent
+  `getInputStream` calls per FileHeader. junrar CBR path opens `Archive` twice per page — same
+  as existing sequential-read pattern. Unknown-format fallback: `sampleSize = 1`.
+
+  **B.8 (DefaultHttpClient exfiltration):** New `BlockingHttpClient` object implements
+  Readium's `HttpClient` interface and unconditionally returns
+  `Try.failure(HttpError.IO(Exception(...)))`. `PublicationRepository` now uses
+  `BlockingHttpClient` for both `AssetRetriever` and `DefaultPublicationParser`. No code path
+  in V1 requires Readium to make outbound HTTP calls — all EPUB content is served from
+  local `content://` assets via `WebViewServer.shouldInterceptRequest()`. Verified: normal
+  EPUB import, chapter serving, TTS, and decorations are unaffected by blocking HTTP.
+
+  All gates green (detekt `CyclomaticComplexMethod` resolved by extracting helper methods;
+  `ReturnCount` resolved by `?.let` pattern).
+
+- **Why:** B.2 closes app-process OOM risk on malformed CBZ/CBR entries. B.8 closes the
+  import-time HTTPS tracking beacon surface introduced by Readium's DefaultHttpClient.
+- **Files:** BlockingHttpClient.kt (new), PublicationRepository.kt, ComicsReaderViewModel.kt,
+  docs/security/RED-TEAM.md
+- **Next:** Plan Group B test implementation for B.3–B.7 (confirmed-safe tests).
+- **Blockers:** none

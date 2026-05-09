@@ -147,18 +147,9 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
     }
 
     // Must run on ioSerial — shared ZipFile handle is not thread-safe.
-    // CBR: a fresh Archive is opened and closed per call to satisfy junrar's
-    // sequential-read contract across non-sequential page navigation.
     private fun renderPage(index: Int) {
         val entry = pageEntries.getOrNull(index) ?: return
-        val bmp = zipFile?.let { zip ->
-            zip.getInputStream(zip.getFileHeader(entry)).use { BitmapFactory.decodeStream(it) }
-        } ?: rarCacheFile?.let { file ->
-            Archive(file).use { rar ->
-                val header = rar.fileHeaders.first { it.fileName == entry }
-                rar.getInputStream(header).use { BitmapFactory.decodeStream(it) }
-            }
-        }
+        val bmp = renderZipPage(entry) ?: renderRarPage(entry)
         if (bmp != null) {
             _pageBitmap.value = bmp
             bitmapQueue.addLast(bmp)
@@ -167,6 +158,52 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
             // recycled bitmap even during recomposition.
             if (bitmapQueue.size > 2) bitmapQueue.removeFirst().recycle()
         }
+    }
+
+    // SECURITY B.2: Two-pass decode. Pass 1 reads only the image header via inJustDecodeBounds
+    // (fast, ≤ 4 KB). Pass 2 decodes with inSampleSize capping both axes to MAX_BITMAP_DIM,
+    // bounding allocation to MAX_BITMAP_DIM² × 4 bytes. zip4j supports independent
+    // getInputStream calls on the same FileHeader (returns a fresh ZipInputStream each time).
+    private fun renderZipPage(entry: String): Bitmap? {
+        val zip = zipFile ?: return null
+        return zip.getFileHeader(entry)?.let { header ->
+            val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            zip.getInputStream(header).use { BitmapFactory.decodeStream(it, null, boundsOpts) }
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = calculateInSampleSize(boundsOpts.outWidth, boundsOpts.outHeight)
+            }
+            zip.getInputStream(header).use { BitmapFactory.decodeStream(it, null, decodeOpts) }
+        }
+    }
+
+    // SECURITY B.2: Same two-pass approach for CBR. Archive is already re-opened per
+    // renderPage call (junrar sequential-read contract); opening twice is consistent.
+    private fun renderRarPage(entry: String): Bitmap? {
+        val file = rarCacheFile ?: return null
+        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        Archive(file).use { rar ->
+            val header = rar.fileHeaders.first { it.fileName == entry }
+            rar.getInputStream(header).use { BitmapFactory.decodeStream(it, null, boundsOpts) }
+        }
+        val decodeOpts = BitmapFactory.Options().apply {
+            inSampleSize = calculateInSampleSize(boundsOpts.outWidth, boundsOpts.outHeight)
+        }
+        return Archive(file).use { rar ->
+            val header = rar.fileHeaders.first { it.fileName == entry }
+            rar.getInputStream(header).use { BitmapFactory.decodeStream(it, null, decodeOpts) }
+        }
+    }
+
+    // Computes the power-of-2 inSampleSize that reduces both axes to ≤ MAX_BITMAP_DIM.
+    // Unknown dimensions (outWidth/outHeight ≤ 0 from inJustDecodeBounds on an unrecognised
+    // format) fall through to sampleSize = 1, preserving existing null-bmp behaviour.
+    private fun calculateInSampleSize(outWidth: Int, outHeight: Int): Int {
+        if (outWidth <= 0 || outHeight <= 0) return 1
+        var sampleSize = 1
+        while (outWidth / sampleSize > MAX_BITMAP_DIM || outHeight / sampleSize > MAX_BITMAP_DIM) {
+            sampleSize *= 2
+        }
+        return sampleSize
     }
 
     // Room and DataStore are main-safe suspend functions — no withContext needed (RULES.md).
@@ -209,6 +246,12 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
 
     companion object {
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
+
+        // SECURITY B.2: Caps decoded bitmap dimensions. Worst-case allocation:
+        // 2048 × 2048 × 4 bytes = 16 MB per page — safe on minSdk 26 (heap ≥ 64 MB).
+        // High-quality comic scans at 3000–4000 px get inSampleSize=2, rendering at
+        // 1500–2000 px — still crisp on typical Android screens.
+        private const val MAX_BITMAP_DIM = 2048
 
         private fun isImageFile(name: String): Boolean =
             name.substringAfterLast('.').lowercase() in IMAGE_EXTENSIONS
