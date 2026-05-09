@@ -322,36 +322,41 @@
 > No cloud sync in V1. `android:allowBackup="false"` confirmed in Manifest.
 > `data_extraction_rules.xml` excludes all sharedpref/database/file from cloud backup.
 
-**D.1** `datastore_calibrationWeights_notInDeviceTransfer` 🔴
+**D.1** `datastore_calibrationWeights_notInDeviceTransfer` ✅ SAFE + regression tests
 - MASVS: MASVS-STORAGE-1
-- Attack: Perform a D2D (device-to-device) transfer to a new device. Verify calibration weights (`calibration_prefs.preferences_pb`) are NOT transferred — they encode device-specific camera geometry and would produce wrong gaze predictions on a different device.
-- Pass: `data_extraction_rules.xml` explicitly excludes `calibration_prefs.preferences_pb` from `<device-transfer>`. Verify via ADB backup + manual inspection.
-- Source: `data_extraction_rules.xml` — confirmed exclusion.
+- Attack: D2D transfer to a new device. Calibration weights encode this device's camera geometry — on a different device they produce wrong gaze predictions with no visible indication.
+- ✓ CONFIRMED: `<device-transfer>` block excludes `files/datastore/calibration_prefs.preferences_pb` and `files/datastore/tts_prefs.preferences_pb`. DataStore delegate names in source match exclusion paths exactly.
+- ✅ REGRESSION TESTS (`GroupDSecurityTest`): `calibrationPrefs_excludedFromDeviceTransfer`, `ttsPrefs_excludedFromDeviceTransfer`, `calibrationRepository_datastoreName_matchesExclusionPath`, `ttsRepository_datastoreName_matchesExclusionPath`.
+- ⏳ DEFERRED: ADB backup inspection on physical device.
 
-**D.2** `datastore_readingPosition_deviceTransfer_intentional` 🔍
+**D.2** `datastore_readingPosition_deviceTransfer_intentional` ✓ CONFIRMED BENIGN
 - MASVS: MASVS-STORAGE-1
-- Attack / Question: Reading positions (CFI locators), focus band prefs, and anchor locators are NOT excluded from D2D transfer. Is this intentional?
-- Pass if intentional: Document the decision — reading positions following the user to a new device is a feature. Verify the transferred CFIs are valid on the new device (book content must also transfer or be re-imported).
-- Pass if unintentional: Exclude the relevant DataStore files from `<device-transfer>`.
-- 🔍 Design decision gap — needs explicit answer before beta.
+- Analysis: `reader_prefs`, `anchor_prefs`, `comics_page_prefs`, `pdf_page_prefs` are NOT excluded from D2D transfer — the omission is harmless.
+- ✓ Root cause: All DataStore keys use `bookId = UUID(content://URI)`. Content URIs are device-and-provider-specific; the same file re-imported on the new device gets a different URI → different UUID → different key → every transferred entry is permanently orphaned and never read.
+- ✓ No security risk: Readium `Locator` JSON contains only EPUB-internal relative hrefs and CFI strings — no `content://` URIs, no PII.
+- ✓ No correctness risk: No stale position is ever applied; Room is excluded from D2D so no `Book` row provides a key to look up.
+- Future: if `bookCacheId` changes to a content-stable key (file hash, EPUB unique-id), add D2D exclusions for these four stores.
+- ✅ REGRESSION TESTS (`GroupDSecurityTest`): `readingPositionRepositories_useBookIdAsKeyDiscriminator` (pins `bookId`-based key pattern; fails if key changes), `bookCacheId_derivedFromUriString_d2dTransferIsOrphanHarmless` (pins `nameUUIDFromBytes(uri.toByteArray())` implementation).
 
-**D.3** `datastore_calibrationWeights_notInLogcat` 🔴
+**D.3** `datastore_calibrationWeights_notInLogcat` ✅ SAFE + regression tests
 - MASVS: MASVS-STORAGE-2
-- Attack: Run a full calibration session. Capture Logcat output (`adb logcat -d`). Verify no calibration weight values (`weights_x`, `weights_y` double arrays) appear in any log line.
-- Pass: Zero Logcat lines containing numeric calibration weight arrays. Regression test to prevent future regressions.
-- Source: Verified from source — all `Log.*` calls in gaze module use only status messages.
+- Attack: Capture Logcat during calibration. Verify no `weightsX`/`weightsY` values or iris UV coordinates appear in any log line.
+- ✓ CONFIRMED: All `Log.*` calls in `GazeProviderImpl.kt` and `GazeViewModel.kt` emit only status strings and exception references. `CalibrationRepository.kt` has zero log calls.
+- ✅ REGRESSION TESTS (`GroupDSecurityTest`): `gazeProviderImpl_logLines_containNoWeightOrIrisData`, `gazeViewModel_logLines_containNoWeightOrIrisData`, `calibrationRepository_hasNoLogCalls`.
+- ⏳ DEFERRED: Runtime logcat capture during a live calibration session (instrumented).
 
-**D.4** `datastore_noSensitiveDataInAutoBackup` 🔴
+**D.4** `datastore_noSensitiveDataInAutoBackup` ✅ SAFE + regression tests
 - MASVS: MASVS-STORAGE-1
-- Attack: Enable Google Auto Backup (temporarily override `allowBackup="false"` in test). Trigger a backup. Examine the backup to verify no book content, calibration weights, or reading positions are included.
-- Pass: `allowBackup="false"` prevents all Auto Backup in production. This test validates the exclusion rule and prevents future accidental re-enablement.
-- Source: `android:allowBackup="false"` confirmed.
+- Attack: Enable Google Auto Backup. Verify no book content, calibration weights, or reading positions are included.
+- ✓ CONFIRMED: `android:allowBackup="false"`. Belt-and-suspenders: `<cloud-backup>` block excludes all three domains with wildcard paths (`domain="file" path="."`, `domain="database" path="."`, `domain="sharedpref" path="."`).
+- ✅ REGRESSION TESTS (`GroupDSecurityTest`): `manifest_allowBackupIsFalse`, `dataExtractionRules_cloudBackup_excludesAllDataTypes`.
+- ⏳ DEFERRED: ADB backup inspection on physical device.
 
-**D.5** `datastore_nocleartextStorageOfBookContent` 🔴
+**D.5** `datastore_nocleartextStorageOfBookContent` ✅ SAFE + regression tests
 - MASVS: MASVS-STORAGE-1 · MASVS-CRYPTO-1
-- Attack: On a rooted device, examine the app's private storage (`/data/data/com.straysouth.lectern/`). Verify book content is stored in app-private storage, not on external storage.
-- Pass: All imported files stored under `context.filesDir` or `context.cacheDir` — not `Environment.getExternalStorageDirectory()`. No book content is world-readable.
-- 🔍 Verify: `ComicsReaderViewModel.uriToFile()` writes to `context.cacheDir` — correct. Verify EPUB/PDF import path also uses `filesDir`, not external.
+- Attack: Verify book content is stored in app-private storage, not world-readable external storage.
+- ✓ CONFIRMED: Covers → `context.filesDir`. CBZ/CBR cache → `context.cacheDir`. EPUB/PDF → content:// URI (no copy to disk). Zero uses of `getExternalStorageDirectory()`, `getExternalFilesDir()`, `getExternalCacheDir()` anywhere in main sources.
+- ✅ REGRESSION TESTS (`GroupDSecurityTest`): `bookFiles_storedInAppPrivateStorage_notExternal`, `noExternalStorageApiUsage_inMainSources` (global walk of all main-source .kt files).
 
 ---
 
@@ -586,7 +591,7 @@
 | A — EPUB3 content injection | 7 | 🔴 All new |
 | B — File import from untrusted sources | 7 | 🔴 All new |
 | C — Room DB integrity | 5 | ✅ C.2, C.4 (source), C.5 JVM; 🔴 C.1, C.3, C.4 DB deferred |
-| D — DataStore and local storage | 5 | 🔴 All new |
+| D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
 | E — TTS / Android speech engine | 4 | 🔴 All new |
 | F — Supply chain | 6 | 🔴 All new |
 | G — AuDHD-first safety regressions | 7 | 🔴 All new |

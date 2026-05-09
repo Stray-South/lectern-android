@@ -623,3 +623,53 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** GroupCSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Group D (DataStore + local storage) or deferred instrumented tests.
 - **Blockers:** none
+
+## 2026-05-09T02:00Z — Group D JVM security tests (DataStore + local storage)
+
+- **Did:** Deep-researched Group D (D.1–D.5), resolved D.2 design-decision gap, wrote
+  `GroupDSecurityTest.kt` with 13 JVM tests. All gates green.
+
+  **D.1 — Calibration/TTS excluded from D2D (4 tests):**
+  XML assertions that `calibration_prefs.preferences_pb` and `tts_prefs.preferences_pb`
+  appear in the `<device-transfer>` block; source assertions that both repository DataStore
+  delegate names exactly match the exclusion paths. Guards against silent re-enablement
+  if a repository is renamed without updating the XML.
+
+  **D.2 — Reading position D2D: confirmed benign (2 tests):**
+  Deep research resolved the open design-decision question. The four reading-position
+  stores (`reader_prefs`, `anchor_prefs`, `comics_page_prefs`, `pdf_page_prefs`) are not
+  excluded, but transferred entries are permanently orphaned: `bookId = UUID(content://URI)`
+  and content URIs are device-specific, so keys never match on the new device. Readium
+  Locator values contain only EPUB-internal hrefs/CFIs — no PII, no content:// URIs.
+  Room is excluded entirely from D2D, so no Book rows are available to look up against.
+  Tests pin the `bookId`-discriminator key pattern in all 4 repos and the `nameUUIDFromBytes`
+  mechanism — both fail if the key derivation changes to content-stable, prompting addition
+  of D2D exclusions. Status updated from 🔍 to ✓ in RED-TEAM.md.
+
+  **D.3 — No sensitive terms in log calls (3 tests):**
+  Line-level filter (only lines containing `Log.` or `Timber.`) then assert none of
+  `weightsX`, `weightsY`, `irisU`, `irisV`, `CalibrationResult`, `toJsonString` appear.
+  CalibrationRepository separately verified to have zero log calls at all.
+
+  **D.4 — No sensitive data in Auto Backup (2 tests):**
+  `allowBackup="false"` pinned in manifest; all three cloud-backup wildcard exclusions
+  (`file`, `database`, `sharedpref`) verified in the `<cloud-backup>` block.
+
+  **D.5 — App-private storage only (2 tests):**
+  Source assertions for filesDir (covers) and cacheDir (CBZ/CBR); global file walk of
+  all main-source .kt files asserts zero external storage API usage.
+
+  **Cascade risk mitigations applied:**
+  - `deviceTransferBlock()` / `cloudBackupBlock()` helpers scope XML assertions to the
+    correct block, preventing cross-block false positives.
+  - D.3 log-line filter avoids false positives from legitimate non-log references to
+    weight/iris field names in production code.
+  - D.5 global walk uses `.flatMap` + `.toList()` pattern (no `ReturnCount` issue);
+    violations list in assertion message names the offending file and API.
+
+- **Why:** DataStore misconfiguration (wrong exclusion path, accidental allowBackup
+  re-enablement) can silently expose biometric-adjacent calibration data or fail to
+  protect book reading history. Source-pinned tests catch regressions before they ship.
+- **Files:** GroupDSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Group E (TTS privacy) or deferred instrumented tests.
+- **Blockers:** none
