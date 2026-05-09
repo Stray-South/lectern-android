@@ -738,3 +738,44 @@ Format: see .claude/skills/devlog/SKILL.md
   docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Groups I (coroutine safety) + J (gaze pipeline) JVM tests.
 - **Blockers:** none
+
+## 2026-05-09T00:00Z — Security regression tests: Groups I + J (coroutine / gaze privacy)
+
+- **Did:** Added `GroupIJSecurityTest.kt` — 4 JVM security regression tests across
+  groups I (Kotlin coroutines / dispatcher safety) and J (gaze privacy).
+
+  **I.1 — Gaze pipeline confinement (1 test):**
+  `GazeProviderImpl` uses `Dispatchers.Default.limitedParallelism(1)` for serial
+  frame analysis. `calibrate()` confirmed on `confined` dispatcher via `withContext(confined)`.
+  Both assertions use comment-stripped source to prevent false positives from KDoc references.
+
+  **I.2 — Room not on main thread (1 test):**
+  `AppDatabase.kt` assertFalse `allowMainThreadQueries` — guards against StrictMode
+  violations and coroutine-cancellation bypass.
+
+  **I.3 — TTS cleanUp cancels directly, no race (1 test):**
+  `cleanUpTts()` body extracted via `nextClassMemberIndex()`. Cancel must precede any
+  `launch {` in the body. Boundary helper extended with `val`/`var`/`@` patterns.
+  Launch detection uses regex `\blaunch\s*(\([^)]*\)\s*)?\{` to cover `launch{`
+  and parametrized forms.
+
+  **J.1 — CalibrationRepository stores weights only (1 test):**
+  Comment-stripped whole-file scan of `CalibrationRepository.kt`:
+  `weightsX`/`weightsY` present; `irisU`/`irisV` absent. Raw iris UV coordinates
+  must never be persisted (ADR-J: gaze data ephemeral in-memory only).
+
+  **Review fixes applied:**
+  - `nextClassMemberIndex()` extended with `val`/`var`/`private val`/`private var`/`@`
+    patterns to prevent body silently growing past a property declaration.
+  - `stripComments()` helper added; used in I.1 and J.1 source scans.
+  - Launch detection upgraded from `body.indexOf("launch {")` to regex to cover all forms.
+  - KDoc for `stripComments` rewritten as `//` comments to avoid nested-comment
+    parse failure (Kotlin nests `/*` inside block comments — `/**` in KDoc opened
+    an unclosed level-2 comment that consumed the remaining helpers).
+
+- **Why:** Serialized gaze pipeline, no main-thread DB access, and no racing TTS
+  teardown are verifiable from source without device. Iris UV non-persistence is the
+  core ADR-J invariant. JVM tests catch regressions before any physical device run.
+- **Files:** GroupIJSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Groups A–G instrumented tests (androidTest sprint).
+- **Blockers:** none

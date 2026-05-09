@@ -521,22 +521,25 @@
 
 ## Section I — Kotlin coroutines / dispatcher safety
 
-**I.1** `coroutines_gazeProviderConfinedDispatcher` 🔴
+**I.1** `coroutines_gazeProviderConfinedDispatcher` ✅ SAFE + regression test
 - MASVS: MASVS-CODE-3
 - Attack: Verify `GazeProviderImpl` uses `Dispatchers.Default.limitedParallelism(1)` for all state mutations. Two concurrent `onLandmarkerResult` callbacks must not race on `_state`.
-- Pass: MediaPipe callback → `scope.launch` on confined dispatcher. All `_state.value` assignments serialized.
-- Source: `GazeProviderImpl.kt` — confirmed `limitedParallelism(1)`.
+- Pass: MediaPipe callback → `scope.launch` on confined dispatcher. All `_state.value` assignments serialized. `calibrate()` runs `withContext(confined)` — security-critical path confirmed on confined dispatcher.
+- Source: `GazeProviderImpl.kt` line 52: `private val confined = Dispatchers.Default.limitedParallelism(1)`, line 111: `withContext(confined)`.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.coroutines_gazeProvider_confinedSingleThreadDispatcher` — comment-stripped source checks for both `limitedParallelism(1)` and `withContext(confined)`.
 
-**I.2** `coroutines_roomNotOnMainThread` 🔴
+**I.2** `coroutines_roomNotOnMainThread` ✅ SAFE + regression test
 - MASVS: MASVS-CODE-3
 - Attack: Verify `AppDatabase.getInstance()` does not call `allowMainThreadQueries()`. All DAO calls use suspend or explicit IO dispatcher.
 - Pass: No `allowMainThreadQueries()` in `AppDatabase.kt`. Confirmed.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.coroutines_room_noMainThreadQueries` — assertFalse on `AppDatabase.kt` source.
 
-**I.3** `coroutines_ttsCollectionJob_noCancellationRace` 🔴
+**I.3** `coroutines_ttsCollectionJob_noCancellationRace` ✅ SAFE (partial) + regression test
 - MASVS: MASVS-CODE-3
 - Attack: Rapidly start → stop → start TTS three times. Verify no double-cancel race and no `EngineUnavailable` false positive.
-- Pass: `cleanUpTts()` called directly (Sprint 12 race fix). Rapid start/stop sequence produces consistent state.
-- Source: Sprint 12 review fix confirmed.
+- ✓ JVM-CONFIRMED: `cleanUpTts()` cancels `_ttsCollectionJob` directly at line 261, before any `launch {` in the function body. A sibling coroutine wrapping the cancel would race the ViewModel scope teardown on `onCleared()`.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.coroutines_ttsCleanUp_cancelsJobDirectly_notInsideLaunch` — extracts `cleanUpTts()` body, asserts cancel precedes first launch match (regex, covers `launch{`, `launch(...) {`).
+- ⏳ DEFERRED (runtime): Rapid start/stop consistency — requires `ActivityScenario` + TTS engine.
 
 **I.4** `coroutines_gazeStopDuringCalibration_noUnhandledThrow` 🔴
 - MASVS: MASVS-CODE-3
@@ -558,11 +561,12 @@
 > CameraX 1.4.0 + MediaPipe Face Landmarker + ridge regression calibration.
 > Raw face data must never be persisted, logged, or transmitted.
 
-**J.1** `gaze_rawIrisUV_neverPersisted` 🔴
+**J.1** `gaze_rawIrisUV_neverPersisted` ✅ SAFE + regression test
 - MASVS: MASVS-STORAGE-1 · MASVS-STORAGE-2
 - Attack: Run a calibration session. Inspect all DataStore files. Verify raw iris UV coordinates (`irisU`, `irisV`) are not persisted — only derived regression weights are stored.
-- Pass: `CalibrationRepository.save()` stores only `weightsX` and `weightsY` DoubleArrays. No `irisU`/`irisV` values in any DataStore file.
-- Source: `CalibrationRepository.kt` — confirmed weights-only storage.
+- ✓ CONFIRMED: `CalibrationRepository.save()` (lines 20-25) stores only `weightsX` and `weightsY` DoubleArrays as JSON strings. `CalibrationResult` fields `irisU`/`irisV` are never referenced in the repository file. ADR-J: gaze data ephemeral in-memory only.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.gaze_calibrationRepository_storesOnlyWeights_noRawIrisCoordinates` — comment-stripped whole-file scan asserts `weightsX`/`weightsY` present and `irisU`/`irisV` absent from `CalibrationRepository.kt`.
+- ⏳ DEFERRED: Runtime DataStore file inspection confirming no irisU/irisV binary values (instrumented).
 
 **J.2** `gaze_rawIrisUV_neverLogged` 🔴
 - MASVS: MASVS-STORAGE-2
@@ -607,8 +611,8 @@
 | F — Supply chain | 6 | 🔴 All new |
 | G — AuDHD-first safety regressions | 7 | 🔴 All new |
 | H — Android platform security | 6 | 🔴 All new |
-| I — Kotlin coroutines / dispatcher safety | 5 | 🔴 All new |
-| J — Gaze tracking pipeline | 6 | 🔴 All new |
+| I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.3 JVM; 🔴 I.4–I.5 instrumented deferred |
+| J — Gaze tracking pipeline | 6 | ✅ J.1 JVM; 🔴 J.2–J.6 instrumented deferred |
 | **Total** | **58** | **58 new** |
 
 ---
