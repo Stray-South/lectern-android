@@ -259,15 +259,30 @@ class EpubReaderFragment : Fragment() {
         if (root is WebView) {
             // webViewClient (API 26+) returns the current client; wrapping is idempotent.
             val existing = root.webViewClient
-            // Readium sets a WebViewClientCompat subclass. Only wrap if not already wrapped
-            // and if the delegate is the expected compat type (guards against unknown clients).
-            if (existing !is EpubBlockingWebViewClient && existing is WebViewClientCompat) {
-                root.setWebViewClient(EpubBlockingWebViewClient(existing))
+            when {
+                existing is EpubBlockingWebViewClient -> {
+                    // Already wrapped — idempotent on config change / re-entry.
+                }
+                existing is WebViewClientCompat -> {
+                    // Readium sets a WebViewClientCompat subclass. Wrap it.
+                    root.setWebViewClient(EpubBlockingWebViewClient(existing))
+                }
+                else -> {
+                    // Unexpected: a future Readium version set a plain WebViewClient instead of
+                    // WebViewClientCompat. We cannot safely wrap it (constructor requires Compat).
+                    // Log and continue — allowContentAccess is still applied below.
+                    android.util.Log.w(
+                        "EpubReaderFragment",
+                        "wrapWebViewsIn: unexpected WebViewClient type ${existing::class.java.name}; " +
+                            "external-resource blocking NOT applied. Update EpubBlockingWebViewClient.",
+                    )
+                }
             }
             // SECURITY A.5: content:// access is true by default and Readium never disables it.
             // Readium's asset server uses https://readium/ exclusively — no content:// URIs are
             // needed. Explicitly disabling closes the surface for EPUB JS calling content://
             // URIs to access app data (contacts, media store, etc.).
+            // Applied regardless of client-wrap outcome above.
             root.settings.allowContentAccess = false
         } else if (root is ViewGroup) {
             for (i in 0 until root.childCount) {

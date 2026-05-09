@@ -1,6 +1,8 @@
 package com.straysouth.lectern.ui.reader
 
+import android.net.http.SslError
 import android.view.KeyEvent
+import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -29,7 +31,15 @@ import java.io.ByteArrayInputStream
  *
  * ALLOWED hosts: only "readium" (Readium's local loopback server). All other hosts are
  * blocked unconditionally regardless of scheme. Null host (data: URIs, about: frames)
- * passes through — Readium uses these for inline content injection.
+ * passes through intentionally — Readium uses data: URIs for inline content injection
+ * (CSS overrides, MathML polyfills). Top-frame navigations to data:/blob: go through
+ * [shouldOverrideUrlLoading] → Readium's handler, not through [shouldInterceptRequest].
+ * Subframe data: fetches are already within the JS execution sandbox (A.1 surface).
+ *
+ * SSL errors: forwarded to the delegate so Readium can handle the https://readium virtual
+ * host's TLS setup (Chromium may fire onReceivedSslError for non-standard TLS hosts even
+ * when intercepted via shouldInterceptRequest). Base class default calls handler.cancel(),
+ * which is safe, but dropping the delegate's override would silently break page loads.
  *
  * See RED-TEAM.md §A.2.
  */
@@ -61,6 +71,13 @@ internal class EpubBlockingWebViewClient(
         view: WebView,
         event: KeyEvent,
     ): Boolean = delegate.shouldOverrideKeyEvent(view, event)
+
+    // Forward SSL errors to the delegate. Base class calls handler.cancel() (correct security
+    // default). Forwarding ensures Readium can handle https://readium virtual-host TLS callbacks
+    // if its client overrides this — dropping the call would silently blank pages.
+    override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+        delegate.onReceivedSslError(view, handler, error)
+    }
 
     // HTTP 403 with empty body — clean, debuggable block visible in Network DevTools.
     // Status 0 (the 3-arg constructor default) shows as net::ERR_FAILED and is
