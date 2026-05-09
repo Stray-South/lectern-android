@@ -673,3 +673,68 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** GroupDSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Group E (TTS privacy) or deferred instrumented tests.
 - **Blockers:** none
+
+## 2026-05-09T00:00Z — Security sprint: Groups E+F and H JVM tests
+
+- **Did:** Added `GroupEFSecurityTest` (7 tests) and `GroupHSecurityTest` (9 tests).
+  All 16 new tests pass. Preflight green.
+
+  **E.1 — TTS teardown on clear (1 test):**
+  `EpubReaderViewModel.onCleared()` → `cleanUpTts()` pinned as the last-resort TTS
+  teardown. Confirmed gap documented: no `onPause()` hook stops TTS on background —
+  deferred to instrumented.
+
+  **E.2 — No annotation entity in V1 (1 test):**
+  `AppDatabase.kt` entity list scanned; no Annotation/Highlight/UserNote entity.
+  TTS reads `Publication` content only; regression guard triggers if V2 annotation
+  feature is added without a TTS-routing review.
+
+  **E.3 — No microphone permission (1 test):**
+  Manifest assertFalse for RECORD_AUDIO and MODIFY_AUDIO_SETTINGS.
+
+  **E.4 — EngineUnavailable: no silent no-op (2 tests):**
+  ViewModel: ≥ 2 `TtsUiState.EngineUnavailable` emission paths in `startTts()`.
+  TtsBar: branch present, `tts_engine_unavailable` string shown, dismiss action wired.
+
+  **F.1 — Exact version pins (1 test):**
+  All 5 external deps confirmed: readium 3.1.2, zip4j 2.11.6, junrar 7.5.7,
+  ejml 0.44.0, mediapipe 0.10.35. Global no-floating-version guard (TOML `#`
+  comment filter applied).
+
+  **F.4 — zip4j no extraction API (1 test):**
+  Global walk: `extractFile(`, `extractAll(`, `extractEntry(` absent from all main
+  sources. Entries served via `getInputStream()` only.
+
+  **F.6 — Gradle checksums (no test, documented gap):**
+  `gradle/verification-metadata.xml` absent. Accepted V1 risk (exact pins + CI).
+  RED-TEAM.md updated to ⚠️ with V2 pre-beta action item.
+
+  **H.1 — Network security config (2 tests):**
+  `network_security_config.xml` content check + Manifest reference check.
+
+  **H.2 — INTERNET permission, no network calls (1 test):**
+  Global walk for `openConnection(`, `OkHttpClient(`, `Retrofit.Builder(`,
+  `DefaultHttpClient`; comment lines stripped before check (KDoc false-positive fix
+  applied after first test run — `BlockingHttpClient.kt` KDoc mentions
+  `DefaultHttpClient` by name).
+
+  **H.3 — Camera feature flags + IOException handler (2 tests):**
+  `camera.front required="false"` extracted by line (attribute-order-safe).
+  `startGazeInternal` IOException → `_gazeEnabled.value = false` via 300-char window.
+
+  **H.4 — No deep-link / no intent extras (2 tests):**
+  Manifest: no `<data android:scheme=>` or `<data android:host=>`.
+  `MainActivity.kt`: six-term intent-extras scan clean.
+
+  **H.5 — No ContentProvider (1 test):** Manifest assertFalse `<provider`.
+
+  **H.6 — FLAG_SECURE absent, intentional (1 test):**
+  Global walk clean. Test comment documents accessibility rationale + V2 revisit trigger.
+
+- **Why:** Platform-level hardening properties (NSC, intent surface, camera degradation,
+  no network in V1) are Manifest/source-checkable without a device. JVM regression
+  tests catch accidental rollbacks. Supply-chain exact pins prevent silent dep upgrades.
+- **Files:** GroupEFSecurityTest.kt (new), GroupHSecurityTest.kt (new),
+  docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Groups I (coroutine safety) + J (gaze pipeline) JVM tests.
+- **Blockers:** none

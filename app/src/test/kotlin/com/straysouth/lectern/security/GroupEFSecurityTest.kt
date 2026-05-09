@@ -1,0 +1,264 @@
+package com.straysouth.lectern.security
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+/**
+ * Security regression tests for Group E (TTS privacy) and Group F (supply chain).
+ *
+ * Covers JVM-testable properties:
+ *   E.1 — EpubReaderViewModel.onCleared() calls cleanUpTts(); no onPause() TTS stop exists
+ *           (background-stop gap documented — deferred to instrumented)
+ *   E.2 — No annotation Room entity in V1; TTS reads Publication content only
+ *   E.3 — RECORD_AUDIO and MODIFY_AUDIO_SETTINGS absent from Manifest
+ *   E.4 — TtsUiState.EngineUnavailable emitted in ≥ 2 paths in startTts(); TtsBar
+ *           shows message + dismiss — no silent no-op when engine missing
+ *   F.1 — All 5 external deps (Readium, zip4j, junrar, EJML, MediaPipe) pinned to
+ *           exact versions in libs.versions.toml; no floating "+" or "latest." constraints
+ *   F.4 — zip4j extraction APIs (extractFile, extractAll, extractEntry) never called
+ *           in main sources; entries served via getInputStream() only
+ *
+ * Deferred (instrumented):
+ *   E.1 runtime — TTS audio-focus release when app is backgrounded
+ *   E.3 runtime — verify no RECORD_AUDIO permission is requested at runtime
+ *
+ * F.6 — gradle/verification-metadata.xml absent (⚠️ known V1 gap; exact pins + CI
+ *         accepted as sufficient; add checksums before V2 public beta). No test written:
+ *         a assertTrue would permanently red CI; assertFalse would bless a missing control.
+ *
+ * See docs/security/RED-TEAM.md §E and §F for full attack descriptions.
+ *
+ * Working-directory assumption: file paths resolve relative to the `app/` module
+ * directory, which is the default CWD for `./gradlew testDebugUnitTest`.
+ */
+class GroupEFSecurityTest {
+
+    // ── E.1 — TTS teardown on ViewModel clear ────────────────────────────────
+
+    /**
+     * [EpubReaderFragment] has no [onPause] override that stops TTS — a background-stop
+     * gap deferred to instrumented tests. [EpubReaderViewModel.onCleared] is therefore
+     * the last-resort TTS teardown: it fires when the Activity finishes (back-press,
+     * swipe-away from Recents) and closes the TTS navigator. Pinning this prevents a
+     * future refactor from accidentally omitting the call.
+     */
+    @Test
+    fun tts_onCleared_callsCleanUpTts() {
+        val source = sourceFile("ui/reader/EpubReaderViewModel.kt")
+        val fnIdx = source.indexOf("override fun onCleared()")
+        assertTrue("onCleared() not found in EpubReaderViewModel.kt", fnIdx >= 0)
+        val nextFunIdx = source.indexOf("\n    fun ", fnIdx + 1)
+            .takeIf { it > fnIdx } ?: source.length
+        val body = source.substring(fnIdx, nextFunIdx)
+        assertTrue(
+            "EpubReaderViewModel.onCleared() must call cleanUpTts() to close the TTS " +
+                "navigator on Activity finish — no onPause() hook stops TTS on background; " +
+                "this is the last-resort teardown (E.1)",
+            body.contains("cleanUpTts()"),
+        )
+    }
+
+    // ── E.2 — No annotation feature in V1 ────────────────────────────────────
+
+    /**
+     * [TtsNavigator] reads [Publication] content only. A future V2 annotation feature
+     * must not accidentally cause TTS to speak user-written text. Pinning the
+     * [AppDatabase] entity registry ensures any annotation entity added there triggers
+     * a test failure, prompting a deliberate TTS-routing review.
+     *
+     * Note: [AnchorRepository] stores a navigation [Locator] (return-to position), not
+     * user-written text — it is not an annotation feature and is correctly excluded here.
+     */
+    @Test
+    fun tts_noAnnotationFeatureInV1() {
+        val source = sourceFile("data/db/AppDatabase.kt")
+        val annotationTerms = listOf("Annotation", "Highlight", "UserNote")
+        val violations = annotationTerms.filter { term -> source.contains(term) }
+        assertTrue(
+            "AppDatabase must not register annotation-related Room entities in V1 — " +
+                "TTS reads Publication content only; no annotation text path must exist (E.2):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
+    // ── E.3 — No microphone permission ───────────────────────────────────────
+
+    /**
+     * TTS is output-only. Neither [RECORD_AUDIO] nor [MODIFY_AUDIO_SETTINGS] should
+     * be declared — their presence would be an over-privileged permission grant and
+     * would enable microphone access not required by any V1 feature.
+     */
+    @Test
+    fun tts_noMicrophonePermissionRequested() {
+        val manifest = manifestXml()
+        assertFalse(
+            "AndroidManifest.xml must not declare RECORD_AUDIO — TTS is output-only; " +
+                "microphone access would be a privacy regression (E.3)",
+            manifest.contains("RECORD_AUDIO"),
+        )
+        assertFalse(
+            "AndroidManifest.xml must not declare MODIFY_AUDIO_SETTINGS (E.3)",
+            manifest.contains("MODIFY_AUDIO_SETTINGS"),
+        )
+    }
+
+    // ── E.4 — Engine unavailable: no silent no-op ────────────────────────────
+
+    /**
+     * [EpubReaderViewModel.startTts] must emit [TtsUiState.EngineUnavailable] in at
+     * least two defensive paths:
+     *   1. [ttsFactory == null] — no TTS engine installed at all (e.g., Samsung One UI 7+)
+     *   2. [createNavigator().onFailure] — engine initialisation race or device-level failure
+     *
+     * Pinning occurrence count ≥ 2 guards both paths simultaneously.
+     */
+    @Test
+    fun tts_engineUnavailable_viewModel_emitsState() {
+        val source = sourceFile("ui/reader/EpubReaderViewModel.kt")
+        val fnIdx = source.indexOf("fun startTts(")
+        assertTrue("startTts() not found in EpubReaderViewModel.kt", fnIdx >= 0)
+        val nextFunIdx = source.indexOf("\n    fun ", fnIdx + 1)
+            .takeIf { it > fnIdx } ?: source.length
+        val body = source.substring(fnIdx, nextFunIdx)
+        val occurrences = body.split("TtsUiState.EngineUnavailable").size - 1
+        assertTrue(
+            "EpubReaderViewModel.startTts() must emit TtsUiState.EngineUnavailable in " +
+                "at least two paths: factory == null AND createNavigator() onFailure — " +
+                "both paths must surface the state, not silently no-op (E.4)",
+            occurrences >= 2,
+        )
+    }
+
+    /**
+     * [TtsBar] must explicitly handle [TtsUiState.EngineUnavailable] with a visible
+     * message and a dismiss action. Silent no-op (e.g., play button that does nothing)
+     * would be invisible to AuDHD users who may assume TTS is broken by their settings.
+     */
+    @Test
+    fun tts_engineUnavailable_ttsBar_showsMessageNotSilentNoOp() {
+        val source = sourceFile("ui/reader/TtsBar.kt")
+        assertTrue(
+            "TtsBar must explicitly branch on TtsUiState.EngineUnavailable (E.4)",
+            source.contains("TtsUiState.EngineUnavailable"),
+        )
+        assertTrue(
+            "TtsBar.EngineUnavailable branch must display tts_engine_unavailable string (E.4)",
+            source.contains("tts_engine_unavailable"),
+        )
+        assertTrue(
+            "TtsBar.EngineUnavailable branch must provide a dismiss action (E.4)",
+            source.contains("onDismissUnavailable"),
+        )
+    }
+
+    // ── F.1 — External dependency version pins ────────────────────────────────
+
+    /**
+     * All five external dependencies with meaningful attack surface must be pinned to
+     * exact versions — no floating "+" or "latest." constraints. A compromised transitive
+     * upgrade could silently introduce a vulnerable version.
+     *
+     * Exact pins verified against MASVS-CODE-5. The floating-version guard additionally
+     * catches any new dep added to the catalog with a non-exact pin.
+     */
+    @Test
+    fun supply_allExternalDeps_versionPinned_notFloating() {
+        val catalog = versionCatalog()
+        listOf(
+            "readium" to "3.1.2",
+            "zip4j" to "2.11.6",
+            "junrar" to "7.5.7",
+            "ejml" to "0.44.0",
+            "mediapipe" to "0.10.35",
+        ).forEach { (dep, version) ->
+            assertTrue(
+                "$dep must be pinned to \"$version\" in libs.versions.toml (F.1)",
+                catalog.contains("$dep = \"$version\""),
+            )
+        }
+        // TOML comment character is '#'. Also filter '//' defensively (invalid TOML
+        // but editorially plausible). Any non-comment line with '+' or 'latest.' is a
+        // floating constraint.
+        val floatingLines = catalog.lines()
+            .filterNot { it.trimStart().startsWith("#") || it.trimStart().startsWith("//") }
+            .filter { "+" in it || "latest." in it }
+        assertTrue(
+            "libs.versions.toml must contain no floating version constraints — " +
+                "supply chain integrity requires exact pins (F.1):\n" +
+                floatingLines.joinToString("\n"),
+            floatingLines.isEmpty(),
+        )
+    }
+
+    // ── F.4 — zip4j: no extraction-to-disk API ───────────────────────────────
+
+    /**
+     * zip4j's [ZipFile.extractFile], [extractAll], and [extractEntry] write archive
+     * entries to a caller-supplied directory. If called with an attacker-controlled
+     * entry name containing "../", this enables path traversal (CWE-22). Lectern uses
+     * only [ZipFile.getInputStream] — entries are served as streams, never extracted.
+     *
+     * This test is a global regression guard: any future use of the extraction API
+     * anywhere in main sources must be a conscious, reviewed decision.
+     */
+    @Test
+    fun supply_zip4j_noExtractionApiCalls_inMainSources() {
+        val mainSources = File("src/main/kotlin")
+        assertTrue(
+            "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
+            mainSources.exists(),
+        )
+        val extractionApis = listOf("extractFile(", "extractAll(", "extractEntry(")
+        val violations = mainSources.walkTopDown()
+            .filter { it.extension == "kt" }
+            .flatMap { file ->
+                val text = file.readText()
+                extractionApis
+                    .filter { api -> text.contains(api) }
+                    .map { api -> "${file.name}: $api" }
+            }
+            .toList()
+        assertTrue(
+            "zip4j extraction APIs must never be called — entries are served via " +
+                "getInputStream() only; extraction to disk enables path-traversal (F.4):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun manifestXml(): String {
+        val file = File("src/main/AndroidManifest.xml")
+        assertTrue(
+            "AndroidManifest.xml not found (working dir: ${System.getProperty("user.dir")})",
+            file.exists(),
+        )
+        return file.readText()
+    }
+
+    private fun versionCatalog(): String {
+        val file = File("../gradle/libs.versions.toml")
+        assertTrue(
+            "libs.versions.toml not found at ../gradle/ " +
+                "(working dir: ${System.getProperty("user.dir")})",
+            file.exists(),
+        )
+        return file.readText()
+    }
+
+    private fun sourceFile(relativePath: String): String {
+        val base = "src/main/kotlin/com/straysouth/lectern"
+        val file = File("$base/$relativePath")
+        assertTrue(
+            "Source file not found: $base/$relativePath " +
+                "(working dir: ${System.getProperty("user.dir")})",
+            file.exists(),
+        )
+        return file.readText()
+    }
+}

@@ -366,29 +366,34 @@
 > `TtsNavigatorFactory` from Readium Kotlin handles word-level sync.
 > Samsung One UI 7+ may have no TTS engine — surfaced via `TtsUiState.EngineUnavailable`.
 
-**E.1** `tts_stopsOnAppBackground` 🔴
+**E.1** `tts_stopsOnAppBackground` ⚠️ Confirmed gap — instrumented deferred
 - MASVS: MASVS-PLATFORM-2
 - Attack: Start TTS playback. Background the app. Verify TTS stops unless background audio is explicitly configured.
-- Pass: Android TTS stops when audio focus is released on `onPause()`. No silent background audio playback.
-- 🔍 Verify: Does `TtsNavigatorFactory` properly release audio focus on Activity pause? No `FOREGROUND_SERVICE` or `WAKE_LOCK` declared in Manifest — background audio should stop automatically.
+- ⚠️ CONFIRMED GAP: `EpubReaderFragment` has no `onPause()` or `onStop()` override that calls `pauseTts()`/`stopTts()`. The TTS navigator is held by `EpubReaderViewModel`; `viewModelScope` coroutines survive `onPause()`. Android TTS engine continues speaking when the app is backgrounded.
+- ✓ PARTIAL MITIGATION: `EpubReaderViewModel.onCleared()` calls `cleanUpTts()` — TTS stops on Activity finish (back-press, swipe from Recents). This is the last-resort teardown only.
+- ✅ REGRESSION TEST: `GroupEFSecurityTest.tts_onCleared_callsCleanUpTts` — pins the `onCleared` → `cleanUpTts()` call chain.
+- ⏳ DEFERRED (instrumented): Audio-focus release when app is backgrounded — requires `ActivityScenario` + foreground/background lifecycle transitions.
 
-**E.2** `tts_annotationContentNotSpokenWithoutIntent` 🔴
+**E.2** `tts_annotationContentNotSpokenWithoutIntent` ✅ SAFE (V1 has no annotation feature)
 - MASVS: MASVS-PLATFORM-2
 - Attack: Add a highlight/annotation to a passage. Start TTS at that passage. Verify annotation text is NOT read aloud.
-- Pass: Readium `TtsNavigator` reads `Publication` content only. Annotation text requires a separate explicit action.
-- Note: Lectern Android V1 has no annotation feature — this test is a regression guard for V2.
+- ✓ CONFIRMED SAFE (V1): No annotation Room entity registered in `AppDatabase`. `AnchorRepository` stores a navigation `Locator` only — not user-written text. `TtsNavigator` reads `Publication` content exclusively.
+- ✅ REGRESSION TEST: `GroupEFSecurityTest.tts_noAnnotationFeatureInV1` — pins `AppDatabase.kt` entity list; fails if an annotation entity is added without a TTS-routing review.
 
-**E.3** `tts_noMicrophonePermissionRequested` 🔴
+**E.3** `tts_noMicrophonePermissionRequested` ✅ SAFE + regression test
 - MASVS: MASVS-PLATFORM-1
 - Attack: Audit `AndroidManifest.xml` and runtime permission flow. Verify `RECORD_AUDIO` is not declared and never requested.
-- Pass: No `uses-permission RECORD_AUDIO` in Manifest. TTS is output-only.
-- Source: Manifest confirmed — only `INTERNET` and `CAMERA` declared.
+- ✓ CONFIRMED SAFE: Manifest declares only `INTERNET` and `CAMERA`. No `RECORD_AUDIO`, no `MODIFY_AUDIO_SETTINGS`. The `<queries>` intent for `TTS_SERVICE` is a package-visibility query, not a permission.
+- ✅ REGRESSION TEST: `GroupEFSecurityTest.tts_noMicrophonePermissionRequested` — asserts both absent from Manifest.
 
-**E.4** `tts_engineUnavailable_noSilentFailure` 🔴
+**E.4** `tts_engineUnavailable_noSilentFailure` ✅ SAFE + regression tests
 - MASVS: MASVS-PLATFORM-2 (UX safety)
 - Attack: Simulate `ttsFactory == null` (no TTS engine installed). Tap Play in `TtsBar`.
-- Pass: `TtsUiState.EngineUnavailable` emitted. `TtsBar` displays `tts_engine_unavailable` string with dismiss button. No silent no-op.
-- Source: Sprint 12 — `EngineUnavailable` state confirmed in source.
+- ✓ CONFIRMED SAFE (two defensive paths):
+  1. `startTts()` factory-null path: `_ttsUiState.value = TtsUiState.EngineUnavailable; return`
+  2. `createNavigator().onFailure`: `_ttsUiState.value = TtsUiState.EngineUnavailable`
+- ✓ UI: `TtsBar` branches on `EngineUnavailable` — displays `tts_engine_unavailable` string + dismiss `IconButton`.
+- ✅ REGRESSION TESTS: `GroupEFSecurityTest.tts_engineUnavailable_viewModel_emitsState` (pins ≥ 2 emission paths), `tts_engineUnavailable_ttsBar_showsMessageNotSilentNoOp` (pins UI branch).
 
 ---
 
@@ -400,11 +405,11 @@
 >
 > All version-pinned in `gradle/libs.versions.toml`.
 
-**F.1** `readium_versionPinned_notFloating` 🔴
+**F.1** `readium_versionPinned_notFloating` ✅ SAFE + regression test
 - MASVS: MASVS-CODE-5
 - Attack: Verify `readium = "3.1.2"` in `libs.versions.toml` is an exact pin, not `3.+` or `latest.release`.
-- Pass: Version string `"3.1.2"` is exact. All 5 external dependency versions are exact pins.
-- Source: Confirmed `readium = "3.1.2"`, `zip4j = "2.11.6"`, `junrar = "7.5.7"`, `ejml = "0.44.0"`, `mediapipe = "0.10.35"` in version catalog.
+- ✓ CONFIRMED SAFE: All 5 pins are exact: `readium = "3.1.2"`, `zip4j = "2.11.6"`, `junrar = "7.5.7"`, `ejml = "0.44.0"`, `mediapipe = "0.10.35"`. No floating `+` or `latest.` constraints anywhere in the catalog.
+- ✅ REGRESSION TEST: `GroupEFSecurityTest.supply_allExternalDeps_versionPinned_notFloating` — asserts all 5 exact pins and global no-floating-version guard.
 
 **F.2** `readium_cve_202140870_notAffected` 🔴
 - MASVS: MASVS-CODE-5
@@ -416,21 +421,24 @@
 - Attack: Open a book, read pages, activate TTS. Capture all traffic via Android Network Profiler. Verify zero outbound requests from `org.readium.*`.
 - Pass: All EPUB assets load from local storage only. No Readium analytics, CDN, or telemetry endpoints contacted.
 
-**F.4** `zip4j_pathTraversalPrevented` 🔴
-- MASVS: MASVS-STORAGE-1 · MASVS-CODE-5
+**F.4** `zip4j_pathTraversalPrevented` ✅ SAFE (no extraction path) + regression test
+- MASVS: MAVSV-STORAGE-1 · MASVS-CODE-5
 - Attack: Verify `ComicsReaderViewModel` validates `ZipFile` entry names before extraction. zip4j 2.11.6 does not automatically reject `../` sequences — the caller must validate.
-- Pass: All entry names are stripped to filename only (`File(entryName).name`) or validated against the target directory before `extractFile()`. CWE-22 mitigated at app level.
+- ✓ CONFIRMED SAFE: `extractFile()`, `extractAll()`, and `extractEntry()` are never called anywhere in main sources. `ZipFile` is used exclusively via `getInputStream(FileHeader)` — entries are served as streams and never written to disk. No extraction path exists to validate against.
+- ✅ REGRESSION TEST: `GroupEFSecurityTest.supply_zip4j_noExtractionApiCalls_inMainSources` — global walk asserts zero extraction API calls in main sources.
 
 **F.5** `mediapipe_noFrameDataExfiltration` 🔴
 - MASVS: MASVS-NETWORK-1 · MASVS-STORAGE-2
 - Attack: Run gaze tracking for a full session. Capture network traffic. Verify MediaPipe Tasks Vision 0.10.35 makes no outbound requests.
 - Pass: Zero network requests from `com.google.mediapipe.*` during gaze tracking. `face_landmarker.task` model file is bundled as an asset.
 
-**F.6** `gradleDependencyVerification_checksums` 🔴
+**F.6** `gradleDependencyVerification_checksums` ⚠️ Known V1 gap — documented, no test
 - MASVS: MASVS-CODE-5
 - Attack: Verify `gradle/verification-metadata.xml` is present and covers external deps, or document why it is not required.
-- Pass: Either checksums committed and verified in CI, or decision not to use them is explicitly documented with rationale.
-- 🔍 Verify: Does `gradle/verification-metadata.xml` exist?
+- ⚠️ CONFIRMED ABSENT: `gradle/verification-metadata.xml` does not exist. No Gradle dependency checksum verification is in place.
+- ✓ ACCEPTED RISK (V1): All 5 external deps use exact version pins (F.1). Gradle resolves from declared repositories only. CI runs on every PR. Risk is low for V1 local-only app.
+- No JVM test written: `assertTrue(exists())` would permanently red CI; `assertFalse(exists())` would bless a missing control. The gap is documented here instead.
+- ⏳ TODO before V2 public beta: Add `gradle/verification-metadata.xml` covering Readium, zip4j, junrar, EJML, MediaPipe checksums.
 
 ---
 
@@ -472,39 +480,42 @@
 
 ## Section H — Android platform security
 
-**H.1** `platform_noNetworkSecurityConfig_risk` 🔴
+**H.1** `platform_noNetworkSecurityConfig_risk` ✅ SAFE + regression tests
 - MASVS: MASVS-NETWORK-1
-- Attack: No `android:networkSecurityConfig` in Manifest. Verify `targetSdk = 36` inherits default cleartext-blocking policy, or add explicit `network_security_config.xml`.
-- Pass: Either explicit `<base-config cleartextTrafficPermitted="false">` config present, or confirmed `targetSdk >= 28` default applies with no cleartext exemptions.
-- ⚠️ Risk: No `network_security_config.xml` present. `INTERNET` permission declared without explicit "no cleartext" config is a defense-in-depth gap.
+- Attack: No `android:networkSecurityConfig` in Manifest — Android 8 (minSdk 26) permits cleartext HTTP without an explicit config.
+- ✓ CONFIRMED SAFE: `res/xml/network_security_config.xml` present with `<base-config cleartextTrafficPermitted="false">`. Referenced in `<application android:networkSecurityConfig="@xml/network_security_config">`.
+- ✅ REGRESSION TESTS: `GroupHSecurityTest.platform_networkSecurityConfig_cleartext_blocked` (file content), `platform_manifest_referencesNetworkSecurityConfig` (Manifest reference).
 
-**H.2** `platform_internetPermission_unusedInV1` 🔴
+**H.2** `platform_internetPermission_unusedInV1` ✅ SAFE (source-confirmed) + regression test
 - MASVS: MASVS-NETWORK-1
 - Attack: `INTERNET` permission declared for "future Supabase sync (V2)". Verify Lectern V1 makes zero network requests during normal use.
-- Pass: Android Network Profiler shows zero outbound connections during a full V1 session.
-- Note: INTERNET cannot be revoked by users on Android. Consider removing until V2 ships.
+- ✓ CONFIRMED SAFE (source): No `openConnection(`, `OkHttpClient(`, `Retrofit.Builder(`, or `DefaultHttpClient` in any main-source Kotlin file (comment-stripped). `BlockingHttpClient` is the only `HttpClient` implementation — unconditionally rejects every request.
+- ✅ REGRESSION TEST: `GroupHSecurityTest.platform_internetPermission_noActualNetworkCalls_inMainSources` — global walk with comment-line filtering (guards against KDoc false positives).
+- ⏳ DEFERRED (runtime): Android Network Profiler zero-connections verification deferred to `androidTest/` sprint.
 
-**H.3** `platform_cameraPermission_runtimeOnly_noHardDep` 🔴
+**H.3** `platform_cameraPermission_runtimeOnly_noHardDep` ✅ SAFE + regression tests
 - MASVS: MASVS-PLATFORM-1
 - Attack: Install on device without front camera. Verify app does not crash and gaze features degrade gracefully.
-- Pass: `uses-feature camera.front required="false"` set. `GazeViewModel` catches `IOException` from `GazeProvider.start()`. App fully usable without gaze.
-- Source: Manifest confirmed `required="false"`.
+- ✓ CONFIRMED SAFE: `android.hardware.camera.front required="false"` — tablets without front camera not filtered from Play Store. `GazeViewModel.startGazeInternal()` catches `java.io.IOException` from `provider.start()` and sets `_gazeEnabled.value = false`.
+- ✅ REGRESSION TESTS: `GroupHSecurityTest.platform_frontCamera_notRequiredAtInstall` (Manifest, order-independent line extraction), `platform_gazeViewModel_catchesIoException_disablesGaze` (source window check).
 
-**H.4** `platform_mainActivityExported_noDeepLinkInjection` 🔴
+**H.4** `platform_mainActivityExported_noDeepLinkInjection` ✅ SAFE + regression tests
 - MASVS: MASVS-PLATFORM-3
-- Attack: Send a crafted Intent to `MainActivity` with unexpected extras (e.g., `bookId` extra containing path traversal characters).
-- Pass: `MainActivity` does not access `intent.extras`. State derived from ViewModel only. Crafted Intent has no effect.
-- Source: `MainActivity.kt` — confirmed no `intent.extras` access.
+- Attack: Send a crafted Intent to `MainActivity` with unexpected extras or a deep-link URI.
+- ✓ CONFIRMED SAFE: Manifest `<intent-filter>` contains only MAIN + LAUNCHER — no `<data android:scheme=>` or `<data android:host=>`. `MainActivity.kt` accesses no `intent.extras`, `intent.data`, or `getXxxExtra()` calls; all state is ViewModel-derived.
+- ✅ REGRESSION TESTS: `GroupHSecurityTest.platform_mainActivity_noDeepLinkIntentFilter` (two-vector Manifest check), `platform_mainActivity_doesNotAccessIntentExtras` (six-term source scan).
 
-**H.5** `platform_contentProviderNotExported` 🔴
+**H.5** `platform_contentProviderNotExported` ✅ SAFE + regression test
 - MASVS: MASVS-PLATFORM-2
 - Attack: Verify no exported `ContentProvider` allows other apps to read book data or DataStore.
-- Pass: No `<provider>` element in Manifest. Room and DataStore accessible only to app process.
-- Source: Manifest confirmed.
+- ✓ CONFIRMED SAFE: No `<provider>` element in Manifest. Room and DataStore accessible only to app process.
+- ✅ REGRESSION TEST: `GroupHSecurityTest.platform_noContentProviderExported`.
 
-**H.6** `platform_screenshotBehavior_documented` 🔍
+**H.6** `platform_screenshotBehavior_documented` ✅ SAFE (intentional) + regression test
 - MASVS: MASVS-PLATFORM-2
-- Design decision: No `FLAG_SECURE` is set. Screenshots permitted. Document this as intentional (accessibility tools need screenshots). Revisit if private annotation feature is added in V2.
+- Design decision: `FLAG_SECURE` is intentionally absent. Accessibility tools (TalkBack screenshot, screen magnifiers, Compose preview tooling) require unobstructed renders. No authentication screen and no private user-generated content in V1.
+- ✓ CONFIRMED: Zero `FLAG_SECURE` references in all main-source Kotlin files.
+- ✅ REGRESSION TEST: `GroupHSecurityTest.platform_flagSecureAbsent_screenshotsPermitted` — global walk; test comment documents the intentional rationale and V2 revisit trigger.
 
 ---
 

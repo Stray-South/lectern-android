@@ -1,0 +1,292 @@
+package com.straysouth.lectern.security
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+/**
+ * Security regression tests for Group H (Android platform security).
+ *
+ * Covers JVM-testable properties:
+ *   H.1 — network_security_config.xml exists with cleartextTrafficPermitted="false";
+ *           AndroidManifest.xml references it
+ *   H.2 — INTERNET permission declared but no real outbound network API usage in
+ *           main sources; DefaultHttpClient (B.8 fix) not reverted
+ *   H.3 — android.hardware.camera.front android:required="false" (Play Store filter);
+ *           GazeViewModel catches IOException and disables gaze on camera start failure
+ *   H.4 — No deep-link <data> element in intent-filter; MainActivity does not access
+ *           Intent extras
+ *   H.5 — No <provider> element in Manifest; Room and DataStore are process-private
+ *   H.6 — FLAG_SECURE absent from all main sources (intentional — accessibility tools
+ *           require unobstructed screen renders; revisit if auth/annotation ships in V2)
+ *
+ * Deferred (instrumented):
+ *   H.2 runtime — Android Network Profiler: zero outbound connections during full V1 session
+ *   H.3 runtime — install on device without front camera, verify graceful degradation
+ *
+ * See docs/security/RED-TEAM.md §H for full attack descriptions and pass criteria.
+ *
+ * Working-directory assumption: file paths resolve relative to the `app/` module
+ * directory, which is the default CWD for `./gradlew testDebugUnitTest`.
+ */
+class GroupHSecurityTest {
+
+    // ── H.1 — Network security config ────────────────────────────────────────
+
+    /**
+     * Android 9+ blocks cleartext HTTP by default, but minSdk 26 (Android 8) does not.
+     * An explicit [network_security_config.xml] with [cleartextTrafficPermitted="false"]
+     * extends the block to Android 8 and makes the policy explicit and auditable.
+     */
+    @Test
+    fun platform_networkSecurityConfig_cleartext_blocked() {
+        assertTrue(
+            "network_security_config.xml must set cleartextTrafficPermitted=\"false\" — " +
+                "Android 9+ default blocks cleartext but minSdk 26 (Android 8) does not (H.1)",
+            networkSecurityConfigXml().contains("cleartextTrafficPermitted=\"false\""),
+        )
+    }
+
+    /**
+     * The config file is only active if referenced from [android:networkSecurityConfig]
+     * in the [<application>] element. A file that exists but is not referenced has no effect.
+     */
+    @Test
+    fun platform_manifest_referencesNetworkSecurityConfig() {
+        assertTrue(
+            "AndroidManifest.xml must reference android:networkSecurityConfig to activate " +
+                "the cleartext block on Android 8 (H.1)",
+            manifestXml().contains("networkSecurityConfig"),
+        )
+    }
+
+    // ── H.2 — INTERNET permission unused in V1 ───────────────────────────────
+
+    /**
+     * [INTERNET] is declared for a future Supabase sync (V2). No real network calls
+     * must be made in V1 main sources. Scanning for concrete outbound-connection APIs
+     * catches accidental network use; [DefaultHttpClient] inclusion would silently
+     * revert the B.8 fix that replaced it with [BlockingHttpClient].
+     *
+     * Terms NOT scanned (would produce false positives):
+     *   - "HttpClient" — matches BlockingHttpClient (the security control itself)
+     *   - "URL(" — matches AbsoluteUrl( from Readium
+     *   - "HttpURLConnection" — class name import, not a call
+     */
+    @Test
+    fun platform_internetPermission_noActualNetworkCalls_inMainSources() {
+        val mainSources = File("src/main/kotlin")
+        assertTrue(
+            "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
+            mainSources.exists(),
+        )
+        val networkApis = listOf(
+            "openConnection(",
+            "OkHttpClient(",
+            "Retrofit.Builder(",
+            "DefaultHttpClient",
+        )
+        val violations = mainSources.walkTopDown()
+            .filter { it.extension == "kt" }
+            .flatMap { file ->
+                // Strip KDoc and line-comment lines before checking — prevents false
+                // positives from comments that reference the API name without calling it
+                // (e.g., BlockingHttpClient.kt KDoc mentions DefaultHttpClient by name).
+                val codeLines = file.readText().lines()
+                    .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
+                    .joinToString("\n")
+                networkApis
+                    .filter { api -> codeLines.contains(api) }
+                    .map { api -> "${file.name}: $api" }
+            }
+            .toList()
+        assertTrue(
+            "INTERNET permission is declared for V2 only — no real network calls must " +
+                "exist in V1 main sources; DefaultHttpClient present means B.8 fix was " +
+                "reverted (H.2):\n${violations.joinToString("\n")}",
+            violations.isEmpty(),
+        )
+    }
+
+    // ── H.3 — Camera permission: runtime-only, graceful degradation ──────────
+
+    /**
+     * [android.hardware.camera.front] with [required="false"] prevents tablets without
+     * a front camera from being filtered out of the Play Store. The app must remain
+     * fully functional without gaze (camera is a progressive enhancement).
+     *
+     * Line extraction is used rather than a compound substring to be robust against
+     * XML attribute reordering by Android Studio's formatter.
+     */
+    @Test
+    fun platform_frontCamera_notRequiredAtInstall() {
+        val frontCameraLine = manifestXml().lines()
+            .firstOrNull { "android.hardware.camera.front" in it }
+        assertNotNull(
+            "android.hardware.camera.front uses-feature not found in AndroidManifest.xml (H.3)",
+            frontCameraLine,
+        )
+        assertTrue(
+            "android.hardware.camera.front must be android:required=\"false\" — " +
+                "tablets without a front camera must not be filtered from Play Store (H.3)",
+            frontCameraLine!!.contains("required=\"false\""),
+        )
+    }
+
+    /**
+     * Camera permission can be revoked at runtime (Android 11+, Settings → Permissions).
+     * [GazeViewModel.startGazeInternal] must catch the resulting [IOException] from
+     * [GazeProvider.start] and set [_gazeEnabled] to false — gaze is cleanly disabled,
+     * not left in an indeterminate state that crashes the next frame delivery.
+     *
+     * A 300-char window from the IOException token safely covers the 3-line catch block
+     * (confirmed from source: IOException → Log.e → _gazeEnabled.value = false).
+     */
+    @Test
+    fun platform_gazeViewModel_catchesIoException_disablesGaze() {
+        val source = sourceFile("ui/gaze/GazeViewModel.kt")
+        val exceptionIdx = source.indexOf("java.io.IOException")
+        assertTrue(
+            "GazeViewModel must catch java.io.IOException from provider.start() (H.3)",
+            exceptionIdx >= 0,
+        )
+        val window = source.substring(exceptionIdx, (exceptionIdx + 300).coerceAtMost(source.length))
+        assertTrue(
+            "GazeViewModel IOException handler must set _gazeEnabled.value = false — " +
+                "camera permission revoked at runtime must cleanly disable gaze (H.3)",
+            window.contains("_gazeEnabled.value = false"),
+        )
+    }
+
+    // ── H.4 — No deep-link injection surface ─────────────────────────────────
+
+    /**
+     * A [<data>] element inside an [<intent-filter>] registers the Activity as a
+     * deep-link handler, allowing external apps or web pages to craft URIs targeting
+     * [MainActivity]. With no Intent-extras guard, any data passed via the deep link
+     * could reach the app.
+     *
+     * Two vectors checked: scheme-based ([android:scheme=]) and host-based
+     * ([android:host=]). Both must be absent from the Manifest.
+     */
+    @Test
+    fun platform_mainActivity_noDeepLinkIntentFilter() {
+        val manifest = manifestXml()
+        assertFalse(
+            "AndroidManifest.xml must not contain a scheme-based deep link — " +
+                "URI scheme intent-filters expose MainActivity to crafted-URI injection (H.4)",
+            manifest.contains("<data android:scheme="),
+        )
+        assertFalse(
+            "AndroidManifest.xml must not contain a host-based deep link (H.4)",
+            manifest.contains("<data android:host="),
+        )
+    }
+
+    /**
+     * Even if a deep link were accidentally added, [MainActivity] deriving all state
+     * from ViewModels (not [intent.extras]) limits blast radius. This test pins the
+     * no-extras-access invariant as an independent defence-in-depth layer.
+     */
+    @Test
+    fun platform_mainActivity_doesNotAccessIntentExtras() {
+        val source = sourceFile("MainActivity.kt")
+        val intentExtraApis = listOf(
+            "intent.extras",
+            "intent.data",
+            "getStringExtra(",
+            "getIntExtra(",
+            "getBundleExtra(",
+            "getParcelableExtra(",
+        )
+        val violations = intentExtraApis.filter { source.contains(it) }
+        assertTrue(
+            "MainActivity must not access Intent extras — all state is ViewModel-derived; " +
+                "crafted extras from external Intents must have no effect (H.4):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
+    // ── H.5 — No exported ContentProvider ────────────────────────────────────
+
+    /**
+     * An exported [ContentProvider] would allow other installed apps to query or modify
+     * book data, DataStore preferences, and Room records without permission. No provider
+     * is needed — Room and DataStore are process-private by design.
+     */
+    @Test
+    fun platform_noContentProviderExported() {
+        assertFalse(
+            "AndroidManifest.xml must contain no <provider> element — Room and DataStore " +
+                "are process-private; an exported provider would expose book data to other " +
+                "apps (H.5)",
+            manifestXml().contains("<provider"),
+        )
+    }
+
+    // ── H.6 — FLAG_SECURE absent (intentional) ───────────────────────────────
+
+    /**
+     * [FLAG_SECURE] is intentionally absent: accessibility tools (TalkBack screenshot,
+     * screen magnifiers, Compose preview) require unobstructed screen renders. Lectern V1
+     * has no authentication screen and no private user-generated content — the risk of
+     * shoulder-surfing is equivalent to reading any other book app.
+     *
+     * If private annotation or login features ship in V2, re-evaluate and add
+     * [FLAG_SECURE] to the relevant Activity or Window before merging.
+     */
+    @Test
+    fun platform_flagSecureAbsent_screenshotsPermitted() {
+        val mainSources = File("src/main/kotlin")
+        assertTrue(
+            "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
+            mainSources.exists(),
+        )
+        val violations = mainSources.walkTopDown()
+            .filter { it.extension == "kt" }
+            .filter { it.readText().contains("FLAG_SECURE") }
+            .map { it.name }
+            .toList()
+        assertTrue(
+            "FLAG_SECURE must not appear in main sources — screenshots are intentionally " +
+                "permitted for accessibility tool compatibility (H.6):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun manifestXml(): String {
+        val file = File("src/main/AndroidManifest.xml")
+        assertTrue(
+            "AndroidManifest.xml not found (working dir: ${System.getProperty("user.dir")})",
+            file.exists(),
+        )
+        return file.readText()
+    }
+
+    private fun networkSecurityConfigXml(): String {
+        val file = File("src/main/res/xml/network_security_config.xml")
+        assertTrue(
+            "network_security_config.xml not found " +
+                "(working dir: ${System.getProperty("user.dir")})",
+            file.exists(),
+        )
+        return file.readText()
+    }
+
+    private fun sourceFile(relativePath: String): String {
+        val base = "src/main/kotlin/com/straysouth/lectern"
+        val file = File("$base/$relativePath")
+        assertTrue(
+            "Source file not found: $base/$relativePath " +
+                "(working dir: ${System.getProperty("user.dir")})",
+            file.exists(),
+        )
+        return file.readText()
+    }
+}
