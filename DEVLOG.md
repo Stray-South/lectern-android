@@ -510,3 +510,36 @@ Format: see .claude/skills/devlog/SKILL.md
   docs/security/RED-TEAM.md
 - **Next:** Plan Group B test implementation for B.3–B.7 (confirmed-safe tests).
 - **Blockers:** none
+
+## 2026-05-09T00:00Z — Security Sprint: Group B JVM tests (B.3/B.5/B.7)
+- **Did:** Wrote `GroupBSecurityTest.kt` with 8 JUnit 4 tests covering the JVM-testable
+  safety properties for B.3, B.5, and B.7. All 8 tests pass.
+
+  **B.3 regression guard (`cbz_pathTraversalEntry_getInputStreamDoesNotExtract`):**
+  Creates a CBZ with entry `../../traversal_target.png` using `java.util.zip.ZipOutputStream`.
+  Opens with zip4j's `Zip4jFile`. Calls `getInputStream()` on every header. Asserts the
+  filesystem snapshot (walkTopDown) is identical before and after — proving `getInputStream()`
+  creates zero filesystem artifacts. Catches any future regression where `extractAll()` or
+  `extractFile()` is accidentally added to the ViewModel.
+
+  **B.5 tests (`bookCacheId_*`):**
+  5 tests verifying: same URI → same ID (determinism); UUID format (8-4-4-4-12 hex);
+  ID is keyed on full URI not filename segment; traversal string in URI doesn't collide
+  with legitimate URI; non-ASCII URI is stable.
+
+  **B.7 tests (`bookCacheId_*`):**
+  2 tests verifying: idempotent duplicate import (same URI → same ID → upsert replaces);
+  different URIs with same filename → different IDs (no false collision).
+
+  **Deferred (instrumented test sprint):**
+  B.4 (Readium path traversal), B.6 (invalid EPUB import error), B.7 Room upsert semantics
+  — all require Android `Context` + Room in-memory DB. Tracked in RED-TEAM.md entries.
+
+  Detekt `NestedBlockDepth` violation fixed by extracting `createTraversalCbz()` and
+  `readAllZipEntries()` helpers from the B.3 test function.
+
+- **Why:** Regression tests make the Group B safety properties machine-checkable.
+  Without tests, a future change adding `zip.extractAll()` would be silently unsafe.
+- **Files:** GroupBSecurityTest.kt (new), docs/security/RED-TEAM.md
+- **Next:** Group B complete. Begin Group C (Room) or deferred instrumented tests.
+- **Blockers:** none

@@ -213,6 +213,7 @@
 - ✓ `uriToFile()` copies the archive as a flat opaque blob to `cacheDir/<UUID>` — the UUID is derived from the URI string, not from any archive-internal path. No traversal possible at the copy step.
 - Pass criteria: Import a CBZ with an entry named `../../../../data/data/com.straysouth.lectern/databases/lectern.db` — verify the database file is not modified.
 - CWE-22: Not applicable because no extraction-to-disk path exists.
+- ✅ REGRESSION TEST: `GroupBSecurityTest.cbz_pathTraversalEntry_getInputStreamDoesNotExtract` — creates a ZIP with entry `../../traversal_target.png`, reads via `Zip4jFile.getInputStream()`, asserts filesystem is unchanged.
 
 **B.4** `fileImport_pathTraversal_epub` ✅ SAFE (Readium 3.x no-extraction architecture)
 - MASVS: MASVS-STORAGE-1
@@ -220,6 +221,7 @@
 - ✓ CONFIRMED SAFE: Readium Kotlin 3.x (`PublicationOpener` + `DefaultPublicationParser` + `AssetRetriever`) never extracts EPUB ZIP entries to disk. The `ContentAsset` wraps the `content://` URI; `ZipContainer` reads entries via `ZipInputStream` and serves them via `WebViewServer.shouldInterceptRequest()`. No file write originates from a ZIP entry path.
 - ✓ CVE-2021-40870 (Readium-2 path traversal): That vulnerability exploited the Readium-2 Streamer's extraction of EPUB files to a temporary directory. Readium Kotlin 3.x redesigned publication opening to be stream-based. The disk-write path no longer exists.
 - Pass criteria: Import an EPUB with a ZIP entry named `../../databases/lectern.db` — verify the database is not modified. Import a valid EPUB immediately after — verify it opens correctly.
+- ⏳ DEFERRED (instrumented): Requires `PublicationRepository` + Android `Context` — deferred to `androidTest/` sprint.
 
 **B.5** `fileImport_contentUri_pathTraversal` ✅ SAFE (no DISPLAY_NAME usage in file paths)
 - MASVS: MASVS-STORAGE-1
@@ -230,6 +232,7 @@
   - Cache file (`uriToFile`): `File(cacheDir, UUID.nameUUIDFromBytes(uri.toString().toByteArray()))` — same pattern
 - ✓ Book title: derived from `uri.lastPathSegment?.substringBeforeLast('.')` or from EPUB metadata — stored as metadata only, never used in a file path.
 - Pass criteria: Use a `ContentProvider` that returns `DISPLAY_NAME = "../../../../databases/lectern.db"` — verify no file is created outside the app sandbox.
+- ✅ REGRESSION TESTS: `GroupBSecurityTest` — `bookCacheId_sameUri_returnsSameId`, `bookCacheId_outputIsUuidFormat`, `bookCacheId_isKeyedOnFullUri_notFilenameSegment`, `bookCacheId_traversalInDisplayName_hasNoEffect`, `bookCacheId_nonAsciiUri_stableAcrossCalls`.
 
 **B.6** `fileImport_nonEpubMasqueradingAsEpub` ✅ SAFE (parser validation + Result error chain)
 - MASVS: MASVS-CODE-4
@@ -238,6 +241,7 @@
 - ✓ Room row written only on success: `bookDao.upsert(...)` is called only after `pub` is obtained from `Result.success`. A parse failure returns before the upsert.
 - ✓ Error surfaced: `_importError.value = getString(R.string.import_error_epub_open)` → Snackbar.
 - Pass criteria: Import a `.epub` file containing `PK\x03\x04` header + random bytes (valid ZIP header but no container.xml) — verify Snackbar error, no crash, no Room record.
+- ⏳ DEFERRED (instrumented): Requires `importBook()` + Room + Android `Context` — deferred to `androidTest/` sprint.
 
 **B.7** `fileImport_duplicateBook_noDataCorruption` ✅ SAFE (deterministic UUID + REPLACE strategy)
 - MASVS: MASVS-STORAGE-1
@@ -245,6 +249,8 @@
 - ✓ CONFIRMED SAFE: `bookCacheId(uri.toString())` produces a stable UUID. Same URI → same UUID → `BookDao.upsert()` with `OnConflictStrategy.REPLACE` → row updated in-place. `ReadingProgress` and locator rows are keyed on book ID — they survive the upsert (no cascade delete).
 - ✓ Different URI, same content: different UUID → separate rows. Expected behavior.
 - Pass criteria: Import EPUB X; open it and read to page 5 (creates `ReadingProgress`); import EPUB X again — verify reading progress still shows page 5, library shows one entry, no crash.
+- ✅ REGRESSION TESTS (JVM): `GroupBSecurityTest` — `bookCacheId_idempotent_onDuplicateImport`, `bookCacheId_differentUri_differentId_evenIfSameContent`.
+- ⏳ DEFERRED (instrumented): Room upsert semantics — requires `androidTest/` source tree + `room-testing` dependency.
 
 **B.8** `fileImport_readiumHttpClientExfil` ✅ IMPLEMENTED — BlockingHttpClient replaces DefaultHttpClient
 - MASVS: MASVS-NETWORK-1 · MASVS-PLATFORM-1
