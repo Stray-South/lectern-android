@@ -3,6 +3,7 @@ package com.straysouth.lectern.security
 import com.straysouth.lectern.ui.library.LibraryViewModel
 import net.lingala.zip4j.ZipFile as Zip4jFile
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,18 +16,116 @@ import kotlin.io.path.createTempDirectory
  * Security regression tests for Group B (file import from untrusted sources).
  *
  * Covers JVM-testable properties only:
+ *   B.2 — ComicsReaderViewModel uses a two-pass BitmapFactory decode capped at
+ *           MAX_BITMAP_DIM = 2048 in both renderZipPage and renderRarPage;
+ *           unknown dimensions (outWidth/outHeight <= 0) fall back to sampleSize = 1;
+ *           MAX_BITMAP_DIM constant is exactly 2048 (not unbounded)
  *   B.3 — zip4j getInputStream() is read-only (no disk extraction on traversal entries)
  *   B.5 — bookCacheId() is keyed on URI string, not DISPLAY_NAME metadata column
  *   B.7 — bookCacheId() determinism guarantees correct upsert semantics on duplicate import
  *
  * Deferred (require Android context — instrumented test sprint):
+ *   B.1 — ZIP bomb EPUB: renderer-process OOM accepted risk; no disk extraction (architectural)
  *   B.4 — Readium streamer never extracts EPUB to disk (needs PublicationRepository + Context)
  *   B.6 — Invalid EPUB returns importError, no Room write (needs Context + Room)
  *   B.7 Room upsert — single row after duplicate import (needs Context + Room)
  *
- * See docs/security/RED-TEAM.md §B for full attack descriptions and pass criteria.
+ * See docs/security/RED-TEAM.md sections B for full attack descriptions and pass criteria.
+ *
+ * Working-directory assumption: file paths resolve relative to the app/ module directory,
+ * which is the default CWD for ./gradlew testDebugUnitTest.
  */
 class GroupBSecurityTest {
+
+    // ── B.2 — ZIP bomb CBZ: two-pass BitmapFactory decode, 2048 px cap ──────
+
+    /**
+     * ComicsReaderViewModel must use a two-pass BitmapFactory decode in both
+     * renderZipPage() and renderRarPage(): pass 1 reads the image header only via
+     * inJustDecodeBounds = true (no pixel allocation); pass 2 decodes with the
+     * computed inSampleSize. Without this guard, a PNG with IHDR dimensions of
+     * 20000x20000 allocates 1.6 GB in a single BitmapFactory.decodeStream() call,
+     * crashing the app process (B.2).
+     *
+     * Two properties verified per render path:
+     *   1. inJustDecodeBounds = true is present (pass 1 reads header only).
+     *   2. calculateInSampleSize is called to produce the safe inSampleSize.
+     * Both are required — pass 1 without pass 2 gives no protection; pass 2 without
+     * pass 1 decodes at full size first and then under-samples on a second decode.
+     */
+    @Test
+    fun cbz_bitmapDecode_twoPassGuard_inBothRenderPaths() {
+        val source = sourceFile("ui/reader/ComicsReaderViewModel.kt")
+
+        // renderZipPage — CBZ path
+        val zipFnIdx = source.indexOf("private fun renderZipPage(")
+        assertTrue("renderZipPage() not found in ComicsReaderViewModel.kt (B.2)", zipFnIdx >= 0)
+        val zipFnEnd = nextPrivateFunIndex(source, zipFnIdx)
+        val zipBody = source.substring(zipFnIdx, zipFnEnd)
+        assertTrue(
+            "renderZipPage() must use inJustDecodeBounds = true for pass 1 of the two-pass " +
+                "BitmapFactory decode — without it the full bitmap is decoded at original " +
+                "dimensions, allowing a 20000x20000 PNG to OOM the app process (B.2)",
+            zipBody.contains("inJustDecodeBounds = true"),
+        )
+        assertTrue(
+            "renderZipPage() must call calculateInSampleSize() to cap bitmap dimensions — " +
+                "pass 1 header read without a sampleSize cap still decodes at full size (B.2)",
+            zipBody.contains("calculateInSampleSize("),
+        )
+
+        // renderRarPage — CBR path
+        val rarFnIdx = source.indexOf("private fun renderRarPage(")
+        assertTrue("renderRarPage() not found in ComicsReaderViewModel.kt (B.2)", rarFnIdx >= 0)
+        val rarFnEnd = nextPrivateFunIndex(source, rarFnIdx)
+        val rarBody = source.substring(rarFnIdx, rarFnEnd)
+        assertTrue(
+            "renderRarPage() must use inJustDecodeBounds = true for pass 1 (B.2)",
+            rarBody.contains("inJustDecodeBounds = true"),
+        )
+        assertTrue(
+            "renderRarPage() must call calculateInSampleSize() to cap bitmap dimensions (B.2)",
+            rarBody.contains("calculateInSampleSize("),
+        )
+    }
+
+    /**
+     * MAX_BITMAP_DIM must be exactly 2048. This constant is the maximum decoded dimension
+     * for both CBZ and CBR pages. The value 2048 bounds per-page allocation to
+     * 2048 x 2048 x 4 = 16 MB — safe on minSdk 26 (minimum heap 64 MB).
+     *
+     * If MAX_BITMAP_DIM were raised (e.g., to 4096 = 64 MB/page) or removed, a ZIP bomb
+     * PNG could exhaust the heap. Pinning the constant value is the regression guard.
+     */
+    @Test
+    fun cbz_bitmapDecode_maxBitmapDim_is2048() {
+        assertTrue(
+            "ComicsReaderViewModel must declare MAX_BITMAP_DIM = 2048 — this constant bounds " +
+                "decoded bitmap allocation to 16 MB/page; a larger value increases OOM risk " +
+                "from ZIP bomb PNG entries (B.2)",
+            sourceFile("ui/reader/ComicsReaderViewModel.kt")
+                .contains("MAX_BITMAP_DIM = 2048"),
+        )
+    }
+
+    /**
+     * calculateInSampleSize() must return 1 when outWidth or outHeight is <= 0.
+     * BitmapFactory.decodeStream() sets outWidth = -1 when the image format is
+     * unrecognised. Returning sampleSize = 1 for unknown dimensions preserves the
+     * existing null-bitmap behaviour (the null bmp from pass 2 is handled by the
+     * caller) — no crash, no silent allocation at full size.
+     */
+    @Test
+    fun cbz_bitmapDecode_calculateInSampleSize_unknownDimsFallback() {
+        assertTrue(
+            "calculateInSampleSize() must return 1 for outWidth/outHeight <= 0 — " +
+                "BitmapFactory sets these to -1 for unrecognised formats; returning 1 " +
+                "preserves the null-bitmap path without a division-by-zero or incorrect " +
+                "sample rate (B.2)",
+            sourceFile("ui/reader/ComicsReaderViewModel.kt")
+                .contains("if (outWidth <= 0 || outHeight <= 0) return 1"),
+        )
+    }
 
     // ── B.3 — Path traversal in CBZ ───────────────────────────────────────────
 
@@ -212,5 +311,31 @@ class GroupBSecurityTest {
             LibraryViewModel.bookCacheId(uri1),
             LibraryViewModel.bookCacheId(uri2),
         )
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    // Returns the index of the next private/override/internal fun declaration after
+    // afterIdx, or source.length if none exists. Used to extract individual function
+    // bodies without silently growing them past the next member.
+    private fun nextPrivateFunIndex(source: String, afterIdx: Int): Int =
+        listOf(
+            "\n    private fun ", "\n    override fun ", "\n    internal fun ",
+            "\n    fun ", "\n    private val ", "\n    private var ",
+        )
+            .mapNotNull { pattern ->
+                source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }
+            }
+            .minOrNull() ?: source.length
+
+    private fun sourceFile(relativePath: String): String {
+        val base = "src/main/kotlin/com/straysouth/lectern"
+        val file = File("$base/$relativePath")
+        assertTrue(
+            "Source file not found: $base/$relativePath " +
+                "(working dir: ${System.getProperty("user.dir")})",
+            file.exists(),
+        )
+        return file.readText()
     }
 }
