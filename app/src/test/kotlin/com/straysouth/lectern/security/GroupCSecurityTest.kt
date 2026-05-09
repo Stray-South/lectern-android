@@ -73,6 +73,8 @@ class GroupCSecurityTest {
         )
         // Find the next top-level fun declaration after deleteBook — everything between
         // is the function body (including the coroutine lambda).
+        // Assumes 4-space indentation for class members (standard Kotlin style).
+        // Falls back to source.length if deleteBook is the last function in the class.
         val nextFunIdx = source.indexOf("\n    fun ", deleteBookIdx + 1)
             .takeIf { it > deleteBookIdx } ?: source.length
         val deleteBookBody = source.substring(deleteBookIdx, nextFunIdx)
@@ -120,15 +122,17 @@ class GroupCSecurityTest {
         )
     }
 
-    /** v2 schema must contain a `format` column in the `books` table. */
+    /** v2 schema must contain a `format TEXT NOT NULL` column in the `books` table. */
     @Test
     fun schemaV2_booksTable_hasFormatColumn_notNull() {
         val v2 = schemaJson(2)
-        // Room schema JSON encodes NOT NULL columns as "notNull": true alongside the name.
-        // The simplest cross-version stable assertion is substring presence in v2.
+        // Assert against the books table's createSql — this is table-scoped (reading_progress
+        // has no format column) and encodes both column name and NOT NULL in one substring.
+        // Using createSql rather than the column-object JSON avoids the false-positive risk
+        // of a file-wide "notNull": true check matching the id column of either table.
         assertTrue(
-            "schemas/2.json must contain a non-null 'format' column in the books table (C.5)",
-            v2.contains("\"format\"") && v2.contains("\"notNull\": true"),
+            "schemas/2.json books createSql must contain `format` TEXT NOT NULL (C.5)",
+            v2.contains("`format` TEXT NOT NULL"),
         )
     }
 
@@ -152,8 +156,9 @@ class GroupCSecurityTest {
         val source = appDatabaseSource()
         val migrationIdx = source.indexOf("MIGRATION_1_2")
         assertTrue("MIGRATION_1_2 not found in AppDatabase.kt source (C.5)", migrationIdx >= 0)
-        // Extract the block up to the closing brace of the migration object.
-        val migrationBlock = source.substring(migrationIdx, (migrationIdx + 800).coerceAtMost(source.length))
+        // Extract a 2000-char window around the migration declaration — large enough to
+        // accommodate any KDoc block added before the execSQL call in the future.
+        val migrationBlock = source.substring(migrationIdx, (migrationIdx + 2000).coerceAtMost(source.length))
         assertTrue(
             "MIGRATION_1_2 must ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'EPUB' (C.5)",
             migrationBlock.contains("ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'EPUB'"),
