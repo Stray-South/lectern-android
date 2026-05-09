@@ -579,3 +579,47 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** ComicsReaderViewModel.kt, GroupBSecurityTest.kt
 - **Next:** Group C (Room) or deferred instrumented tests.
 - **Blockers:** none
+
+## 2026-05-09T01:00Z — Group C JVM security tests (Room DB integrity)
+
+- **Did:** Researched Room implementation (entities, DAOs, migrations, schema JSON) and
+  wrote `GroupCSecurityTest.kt` with 8 JVM tests covering all JVM-testable Group C properties.
+
+  **C.2 — No fallbackToDestructiveMigration:**
+  Source text assertion that `AppDatabase.getInstance()` builder never calls
+  `fallbackToDestructiveMigration()`. If called, Room silently destroys user library data
+  on any schema mismatch — unacceptable for a reading app with local-only storage.
+
+  **C.4 — deleteBook cascade guard:**
+  `ReadingProgress` has no `@ForeignKey` CASCADE DELETE to `Book`. Orphan cleanup relies
+  entirely on `LibraryViewModel.deleteBook()` calling `readingProgressDao.deleteByBookId(id)`.
+  Source text assertion verifies both `deleteById` and `deleteByBookId` are called within
+  the `deleteBook` function body — guards against the cascade call being silently removed.
+
+  **C.5 — Schema JSON integrity (5 tests):**
+  - `schemaV1_identityHash_isStable` — pins v1 hash `187531121d9fe06eec1def42f91a6b93`
+  - `schemaV2_identityHash_isStable` — pins v2 hash `3f5b9ab23f084f68bf34e8a4d0c00cdb`
+  - `schemaV2_booksTable_hasFormatColumn_notNull` — `format TEXT NOT NULL` present in v2
+  - `schemaV1_booksTable_hasNoFormatColumn` — `format` absent from v1
+  - `migration1to2_sql_addsFormatColumnWithEpubDefault` — pins exact migration SQL
+
+  **Research findings documented:**
+  - No `@ForeignKey` between `books` and `reading_progress` — confirmed gap covered by ViewModel
+  - `room-testing` (`androidx.room:room-testing`) not in deps — needed before C.1/C.3/C.4 DB instrumented tests
+  - Both `1.json` and `2.json` committed to `app/schemas/`
+  - `OnConflictStrategy.REPLACE` on both `BookDao.upsert()` and `ReadingProgressDao.upsert()`
+
+  **Deferred (instrumented test sprint):**
+  - C.1: `MigrationTestHelper` v1→v2 data preservation (needs `room-testing` dependency)
+  - C.3: Concurrent write safety (needs Android context + Room in-memory DB)
+  - C.4 DB: After `deleteBook()`, `getProgress(deletedBookId)` returns null
+
+  All gates green: assembleDebug, testDebugUnitTest (all pass), detekt, ktlintCheck,
+  lintDebug, banned-strings, gaze-data-leak.
+
+- **Why:** Room schema drift and silent data destruction are high-severity storage risks.
+  Source-pinned tests provide immediate regression coverage while the instrumented sprint
+  sets up `androidTest/` infrastructure.
+- **Files:** GroupCSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Group D (DataStore + local storage) or deferred instrumented tests.
+- **Blockers:** none

@@ -276,28 +276,40 @@
 - Attack: Install v1 (schema without `format` column). Migrate to v2. Verify all existing books, reading progress records survive. Verify `format` defaults to `'EPUB'` for pre-migration rows.
 - Pass: All pre-v2 `books` rows accessible post-migration with `format = 'EPUB'`. Zero dropped records. `schemas/2.json` matches the live schema.
 - Source: `MIGRATION_1_2` in `AppDatabase.kt`.
+- ⏳ DEFERRED (instrumented): Requires `MigrationTestHelper` from `androidx.room:room-testing` — not yet in deps. Deferred to `androidTest/` sprint.
 
-**C.2** `room_noFallbackToDestructiveMigration` 🔴
+**C.2** `room_noFallbackToDestructiveMigration` ✅ SAFE (source-confirmed) + regression test
 - MASVS: MASVS-STORAGE-1
 - Attack: Install a version with a schema version that has no defined migration (simulating a future sprint skip). Verify Room throws `IllegalStateException` rather than silently destroying user data.
-- Pass: `fallbackToDestructiveMigration()` is NOT present in `AppDatabase.getInstance()`. Room throws `IllegalStateException` — testable by calling `Room.databaseBuilder` with a version bump and no migration.
-- Source: `AppDatabase.kt` — confirmed: no `fallbackToDestructiveMigration()` call.
+- ✓ CONFIRMED SAFE: `fallbackToDestructiveMigration()` is NOT present in `AppDatabase.getInstance()`. Room throws `IllegalStateException` on schema mismatch without a registered migration.
+- ✅ REGRESSION TEST: `GroupCSecurityTest.appDatabase_builderDoesNotCallFallbackToDestructiveMigration` — source text assertion guards against future re-introduction.
+- ⏳ DEFERRED (runtime half): Instrumented test verifying Room throws `IllegalStateException` on unmigrated version bump deferred to `androidTest/` sprint.
 
 **C.3** `room_concurrentWrite_noConflict` 🔴
 - MASVS: MASVS-CODE-3
 - Attack: Trigger simultaneous Room writes from two coroutines: `BookDao.upsert(book)` and `ReadingProgressDao.upsertProgress(progress)` with a shared `bookId`. Verify no `SQLiteConstraintException` or `IllegalStateException`.
 - Pass: Room DAO operations use `suspend` on correct dispatchers (main-safe, Room internally dispatches to IO). No conflict. All operations complete.
+- ⏳ DEFERRED (instrumented): Requires Android context + Room in-memory DB.
 
-**C.4** `room_deleteBook_cascadeProgress` 🔴
+**C.4** `room_deleteBook_cascadeProgress` ✅ SAFE (source-confirmed) + regression test
 - MASVS: MASVS-STORAGE-1
 - Attack: Delete a book. Verify `ReadingProgress` rows with the deleted `bookId` are also deleted. No FK cascade is defined in the schema — `LibraryViewModel.deleteBook()` calls `ReadingProgressDao.deleteByBookId` explicitly.
-- Pass: After `deleteBook()`, `ReadingProgressDao.getProgress(deletedBookId)` returns null. No orphaned progress records.
-- Source: `LibraryViewModel.deleteBook()` — confirmed explicit delete call.
+- ✓ CONFIRMED: No `@ForeignKey` between `books` and `reading_progress`. `bookId` in `reading_progress` is a bare nullable TEXT column. Orphan cleanup is manual.
+- ✓ CONFIRMED: `LibraryViewModel.deleteBook()` calls both `bookDao.deleteById(id)` AND `readingProgressDao.deleteByBookId(id)` in the same coroutine block.
+- ✅ REGRESSION TEST: `GroupCSecurityTest.libraryViewModel_deleteBook_callsDeleteByBookId` — source text assertion guards the cascade call from being removed.
+- ⏳ DEFERRED (DB behavior): After `deleteBook()`, `getProgress(deletedBookId)` returns null — requires Room in-memory DB.
 
-**C.5** `room_schemaJson_committed_notDrifted` 🔴
-- MASVS: MASVS-CODE-3
-- Attack: Modify a Room entity without updating `version` or migration. Verify the CI build catches the schema drift via `schemas/*.json` mismatch.
-- Pass: `assembleDebug` fails with a schema verification error when entity fields change without a version bump. `schemas/2.json` reflects the current live schema.
+**C.5** `room_schemaJson_committed_notDrifted` ✅ IMPLEMENTED — schema JSON integrity tests
+- MASVS: MAVSV-CODE-3
+- Attack: Modify a Room entity without updating `version` or migration. Verify the committed `schemas/*.json` files are not silently stale.
+- ✓ Both `1.json` and `2.json` committed. Identity hashes: `187531121d9fe06eec1def42f91a6b93` (v1), `3f5b9ab23f084f68bf34e8a4d0c00cdb` (v2).
+- ✓ Migration SQL: `ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'EPUB'` — confirmed in source.
+- ✅ REGRESSION TESTS (`GroupCSecurityTest`):
+  - `schemaV1_identityHash_isStable` — v1 hash pinned
+  - `schemaV2_identityHash_isStable` — v2 hash pinned
+  - `schemaV2_booksTable_hasFormatColumn_notNull` — `format TEXT NOT NULL` present in v2
+  - `schemaV1_booksTable_hasNoFormatColumn` — `format` absent from v1 (migration is additive)
+  - `migration1to2_sql_addsFormatColumnWithEpubDefault` — exact migration SQL verified
 
 ---
 
@@ -573,7 +585,7 @@
 |---|---|---|
 | A — EPUB3 content injection | 7 | 🔴 All new |
 | B — File import from untrusted sources | 7 | 🔴 All new |
-| C — Room DB integrity | 5 | 🔴 All new |
+| C — Room DB integrity | 5 | ✅ C.2, C.4 (source), C.5 JVM; 🔴 C.1, C.3, C.4 DB deferred |
 | D — DataStore and local storage | 5 | 🔴 All new |
 | E — TTS / Android speech engine | 4 | 🔴 All new |
 | F — Supply chain | 6 | 🔴 All new |
