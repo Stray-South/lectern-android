@@ -437,3 +437,46 @@ Format: see .claude/skills/devlog/SKILL.md
   libs.versions.toml, docs/security/RED-TEAM.md
 - **Next:** Group B research (B.3/B.4 zip4j/Readium path traversal + B.1/B.2 ZIP bomb).
 - **Blockers:** none
+
+## 2026-05-08T00:00Z — Security Sprint: Red Team Group B research
+- **Did:** Researched all Group B (file import from untrusted sources) findings by reading
+  `LibraryViewModel.kt`, `ComicsReaderViewModel.kt`, `PublicationRepository.kt`, and Readium
+  3.1.2 architecture. Also added code-review fix: `onReceivedSslError` forward to delegate and
+  explicit `when` branch in `wrapWebViewsIn` for unexpected WebViewClient types.
+
+  **B.3/B.4 path traversal (confirmed safe):** zip4j and junrar are used exclusively via
+  `getInputStream()` — `extractAll()` / `extractFile()` never called. Entry names are ZIP lookup
+  keys only, never filesystem paths. Readium 3.x never extracts EPUB to disk — completely
+  different architecture from Readium-2 (CVE-2021-40870). `AssetRetriever` + `ZipContainer`
+  serve entries via InputStream on-demand. No `..` traversal possible in either path.
+
+  **B.5 DISPLAY_NAME attack (confirmed safe):** `LibraryViewModel` never queries
+  `DISPLAY_NAME`. All file paths use `UUID.nameUUIDFromBytes(uri.toString())`.
+
+  **B.6 masquerade EPUB (confirmed safe):** `DefaultPublicationParser` validates ZIP + container
+  structure; `Result.failure` → Snackbar; Room row written only on success.
+
+  **B.7 duplicate import (confirmed safe):** Deterministic UUID + `OnConflictStrategy.REPLACE`.
+
+  **B.1 ZIP bomb EPUB (accepted risk):** Readium streams entries to WebView renderer process —
+  OOM crash is renderer-isolated, not app process. No disk exhaustion. `pub.cover()` applies
+  internal downsampling. Documented as accepted risk.
+
+  **B.2 BitmapFactory no size guard (FIX NEEDED):** `renderPage()` calls `BitmapFactory.decodeStream()`
+  with no dimension check on CBZ/CBR entries. Malicious entry claiming 10000×10000 pixels → 400 MB
+  allocation → app process OOM. Fix: `FileHeader.uncompressedSize` proxy check + `inSampleSize`.
+
+  **B.8 DefaultHttpClient HTTPS exfiltration (NEW — FIX NEEDED):** `PublicationRepository`
+  creates `DefaultHttpClient()` and passes it to `DefaultPublicationParser`. A malicious EPUB
+  with a remote OPF reference causes Readium to make a real HTTPS call at import time — not
+  blocked by `EpubBlockingWebViewClient`. Fix: replace with a no-op HTTP client (Lectern V1
+  needs no remote fetch from Readium).
+
+  Updated `docs/security/RED-TEAM.md`: B.1–B.8 entries written with full technical rationale
+  and pass criteria. Confirmed-facts table updated with 5 new rows.
+
+- **Why:** Phase 1 red team research — Group B (file import attack surface). Two code fixes
+  identified: B.2 BitmapFactory OOM + B.8 DefaultHttpClient exfiltration.
+- **Files:** docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Execute B.2 and B.8 fixes.
+- **Blockers:** none
