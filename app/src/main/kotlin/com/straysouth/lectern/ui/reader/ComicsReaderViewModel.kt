@@ -178,19 +178,23 @@ class ComicsReaderViewModel(application: Application) : AndroidViewModel(applica
 
     // SECURITY B.2: Same two-pass approach for CBR. Archive is already re-opened per
     // renderPage call (junrar sequential-read contract); opening twice is consistent.
+    // firstOrNull + ?.let avoids non-local returns inside inline lambdas (ReturnCount).
+    // If the entry is absent (corrupt archive), both passes return null gracefully.
     private fun renderRarPage(entry: String): Bitmap? {
         val file = rarCacheFile ?: return null
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         Archive(file).use { rar ->
-            val header = rar.fileHeaders.first { it.fileName == entry }
-            rar.getInputStream(header).use { BitmapFactory.decodeStream(it, null, boundsOpts) }
+            rar.fileHeaders.firstOrNull { it.fileName == entry }?.let { header ->
+                rar.getInputStream(header).use { BitmapFactory.decodeStream(it, null, boundsOpts) }
+            }
         }
         val decodeOpts = BitmapFactory.Options().apply {
             inSampleSize = calculateInSampleSize(boundsOpts.outWidth, boundsOpts.outHeight)
         }
         return Archive(file).use { rar ->
-            val header = rar.fileHeaders.first { it.fileName == entry }
-            rar.getInputStream(header).use { BitmapFactory.decodeStream(it, null, decodeOpts) }
+            rar.fileHeaders.firstOrNull { it.fileName == entry }?.let { header ->
+                rar.getInputStream(header).use { BitmapFactory.decodeStream(it, null, decodeOpts) }
+            }
         }
     }
 

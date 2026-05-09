@@ -31,17 +31,20 @@ class GroupBSecurityTest {
     // ── B.3 — Path traversal in CBZ ───────────────────────────────────────────
 
     /**
-     * Regression guard: zip4j [Zip4jFile.getInputStream] must be purely read-only.
+     * Regression guard: zip4j [Zip4jFile.getInputStream] must be purely read-only,
+     * and zip4j must surface traversal entry names unchanged (not normalise them).
      *
      * Attack: A CBZ whose entry names contain `../../` components targets app data
-     * outside the cache directory. This test verifies that calling [getInputStream]
-     * on a traversal-path entry creates ZERO new filesystem artifacts — the exact
-     * property that makes [ComicsReaderViewModel.renderZipPage] safe.
+     * outside the cache directory. Safety rests on two properties:
+     *  1. [getInputStream] creates zero filesystem artifacts — the ViewModel only
+     *     calls [getInputStream], never [Zip4jFile.extractAll] or [extractFile].
+     *  2. zip4j surfaces the raw entry name (including `../`), not a normalised path.
+     *     The ViewModel uses [FileHeader.fileName] as a read-only lookup key —
+     *     confirmed never passed to [File] constructors.
      *
-     * If [ComicsReaderViewModel] is ever changed to call [Zip4jFile.extractAll] or
-     * [Zip4jFile.extractFile], this test would catch it only indirectly (by the
-     * extract creating a file). The direct guard is the absence of any extractFile
-     * call in the ViewModel — but this test provides a runtime regression check.
+     * Both properties are asserted here. If zip4j were to silently normalise entry
+     * names, the second assertion catches it, signalling the ViewModel safety argument
+     * needs re-evaluation.
      */
     @Test
     fun cbz_pathTraversalEntry_getInputStreamDoesNotExtract() {
@@ -51,13 +54,20 @@ class GroupBSecurityTest {
             val filesBefore = tempDir.walkTopDown().map { it.absolutePath }.toSortedSet()
             // Open with zip4j and call getInputStream on every header — mirrors
             // the ViewModel's renderZipPage() path exactly.
-            readAllZipEntries(zipFile)
+            val entryNames = readAllZipEntries(zipFile)
             val filesAfter = tempDir.walkTopDown().map { it.absolutePath }.toSortedSet()
             assertEquals(
                 "getInputStream() must not create new filesystem entries " +
                     "(path traversal regression guard — B.3)",
                 filesBefore,
                 filesAfter,
+            )
+            // zip4j must NOT normalise traversal sequences — the ViewModel relies on
+            // entry names being opaque read-only keys, not filesystem-resolved paths.
+            assertTrue(
+                "zip4j must surface raw traversal entry names unchanged (B.3) — " +
+                    "got: $entryNames",
+                entryNames.any { it.contains("../") },
             )
         } finally {
             tempDir.deleteRecursively()
@@ -82,13 +92,14 @@ class GroupBSecurityTest {
 
     // Open with zip4j and call getInputStream on every header — same path as
     // ComicsReaderViewModel.renderZipPage() but without bitmap decode.
-    private fun readAllZipEntries(zipFile: File) {
+    // Returns the raw FileHeader.fileName values so callers can assert normalisation behaviour.
+    private fun readAllZipEntries(zipFile: File): List<String> =
         Zip4jFile(zipFile).use { zip ->
-            zip.fileHeaders.forEach { header ->
+            zip.fileHeaders.map { header ->
                 zip.getInputStream(header).use { it.readBytes() }
+                header.fileName
             }
         }
-    }
 
     // ── B.5 — content:// DISPLAY_NAME path traversal ──────────────────────────
 
@@ -98,13 +109,18 @@ class GroupBSecurityTest {
      * A malicious provider returning `DISPLAY_NAME = "../../databases/lectern.db"`
      * cannot affect the cache key because [LibraryViewModel] never calls
      * [ContentResolver.query] with [android.provider.OpenableColumns.DISPLAY_NAME].
+     *
+     * Cross-session stability: the expected UUID is the deterministic MD5-derived
+     * UUID v3 of the UTF-8 bytes of the URI string (Java [UUID.nameUUIDFromBytes]).
+     * If the hashing algorithm or encoding ever changes, this test catches it across
+     * separate JVM sessions — unlike a same-call equality check.
      */
     @Test
-    fun bookCacheId_sameUri_returnsSameId() {
+    fun bookCacheId_knownUri_matchesExpectedUuid() {
         val uri = "content://com.android.externalstorage/document/primary%3ADownloads%2Fbook.epub"
         assertEquals(
-            "Same URI must always produce the same book ID",
-            LibraryViewModel.bookCacheId(uri),
+            "bookCacheId must produce a stable, deterministic UUID across JVM sessions",
+            "00a4f86e-a2c5-39bb-a313-5ed48abb9580",
             LibraryViewModel.bookCacheId(uri),
         )
     }

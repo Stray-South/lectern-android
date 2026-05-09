@@ -543,3 +543,39 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** GroupBSecurityTest.kt (new), docs/security/RED-TEAM.md
 - **Next:** Group B complete. Begin Group C (Room) or deferred instrumented tests.
 - **Blockers:** none
+
+## 2026-05-09T00:00Z — Group B code-review fixes
+
+- **Did:** Addressed 3 findings from post-DoD code review of Group B changes.
+
+  **Fix 1 — `renderRarPage` corrupt-archive robustness:**
+  Replaced `first { it.fileName == entry }` (throws `NoSuchElementException` if archive
+  header list diverges between the two `Archive` opens) with `firstOrNull { ... }?.let {}`
+  in both passes. If the entry is absent, both passes return null gracefully. The `?.let`
+  pattern also avoids non-local returns inside inline lambdas, resolving a detekt
+  `ReturnCount` violation (was 4 returns, limit 2).
+
+  **Fix 2 — B.3 test strengthened:**
+  `readAllZipEntries()` now returns `List<String>` (raw `FileHeader.fileName` values).
+  The B.3 test now asserts `entryNames.any { it.contains("../") }` — confirming zip4j
+  surfaces traversal entry names unchanged rather than silently normalising them.
+  This is the security-relevant property: the ViewModel uses entry names as read-only
+  lookup keys, and the test now verifies zip4j exposes the raw names it was given.
+
+  **Fix 3 — `bookCacheId` cross-session stability test:**
+  Replaced the redundant `bookCacheId_sameUri_returnsSameId` (which only asserted
+  `f(x) == f(x)` within the same JVM process, redundant with
+  `bookCacheId_idempotent_onDuplicateImport`) with `bookCacheId_knownUri_matchesExpectedUuid`.
+  The new test asserts a hardcoded expected UUID (`00a4f86e-a2c5-39bb-a313-5ed48abb9580`)
+  derived from `UUID.nameUUIDFromBytes` of the known URI — catching any future change to
+  the hashing algorithm or charset encoding across JVM sessions.
+
+  All gates green: assembleDebug, testDebugUnitTest (8/8 pass), detekt, ktlintCheck,
+  lintDebug, banned-strings, gaze-data-leak.
+
+- **Why:** Code review after DoD surfaced a robustness gap (corrupt CBR), a vacuous test
+  (B.3 proved nothing path-traversal-specific), and a redundant test that missed
+  cross-session regression coverage.
+- **Files:** ComicsReaderViewModel.kt, GroupBSecurityTest.kt
+- **Next:** Group C (Room) or deferred instrumented tests.
+- **Blockers:** none
