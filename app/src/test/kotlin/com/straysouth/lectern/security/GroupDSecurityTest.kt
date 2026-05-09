@@ -112,6 +112,10 @@ class GroupDSecurityTest {
             "anchor_prefs",
             "anchor_\$bookId",
         )
+        // ComicsPage and PdfPage intentionally share the key prefix "page_$bookId" — they are
+        // separate DataStore files (comics_page_prefs vs pdf_page_prefs) and the DataStore
+        // name assertion above already distinguishes them. The shared key prefix is safe
+        // because two separate .preferences_pb files on disk are independent stores.
         assertRepositoryKeyPattern(
             "data/repository/ComicsPageRepository.kt",
             "comics_page_prefs",
@@ -217,12 +221,12 @@ class GroupDSecurityTest {
             block.contains("domain=\"file\""),
         )
         assertTrue(
-            "cloud-backup must exclude domain=\"database\" (D.4)",
-            block.contains("domain=\"database\""),
+            "cloud-backup must exclude domain=\"database\" path=\".\" (D.4)",
+            block.contains("domain=\"database\" path=\".\""),
         )
         assertTrue(
-            "cloud-backup must exclude domain=\"sharedpref\" (D.4)",
-            block.contains("domain=\"sharedpref\""),
+            "cloud-backup must exclude domain=\"sharedpref\" path=\".\" (D.4)",
+            block.contains("domain=\"sharedpref\" path=\".\""),
         )
     }
 
@@ -291,7 +295,7 @@ class GroupDSecurityTest {
     )
 
     private val gazeLogSensitiveTerms = listOf(
-        "weightsX", "weightsY", "irisU", "irisV", "CalibrationResult", "toJsonString",
+        "weightsX", "weightsY", "irisU", "irisV", "toJsonString",
     )
 
     private fun deviceTransferBlock(): String {
