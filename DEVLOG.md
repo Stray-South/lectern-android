@@ -779,3 +779,52 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** GroupIJSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Groups A–G instrumented tests (androidTest sprint).
 - **Blockers:** none
+
+## 2026-05-09T00:00Z — Security regression tests: Group G (AuDHD safety)
+
+- **Did:** Added `GroupGSecurityTest.kt` — 6 JVM security regression tests for Group G.
+
+  **G.1 — All tween() durations ≤ 200 ms (1 test):**
+  Global walk of main-source `.kt` files. Two regex forms: positional first arg
+  `tween(200)` and named param `durationMillis = 200`. All 4 usages in
+  `ReaderOverlay.kt` are `tween(200)`. No violations. Variable-based durations
+  documented as static-analysis limitation in KDoc.
+
+  **G.2 — No timer-driven auto-advance (1 test):**
+  Comment-stripped (whole-line and inline `//` tail) global walk asserts no
+  `postDelayed(` or `CountDownTimer(`. Zero occurrences confirmed.
+  `BackHandler(` not scanned — Compose API, not a timer.
+
+  **G.5 — Gaze overlay defaults OFF (2 tests):**
+  `FocusBandPrefs.kt`: `gazeOverlayEnabled: Boolean = false` (data class default).
+  `FocusBandRepository.kt`: `KEY_FIXATION_OVERLAY] ?: false` (DataStore fallback).
+  Both layers required: either flipping to `true` silently enables gaze overlay
+  on new installs without user consent.
+
+  **G.6 — Calibration BackHandler scoped to calibration guard (1 test):**
+  `MainActivity.kt`: asserts `BackHandler { gazeViewModel.cancelCalibration() }`
+  AND uses `lastIndexOf` for the calibration guard token so a prior comment
+  containing the guard string cannot defeat the ordering check.
+
+  **G.7 — No banned copy in string resources (1 test):**
+  Walks `src/main/res/values/*.xml`, case-insensitive scan against 12 banned terms
+  from `check_banned_strings.sh`. JVM defence-in-depth alongside the CI shell gate.
+
+  **Review fixes applied:**
+  - G.6 ordering check upgraded to `lastIndexOf(guardToken)` so earlier comments
+    cannot spoof the containment check.
+  - `stripComments()` now also strips inline `//` tails via `substringBefore("//")`
+    to prevent false positives from commented-out code on code lines.
+  - Removed `values/*.xml` literal from class-level KDoc — the `/*` in that
+    path opens a nested Kotlin block comment, consuming the rest of the class.
+
+  **Deferred:** G.3 (Snackbar duration — product decision before V2 beta),
+  G.4 (theme flash — instrumented Compose test only).
+
+- **Why:** Animation duration, no auto-advance, gaze default-off, and calibration
+  dismissability are concrete AuDHD invariants with real regression risk. Source checks
+  catch regressions before device testing. The banned-copy JVM test adds a local-run
+  layer that the CI-only shell script cannot provide.
+- **Files:** GroupGSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Group A (EPUB3 WebView security) JVM-testable subset or androidTest sprint.
+- **Blockers:** none

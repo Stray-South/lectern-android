@@ -444,37 +444,40 @@
 
 ## Section G — AuDHD-first safety regressions (Compose)
 
-**G.1** `audhd_noAutoPlayAnimation_onBookOpen` 🔴
+**G.1** `audhd_noAutoPlayAnimation_onBookOpen` ✅ SAFE + regression test
 - Attack: Open any book. Verify no Compose animation exceeds 200ms and no looping animation begins without user action.
-- Pass: All `tween()` durations ≤ 200ms. Confirmed from source: `tween(200)` used consistently in `ReaderOverlay.kt`.
+- ✓ CONFIRMED: 4 × `tween(200)` in `ReaderOverlay.kt` lines 275-276, 286-287. No other `tween(`, no `durationMillis =`, no `infiniteRepeatable`, no `spring(` anywhere in main sources.
+- ✅ REGRESSION TEST: `GroupGSecurityTest.audhd_animations_allTweenDurations_atMost200ms` — global walk extracting all literal-integer tween durations (positional and named-param forms), asserts all ≤ 200 ms. Variable-based durations documented as static-analysis limitation.
 
-**G.2** `audhd_noAutoAdvancePages` 🔴
+**G.2** `audhd_noAutoAdvancePages` ✅ SAFE + regression test
 - Attack: Open a book. Wait 60 seconds without interaction. Verify no auto-advance, auto-scroll, or auto-dismiss.
-- Pass: No `LaunchedEffect` or `Handler.postDelayed` driving navigation without explicit user input.
+- ✓ CONFIRMED: Zero `postDelayed(`, zero `CountDownTimer(` in main sources. All `LaunchedEffect` usages react to state-flow emissions (deletedBookId, needsPermission, importError) — none drive timed navigation.
+- ✅ REGRESSION TEST: `GroupGSecurityTest.audhd_noAutoAdvance_noTimerDrivenNavigation` — comment-stripped + inline-tail-stripped global walk asserts absence of both timer APIs.
 
-**G.3** `audhd_errorMessagesInlineNotAutoDismissed` 🔴
+**G.3** `audhd_errorMessagesInlineNotAutoDismissed` ⚠️ Design decision deferred
 - Attack: Trigger an import error (malformed EPUB). Verify the Snackbar error message does not auto-dismiss before the user can read it.
-- Pass: `snackbarHostState.showSnackbar(msg)` uses `SnackbarDuration.Short` (4s).
-- 🔍 Design question: `Short` (4s) may be insufficient for AuDHD users. `Indefinite` with explicit dismiss is preferable for error messages — requires decision before beta.
+- `snackbarHostState.showSnackbar(msg)` uses default `SnackbarDuration.Short` (4s). No JVM test written: asserting `Short` blesses a questionable AuDHD UX; asserting `Indefinite` fails today.
+- ⏳ TODO before V2 beta: decide Snackbar duration policy for error messages. `Indefinite` + explicit dismiss is recommended for AuDHD users.
 
 **G.4** `audhd_noFlashOnThemeChange` 🔴
 - Attack: Switch reading theme (Light → Sepia → Dark) via the Typography Panel. Verify no flash or abrupt color change.
 - Pass: Theme transition applies via Readium CSS injection — verify crossfade rather than flash.
+- ⏳ DEFERRED (instrumented): requires Compose rendering.
 
-**G.5** `audhd_gazeFocusBandDefaultOff` 🔴
+**G.5** `audhd_gazeFocusBandDefaultOff` ✅ SAFE + regression tests (2)
 - Attack: Open a book with gaze enabled and no explicit user preference set. Verify the Focus Band overlay does NOT appear by default.
-- Pass: `FocusBandPrefs.gazeOverlayEnabled = false` confirmed default. No overlay on first launch.
-- Source: `FocusBandPrefs.kt` confirmed default.
+- ✓ CONFIRMED (two independent layers): `FocusBandPrefs.gazeOverlayEnabled: Boolean = false` (data class default) AND `prefs[KEY_FIXATION_OVERLAY] ?: false` (DataStore first-launch fallback in `FocusBandRepository.observe()`). Both must be false for new-install guarantee; either flipping to true silently enables the overlay.
+- ✅ REGRESSION TESTS: `GroupGSecurityTest.audhd_gazeOverlay_defaultOff_inPrefsClass` (data class), `audhd_gazeOverlay_defaultOff_inRepository` (DataStore fallback).
 
-**G.6** `audhd_calibrationOverlayDismissable_noTrap` 🔴
+**G.6** `audhd_calibrationOverlayDismissable_noTrap` ✅ SAFE + regression test
 - Attack: Open CalibrationScreen. Press device back button mid-calibration. Verify overlay dismisses.
-- Pass: `BackHandler { gazeViewModel.cancelCalibration() }` in `AppContent` fires, sets `CalibrationUiState.Idle`, dismisses overlay.
-- Source: `MainActivity.kt` — confirmed BackHandler present (Sprint 14).
+- ✓ CONFIRMED: `MainActivity.kt` line 140: `BackHandler { gazeViewModel.cancelCalibration() }` inside `if (calibrationUiState !is CalibrationUiState.Idle)` guard at line 136. BackHandler is scoped — does not intercept reader → library back-press.
+- ✅ REGRESSION TEST: `GroupGSecurityTest.audhd_calibrationOverlay_backHandlerWiresCancelCalibration` — asserts exact wiring AND uses `lastIndexOf` for the guard token to confirm the BackHandler is textually after the calibration-active condition.
 
-**G.7** `audhd_noStreakLanguage_noBannedCopy` 🔴
+**G.7** `audhd_noStreakLanguage_noBannedCopy` ✅ SAFE + regression test
 - Attack: Audit all `strings.xml` entries for banned copy: streak language, loss-framing, urgency copy, contingent reward mechanics.
-- Pass: `scripts/check_banned_strings.sh` CI check passes on every build.
-- Source: CI gate confirmed active.
+- ✓ CONFIRMED: `strings.xml` clean against all 12 banned terms. `check_banned_strings.sh` CI gate active.
+- ✅ REGRESSION TEST: `GroupGSecurityTest.audhd_stringsXml_noBannedCopy` — walks all `src/main/res/values/*.xml`, case-insensitive scan against the same term list as the shell script. JVM-layer defence-in-depth alongside the CI gate.
 
 ---
 
@@ -609,7 +612,7 @@
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
 | E — TTS / Android speech engine | 4 | 🔴 All new |
 | F — Supply chain | 6 | 🔴 All new |
-| G — AuDHD-first safety regressions | 7 | 🔴 All new |
+| G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.5 (×2), G.6, G.7 JVM; ⚠️ G.3 design deferred; 🔴 G.4 instrumented |
 | H — Android platform security | 6 | 🔴 All new |
 | I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.3 JVM; 🔴 I.4–I.5 instrumented deferred |
 | J — Gaze tracking pipeline | 6 | ✅ J.1 JVM; 🔴 J.2–J.6 instrumented deferred |
