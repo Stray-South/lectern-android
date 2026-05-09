@@ -50,8 +50,7 @@ class GroupEFSecurityTest {
         val source = sourceFile("ui/reader/EpubReaderViewModel.kt")
         val fnIdx = source.indexOf("override fun onCleared()")
         assertTrue("onCleared() not found in EpubReaderViewModel.kt", fnIdx >= 0)
-        val nextFunIdx = source.indexOf("\n    fun ", fnIdx + 1)
-            .takeIf { it > fnIdx } ?: source.length
+        val nextFunIdx = nextClassMemberIndex(source, fnIdx)
         val body = source.substring(fnIdx, nextFunIdx)
         assertTrue(
             "EpubReaderViewModel.onCleared() must call cleanUpTts() to close the TTS " +
@@ -121,8 +120,7 @@ class GroupEFSecurityTest {
         val source = sourceFile("ui/reader/EpubReaderViewModel.kt")
         val fnIdx = source.indexOf("fun startTts(")
         assertTrue("startTts() not found in EpubReaderViewModel.kt", fnIdx >= 0)
-        val nextFunIdx = source.indexOf("\n    fun ", fnIdx + 1)
-            .takeIf { it > fnIdx } ?: source.length
+        val nextFunIdx = nextClassMemberIndex(source, fnIdx)
         val body = source.substring(fnIdx, nextFunIdx)
         val occurrences = body.split("TtsUiState.EngineUnavailable").size - 1
         assertTrue(
@@ -141,17 +139,23 @@ class GroupEFSecurityTest {
     @Test
     fun tts_engineUnavailable_ttsBar_showsMessageNotSilentNoOp() {
         val source = sourceFile("ui/reader/TtsBar.kt")
+        val branchIdx = source.indexOf("TtsUiState.EngineUnavailable")
         assertTrue(
             "TtsBar must explicitly branch on TtsUiState.EngineUnavailable (E.4)",
-            source.contains("TtsUiState.EngineUnavailable"),
+            branchIdx >= 0,
         )
+        // Extract a window from the EngineUnavailable token — covers the branch body.
+        // The parameter declaration (onDismissUnavailable) appears BEFORE this token in
+        // the function signature, so this window exclusively targets the branch interior.
+        val branchWindow = source.substring(branchIdx, (branchIdx + 600).coerceAtMost(source.length))
         assertTrue(
             "TtsBar.EngineUnavailable branch must display tts_engine_unavailable string (E.4)",
-            source.contains("tts_engine_unavailable"),
+            branchWindow.contains("tts_engine_unavailable"),
         )
         assertTrue(
-            "TtsBar.EngineUnavailable branch must provide a dismiss action (E.4)",
-            source.contains("onDismissUnavailable"),
+            "TtsBar.EngineUnavailable branch must wire onDismissUnavailable to the dismiss " +
+                "action — passing it as a parameter is insufficient (E.4)",
+            branchWindow.contains("onDismissUnavailable"),
         )
     }
 
@@ -231,6 +235,19 @@ class GroupEFSecurityTest {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Returns the index of the next class-member function declaration after [afterIdx],
+     * or [source.length] if none exists. Matches all modifier prefixes (plain, private,
+     * override, internal) to avoid silently expanding a function body when a
+     * `private fun` or `override fun` follows the target function.
+     */
+    private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
+        listOf("\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ")
+            .mapNotNull { pattern ->
+                source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }
+            }
+            .minOrNull() ?: source.length
 
     private fun manifestXml(): String {
         val file = File("src/main/AndroidManifest.xml")

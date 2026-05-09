@@ -91,11 +91,16 @@ class GroupHSecurityTest {
         val violations = mainSources.walkTopDown()
             .filter { it.extension == "kt" }
             .flatMap { file ->
-                // Strip KDoc and line-comment lines before checking — prevents false
-                // positives from comments that reference the API name without calling it
-                // (e.g., BlockingHttpClient.kt KDoc mentions DefaultHttpClient by name).
+                // Strip comment lines before checking — prevents false positives from
+                // comments that reference the API name without calling it (e.g.,
+                // BlockingHttpClient.kt KDoc mentions DefaultHttpClient by name).
+                // Covers: line comments (//), KDoc body lines (*), and block-comment
+                // openers (/* and /**) which are not caught by the '*' prefix filter.
                 val codeLines = file.readText().lines()
-                    .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
+                    .filterNot {
+                        val t = it.trimStart()
+                        t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")
+                    }
                     .joinToString("\n")
                 networkApis
                     .filter { api -> codeLines.contains(api) }
