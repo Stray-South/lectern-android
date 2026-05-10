@@ -405,10 +405,11 @@ class GroupIJSecurityTest {
                 "collapses viewModelScope and leaves _gazeEnabled = true with no feed (J.4)",
             seIdx >= 0,
         )
-        // Window-bound: assert _gazeEnabled.value = false appears within the catch block
-        // (~300 chars after the catch keyword) rather than anywhere after it. This prevents
-        // the assertion from passing if the assignment is moved outside the catch body.
-        val catchWindow = codeLines.substring(seIdx, (seIdx + 300).coerceAtMost(codeLines.length))
+        // Window-bound: assert all three assignments appear within the catch block body
+        // (500 chars after the catch keyword) rather than anywhere after it. 500 gives
+        // ~240 chars of margin over the current ~256-char stripped block; prevents the
+        // assertions from passing if any assignment is moved outside the catch body.
+        val catchWindow = codeLines.substring(seIdx, (seIdx + 500).coerceAtMost(codeLines.length))
         assertTrue(
             "startGazeInternal() SecurityException catch must set _gazeEnabled.value = false " +
                 "within the catch block — a catch that does not disable gaze leaves the UI " +
@@ -419,6 +420,12 @@ class GroupIJSecurityTest {
             "startGazeInternal() SecurityException catch must reset _gazeState to Paused — " +
                 "without this the UI can show GazeState.Tracking after permission revocation (J.4)",
             catchWindow.contains("_gazeState.value = GazeState.Paused"),
+        )
+        assertTrue(
+            "startGazeInternal() SecurityException catch must cancel the state-collection " +
+                "coroutine via collectJob.cancel() — without cancellation the collector runs " +
+                "indefinitely against the abandoned GazeProviderImpl instance (J.4)",
+            catchWindow.contains("collectJob.cancel()"),
         )
         assertTrue(
             "startGazeInternal() SecurityException catch must null provider — " +

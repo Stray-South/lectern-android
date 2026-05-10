@@ -152,8 +152,9 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
             calibrationRepository = calibrationRepository,
         )
         provider = p
-        // Collect gaze state updates.
-        viewModelScope.launch {
+        // Collect gaze state updates. Stored so catch blocks can cancel it if start() fails —
+        // without cancellation the collector runs indefinitely against the abandoned provider.
+        val collectJob = viewModelScope.launch {
             p.gazeState.collect { _gazeState.value = it }
         }
         // Start provider (binds CameraX, creates FaceLandmarker).
@@ -164,6 +165,7 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "GazeProvider.start() failed", e)
                 _gazeEnabled.value = false
                 _gazeState.value = GazeState.Paused
+                collectJob.cancel()
                 provider = null
             } catch (e: SecurityException) {
                 // Thrown by CameraX when CAMERA permission is revoked at runtime (Android 11+).
@@ -171,6 +173,7 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "GazeProvider.start() failed — camera permission revoked", e)
                 _gazeEnabled.value = false
                 _gazeState.value = GazeState.Paused
+                collectJob.cancel()
                 provider = null
             }
         }
