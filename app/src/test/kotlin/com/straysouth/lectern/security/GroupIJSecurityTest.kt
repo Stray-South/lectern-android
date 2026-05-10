@@ -22,6 +22,8 @@ import java.io.File
  *           UV coordinates (irisU, irisV) are never persisted to DataStore
  *   J.2 — irisU / irisV never appear in a log call across the full gaze module
  *           (gaze/ and ui/gaze/ — extends GroupDSecurityTest D.3 to all files)
+ *   J.4 — startGazeInternal() catches SecurityException (camera permission revoked
+ *           at runtime on Android 11+) and sets _gazeEnabled = false
  *   J.6 — GazeProviderImpl loads face_landmarker.task via setModelAssetPath() from
  *           APK assets; integration code contains no filesDir / getCacheDir extraction
  *
@@ -366,6 +368,49 @@ class GroupIJSecurityTest {
                 "pause leaves the CameraX sensor running under thermal throttle and is " +
                 "subject to cross-thread visibility races on the flag value (J.5)",
             body.contains("imageAnalysis?.clearAnalyzer()"),
+        )
+    }
+
+    // ── J.4 — Camera permission revoked at runtime: graceful stop ────────────
+
+    /**
+     * On Android 11+ (API 30+), revoking CAMERA permission while the app is running
+     * does not kill the process. CameraX's [bindToLifecycle()] inside
+     * [GazeProviderImpl.bindCamera()] throws [SecurityException] on the next bind
+     * attempt after revocation.
+     *
+     * [startGazeInternal()] wraps [GazeProviderImpl.start()] in a coroutine. Without
+     * a [SecurityException] catch clause, the exception propagates to [viewModelScope]'s
+     * uncaught-exception handler, collapsing the scope and leaving [_gazeEnabled] at
+     * [true] with no live camera feed — the UI shows gaze as active while it is not.
+     *
+     * Two properties asserted on the extracted body:
+     *   1. [SecurityException] catch clause is present.
+     *   2. [_gazeEnabled.value = false] appears after the [SecurityException] catch
+     *      in comment-stripped source — the handler actually disables gaze and is not
+     *      a silent swallow.
+     */
+    @Test
+    fun coroutines_gazeStart_catchesSecurityException_onPermissionRevoke() {
+        val source = sourceFile("ui/gaze/GazeViewModel.kt")
+        val fnIdx = source.indexOf("private fun startGazeInternal()")
+        assertTrue("startGazeInternal() not found in GazeViewModel.kt (J.4)", fnIdx >= 0)
+        val fnEnd = nextClassMemberIndex(source, fnIdx)
+        val codeLines = stripComments(source.substring(fnIdx, fnEnd))
+
+        assertTrue(
+            "startGazeInternal() must catch SecurityException — thrown by CameraX when " +
+                "CAMERA permission is revoked at runtime on Android 11+; uncaught, it " +
+                "collapses viewModelScope and leaves _gazeEnabled = true with no feed (J.4)",
+            codeLines.contains("catch (e: SecurityException)"),
+        )
+        val seIdx = codeLines.indexOf("catch (e: SecurityException)")
+        val disableIdx = codeLines.indexOf("_gazeEnabled.value = false", seIdx)
+        assertTrue(
+            "startGazeInternal() SecurityException catch must set _gazeEnabled.value = false — " +
+                "a catch that does not disable gaze leaves the UI in an inconsistent state " +
+                "where gaze appears active but the camera feed is dead (J.4)",
+            disableIdx > seIdx,
         )
     }
 

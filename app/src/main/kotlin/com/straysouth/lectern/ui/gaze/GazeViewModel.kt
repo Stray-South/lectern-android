@@ -163,6 +163,11 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: java.io.IOException) {
                 Log.e(TAG, "GazeProvider.start() failed", e)
                 _gazeEnabled.value = false
+            } catch (e: SecurityException) {
+                // Thrown by CameraX when CAMERA permission is revoked at runtime (Android 11+).
+                // The process is not killed on revocation — CameraX throws on next bind attempt.
+                Log.e(TAG, "GazeProvider.start() failed — camera permission revoked", e)
+                _gazeEnabled.value = false
             }
         }
     }
