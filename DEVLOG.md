@@ -871,3 +871,47 @@ Format: see .claude/skills/devlog/SKILL.md
   tree, C.1 migration, C.4 cascade, C.3 concurrency, E.1 TTS background, I.3 TTS race,
   J.4 permission revocation).
 - **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 16: androidTest infrastructure + E.1 TTS background fix
+
+- **Did:** Added `room-testing`, `androidx.test.runner`, `androidx.test.core-ktx`, and
+  `kotlinx-coroutines-test` to `libs.versions.toml` and `build.gradle.kts`. Created
+  `app/src/androidTest/kotlin/com/straysouth/lectern/db/` source tree. Wrote three
+  Room androidTest classes closing the highest-priority RED-TEAM deferred items.
+
+  **C.1 — `RoomMigrationTest`** (new, androidTest): Two tests using `MigrationTestHelper`.
+  `migration1to2_existingBookGetsEpubDefault` creates a v1 DB, inserts a book + progress
+  row, runs `MIGRATION_1_2`, then asserts `format = 'EPUB'` and the progress row intact.
+  `migration1to2_multipleBooks_allSurvive` asserts row count preserved across migration.
+  Closes C.1 🔴.
+
+  **C.3 — `RoomConcurrencyTest`** (new, androidTest): Two tests using Room in-memory DB.
+  `concurrentBookAndProgressWrite_bothComplete` launches two `Dispatchers.IO` coroutines
+  writing to different tables simultaneously; both complete without exception.
+  `concurrentUpserts_sameBook_lastWriteWins` verifies `REPLACE` conflict on same PK
+  does not throw. Closes C.3 🔴.
+
+  **C.4 DB — `DeleteBookDbTest`** (new, androidTest): Two tests.
+  `deleteBook_thenDeleteByBookId_progressIsGone` verifies DAO cascade contract: after
+  `bookDao.deleteById` + `readingProgressDao.deleteByBookId`, no progress row with that
+  bookId remains in `observeAll()`. `deleteBook_otherProgressUnaffected` asserts sibling
+  book's progress survives. Closes C.4 DB ⏳.
+
+  **E.1 production fix**: Added `override fun onStop()` to `EpubReaderFragment` calling
+  `viewModel.pauseTts()`. Closes the confirmed gap where TTS continued speaking after
+  the user switched apps or the screen turned off. `onCleared()` → `cleanUpTts()` remains
+  as last-resort teardown on Activity finish.
+
+  **E.1 JVM regression test**: `GroupEFSecurityTest.tts_onStop_callsPauseTts` — source
+  text assertion pins `EpubReaderFragment.onStop()` → `viewModel.pauseTts()` call.
+
+  **RED-TEAM.md** updated: C.1, C.3, C.4 DB, E.1 closed to ✅; summary table updated.
+
+- **Why:** The androidTest sprint was needed to move three Room deferred items from 🔴 to
+  green and close the TTS background-audio gap (E.1) which was a real user-visible bug:
+  TTS kept playing after switching apps.
+- **Files:** libs.versions.toml, app/build.gradle.kts, RoomMigrationTest.kt (new),
+  RoomConcurrencyTest.kt (new), DeleteBookDbTest.kt (new), EpubReaderFragment.kt,
+  GroupEFSecurityTest.kt, docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Group A (EPUB3 WebView security) JVM tests, or G.4 Compose snapshot tests.
+- **Blockers:** none

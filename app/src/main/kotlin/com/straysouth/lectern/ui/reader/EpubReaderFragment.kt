@@ -93,6 +93,14 @@ class EpubReaderFragment : Fragment() {
         setupGazeTtsBridge()
     }
 
+    // E.1 fix: pause TTS when the Fragment stops (app backgrounded, call screen, etc.)
+    // so audio does not continue after the user leaves the app. Resume is not automatic;
+    // the user taps Play again — consistent with expected media-playback UX.
+    override fun onStop() {
+        super.onStop()
+        viewModel.pauseTts()
+    }
+
     // ── Private lifecycle helpers ─────────────────────────────────────────────
 
     private fun setupNavigator(isConfigChange: Boolean, bookId: String) {

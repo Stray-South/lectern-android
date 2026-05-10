@@ -10,8 +10,8 @@ import java.io.File
  * Security regression tests for Group E (TTS privacy) and Group F (supply chain).
  *
  * Covers JVM-testable properties:
- *   E.1 — EpubReaderViewModel.onCleared() calls cleanUpTts(); no onPause() TTS stop exists
- *           (background-stop gap documented — deferred to instrumented)
+ *   E.1 — EpubReaderFragment.onStop() calls viewModel.pauseTts() (background-stop fix);
+ *           EpubReaderViewModel.onCleared() calls cleanUpTts() (last-resort teardown)
  *   E.2 — No annotation Room entity in V1; TTS reads Publication content only
  *   E.3 — RECORD_AUDIO and MODIFY_AUDIO_SETTINGS absent from Manifest
  *   E.4 — TtsUiState.EngineUnavailable emitted in ≥ 2 paths in startTts(); TtsBar
@@ -28,7 +28,7 @@ import java.io.File
  *           in main sources; entries served via getInputStream() only
  *
  * Deferred (instrumented):
- *   E.1 runtime — TTS audio-focus release when app is backgrounded
+ *   E.1 audio-focus — verify audio-focus is released via ActivityScenario (complex; later sprint)
  *   E.3 runtime — verify no RECORD_AUDIO permission is requested at runtime
  *
  * F.6 — gradle/verification-metadata.xml absent (⚠️ known V1 gap; exact pins + CI
@@ -42,14 +42,30 @@ import java.io.File
  */
 class GroupEFSecurityTest {
 
-    // ── E.1 — TTS teardown on ViewModel clear ────────────────────────────────
+    // ── E.1 — TTS stops on background (onStop fix) + last-resort teardown ──────
 
     /**
-     * [EpubReaderFragment] has no [onPause] override that stops TTS — a background-stop
-     * gap deferred to instrumented tests. [EpubReaderViewModel.onCleared] is therefore
-     * the last-resort TTS teardown: it fires when the Activity finishes (back-press,
-     * swipe-away from Recents) and closes the TTS navigator. Pinning this prevents a
-     * future refactor from accidentally omitting the call.
+     * `EpubReaderFragment.onStop()` must call `viewModel.pauseTts()` so that TTS stops
+     * when the user switches apps or the screen turns off. This was a confirmed gap (no
+     * lifecycle hook stopped TTS on background) — fixed by adding `onStop()`.
+     */
+    @Test
+    fun tts_onStop_callsPauseTts() {
+        val source = sourceFile("ui/reader/EpubReaderFragment.kt")
+        val fnIdx = source.indexOf("override fun onStop()")
+        assertTrue("onStop() not found in EpubReaderFragment.kt — E.1 production fix may have been removed", fnIdx >= 0)
+        val nextFunIdx = nextClassMemberIndex(source, fnIdx)
+        val body = source.substring(fnIdx, nextFunIdx)
+        assertTrue(
+            "EpubReaderFragment.onStop() must call viewModel.pauseTts() to stop TTS on background (E.1)",
+            body.contains("viewModel.pauseTts()"),
+        )
+    }
+
+    /**
+     * [EpubReaderViewModel.onCleared] is the last-resort TTS teardown: it fires when the
+     * Activity finishes (back-press, swipe-away from Recents) and closes the TTS navigator.
+     * Pinning this prevents a future refactor from accidentally omitting the call.
      */
     @Test
     fun tts_onCleared_callsCleanUpTts() {

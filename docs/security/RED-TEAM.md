@@ -276,7 +276,9 @@
 - Attack: Install v1 (schema without `format` column). Migrate to v2. Verify all existing books, reading progress records survive. Verify `format` defaults to `'EPUB'` for pre-migration rows.
 - Pass: All pre-v2 `books` rows accessible post-migration with `format = 'EPUB'`. Zero dropped records. `schemas/2.json` matches the live schema.
 - Source: `MIGRATION_1_2` in `AppDatabase.kt`.
-- ⏳ DEFERRED (instrumented): Requires `MigrationTestHelper` from `androidx.room:room-testing` — not yet in deps. Deferred to `androidTest/` sprint.
+- ✅ REGRESSION TESTS (Sprint 16 — androidTest):
+  - `RoomMigrationTest.migration1to2_existingBookGetsEpubDefault` — creates v1 DB, inserts book + progress, migrates, asserts format='EPUB' and progress intact
+  - `RoomMigrationTest.migration1to2_multipleBooks_allSurvive` — asserts row count preserved across migration
 
 **C.2** `room_noFallbackToDestructiveMigration` ✅ SAFE (source-confirmed) + regression test
 - MASVS: MASVS-STORAGE-1
@@ -289,15 +291,19 @@
 - MASVS: MASVS-CODE-3
 - Attack: Trigger simultaneous Room writes from two coroutines: `BookDao.upsert(book)` and `ReadingProgressDao.upsertProgress(progress)` with a shared `bookId`. Verify no `SQLiteConstraintException` or `IllegalStateException`.
 - Pass: Room DAO operations use `suspend` on correct dispatchers (main-safe, Room internally dispatches to IO). No conflict. All operations complete.
-- ⏳ DEFERRED (instrumented): Requires Android context + Room in-memory DB.
+- ✅ REGRESSION TESTS (Sprint 16 — androidTest):
+  - `RoomConcurrencyTest.concurrentBookAndProgressWrite_bothComplete` — two concurrent IO-dispatch upserts (books + reading_progress) complete without exception
+  - `RoomConcurrencyTest.concurrentUpserts_sameBook_lastWriteWins` — REPLACE conflict on same PK does not throw; row survives
 
 **C.4** `room_deleteBook_cascadeProgress` ✅ SAFE (source-confirmed) + regression test
 - MASVS: MASVS-STORAGE-1
 - Attack: Delete a book. Verify `ReadingProgress` rows with the deleted `bookId` are also deleted. No FK cascade is defined in the schema — `LibraryViewModel.deleteBook()` calls `ReadingProgressDao.deleteByBookId` explicitly.
 - ✓ CONFIRMED: No `@ForeignKey` between `books` and `reading_progress`. `bookId` in `reading_progress` is a bare nullable TEXT column. Orphan cleanup is manual.
 - ✓ CONFIRMED: `LibraryViewModel.deleteBook()` calls both `bookDao.deleteById(id)` AND `readingProgressDao.deleteByBookId(id)` in the same coroutine block.
-- ✅ REGRESSION TEST: `GroupCSecurityTest.libraryViewModel_deleteBook_callsDeleteByBookId` — source text assertion guards the cascade call from being removed.
-- ⏳ DEFERRED (DB behavior): After `deleteBook()`, `getProgress(deletedBookId)` returns null — requires Room in-memory DB.
+- ✅ REGRESSION TESTS:
+  - `GroupCSecurityTest.libraryViewModel_deleteBook_callsDeleteByBookId` — source text assertion guards the cascade call from being removed
+  - `DeleteBookDbTest.deleteBook_thenDeleteByBookId_progressIsGone` — DB behavior: after both deletes, no progress row with that bookId remains (Sprint 16 — androidTest)
+  - `DeleteBookDbTest.deleteBook_otherProgressUnaffected` — sibling book's progress survives the delete
 
 **C.5** `room_schemaJson_committed_notDrifted` ✅ IMPLEMENTED — schema JSON integrity tests
 - MASVS: MAVSV-CODE-3
@@ -369,10 +375,12 @@
 **E.1** `tts_stopsOnAppBackground` ⚠️ Confirmed gap — instrumented deferred
 - MASVS: MASVS-PLATFORM-2
 - Attack: Start TTS playback. Background the app. Verify TTS stops unless background audio is explicitly configured.
-- ⚠️ CONFIRMED GAP: `EpubReaderFragment` has no `onPause()` or `onStop()` override that calls `pauseTts()`/`stopTts()`. The TTS navigator is held by `EpubReaderViewModel`; `viewModelScope` coroutines survive `onPause()`. Android TTS engine continues speaking when the app is backgrounded.
-- ✓ PARTIAL MITIGATION: `EpubReaderViewModel.onCleared()` calls `cleanUpTts()` — TTS stops on Activity finish (back-press, swipe from Recents). This is the last-resort teardown only.
-- ✅ REGRESSION TEST: `GroupEFSecurityTest.tts_onCleared_callsCleanUpTts` — pins the `onCleared` → `cleanUpTts()` call chain.
-- ⏳ DEFERRED (instrumented): Audio-focus release when app is backgrounded — requires `ActivityScenario` + foreground/background lifecycle transitions.
+- ✓ FIXED (Sprint 16): `EpubReaderFragment.onStop()` now calls `viewModel.pauseTts()`. TTS stops when the app is backgrounded, screen turns off, or a call screen overlays the app.
+- ✓ LAST-RESORT: `EpubReaderViewModel.onCleared()` calls `cleanUpTts()` — TTS stops on Activity finish (back-press, swipe from Recents).
+- ✅ REGRESSION TESTS:
+  - `GroupEFSecurityTest.tts_onStop_callsPauseTts` — pins `EpubReaderFragment.onStop()` → `viewModel.pauseTts()` call (added Sprint 16)
+  - `GroupEFSecurityTest.tts_onCleared_callsCleanUpTts` — pins `onCleared` → `cleanUpTts()` call chain
+- ⏳ DEFERRED (audio-focus): Full audio-focus release verification via `ActivityScenario` — later sprint.
 
 **E.2** `tts_annotationContentNotSpokenWithoutIntent` ✅ SAFE (V1 has no annotation feature)
 - MASVS: MASVS-PLATFORM-2
@@ -625,9 +633,9 @@
 |---|---|---|
 | A — EPUB3 content injection | 7 | 🔴 All new |
 | B — File import from untrusted sources | 7 | 🔴 All new |
-| C — Room DB integrity | 5 | ✅ C.2, C.4 (source), C.5 JVM; 🔴 C.1, C.3, C.4 DB deferred |
+| C — Room DB integrity | 5 | ✅ C.1 androidTest (Sprint 16), C.2, C.3 androidTest (Sprint 16), C.4 source+DB (Sprint 16), C.5 JVM |
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
-| E — TTS / Android speech engine | 4 | 🔴 All new |
+| E — TTS / Android speech engine | 4 | ✅ E.1 fix+JVM (Sprint 16), E.2–E.4 JVM; ⏳ E.1 audio-focus AndroidTest later sprint |
 | F — Supply chain | 6 | ✅ F.1, F.2, F.3 (JVM proxy), F.4 JVM; 🔴 F.5 (runtime network), ⚠️ F.6 (documented gap) |
 | G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.5 (×2), G.6, G.7 JVM; ⚠️ G.3 design deferred; 🔴 G.4 instrumented |
 | H — Android platform security | 6 | 🔴 All new |
