@@ -216,7 +216,8 @@ class GroupIJSecurityTest {
         )
         // Both catch blocks must lead to CalibrationError — count occurrences to confirm
         // a single shared assignment is not placed outside both catch clauses.
-        val errorOccurrences = body.split("CalibrationUiState.CalibrationError").size - 1
+        // Use stripComments so a comment containing the token cannot spoof the count.
+        val errorOccurrences = stripComments(body).split("CalibrationUiState.CalibrationError").size - 1
         assertTrue(
             "finishCalibration() must reference CalibrationUiState.CalibrationError in " +
                 "both catch blocks — a single reference outside the catches would leave " +
@@ -377,6 +378,7 @@ class GroupIJSecurityTest {
         listOf(
             "\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ",
             "\n    override suspend fun ", "\n    private suspend fun ", "\n    suspend fun ",
+            "\n    internal suspend fun ", "\n    protected suspend fun ",
             "\n    val ", "\n    var ", "\n    private val ", "\n    private var ",
             "\n    @",
         )
