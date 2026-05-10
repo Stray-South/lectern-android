@@ -289,7 +289,7 @@
 - Attack: Install a version with a schema version that has no defined migration (simulating a future sprint skip). Verify Room throws `IllegalStateException` rather than silently destroying user data.
 - ✓ CONFIRMED SAFE: `fallbackToDestructiveMigration()` is NOT present in `AppDatabase.getInstance()`. Room throws `IllegalStateException` on schema mismatch without a registered migration.
 - ✅ REGRESSION TEST: `GroupCSecurityTest.appDatabase_builderDoesNotCallFallbackToDestructiveMigration` — source text assertion guards against future re-introduction.
-- ⏳ DEFERRED (runtime half): Instrumented test verifying Room throws `IllegalStateException` on unmigrated version bump deferred to `androidTest/` sprint.
+- ✅ RUNTIME TEST (Sprint 19 — androidTest): `SchemaVersionMismatchTest.appDatabase_unmigratableSchemaVersion_throwsRatherThanWipingData` — writes a raw SQLite file at version 99, opens via `Room.databaseBuilder`, asserts `IllegalStateException` (or `RuntimeException` wrapping it) is thrown rather than silent data wipe.
 
 **C.3** `room_concurrentWrite_noConflict` 🔴
 - MASVS: MASVS-CODE-3
@@ -637,12 +637,12 @@
 |---|---|---|
 | A — EPUB3 content injection | 7 | ✅ A.1–A.7 JVM (A.3 hardened Sprint 17); ⏳ A.1/A.2/A.4/A.6/A.7 runtime deferred |
 | B — File import from untrusted sources | 7 | ✅ B.1–B.8 JVM+androidTest (B.4, B.6, B.7 DB Sprint 18) |
-| C — Room DB integrity | 5 | ✅ C.1 androidTest (Sprint 16), C.2, C.3 androidTest (Sprint 16), C.4 source+DB (Sprint 16), C.5 JVM |
+| C — Room DB integrity | 5 | ✅ C.1 androidTest (Sprint 16), C.2 JVM+androidTest (Sprint 19), C.3 androidTest (Sprint 16), C.4 source+DB (Sprint 16), C.5 JVM |
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
 | E — TTS / Android speech engine | 4 | ✅ E.1 fix+JVM (Sprint 16), E.2–E.4 JVM; ⏳ E.1 audio-focus AndroidTest later sprint |
 | F — Supply chain | 6 | ✅ F.1, F.2, F.3 (JVM proxy), F.4 JVM; 🔴 F.5 (runtime network), ⚠️ F.6 (documented gap) |
 | G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.3 (Sprint 17), G.5 (×2), G.6, G.7 JVM; 🔴 G.4 instrumented |
-| H — Android platform security | 6 | 🔴 All new |
+| H — Android platform security | 6 | ✅ H.1–H.6 JVM |
 | I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.5 JVM |
 | J — Gaze tracking pipeline | 6 | ✅ J.1–J.6 (J.2, J.6 JVM proxies; J.4 production fix + test) |
 | **Total** | **58** | **58 new** |
