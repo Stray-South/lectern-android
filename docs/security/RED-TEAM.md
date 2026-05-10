@@ -222,7 +222,7 @@
 - ✓ CONFIRMED SAFE: Readium Kotlin 3.x (`PublicationOpener` + `DefaultPublicationParser` + `AssetRetriever`) never extracts EPUB ZIP entries to disk. The `ContentAsset` wraps the `content://` URI; `ZipContainer` reads entries via `ZipInputStream` and serves them via `WebViewServer.shouldInterceptRequest()`. No file write originates from a ZIP entry path.
 - ✓ CVE-2021-40870 (Readium-2 path traversal): That vulnerability exploited the Readium-2 Streamer's extraction of EPUB files to a temporary directory. Readium Kotlin 3.x redesigned publication opening to be stream-based. The disk-write path no longer exists.
 - Pass criteria: Import an EPUB with a ZIP entry named `../../databases/lectern.db` — verify the database is not modified. Import a valid EPUB immediately after — verify it opens correctly.
-- ⏳ DEFERRED (instrumented): Requires `PublicationRepository` + Android `Context` — deferred to `androidTest/` sprint.
+- ✅ REGRESSION TEST (Sprint 18 — androidTest): `EpubImportTest.epub_pathTraversalZipEntry_readiumDoesNotExtractToDisk` — creates a ZIP with entry `../../files/canary_b4.txt`, calls `PublicationRepository.open()`, asserts canary file does not appear in `filesDir`.
 
 **B.5** `fileImport_contentUri_pathTraversal` ✅ SAFE (no DISPLAY_NAME usage in file paths)
 - MASVS: MASVS-STORAGE-1
@@ -242,7 +242,9 @@
 - ✓ Room row written only on success: `bookDao.upsert(...)` is called only after `pub` is obtained from `Result.success`. A parse failure returns before the upsert.
 - ✓ Error surfaced: `_importError.value = getString(R.string.import_error_epub_open)` → Snackbar.
 - Pass criteria: Import a `.epub` file containing `PK\x03\x04` header + random bytes (valid ZIP header but no container.xml) — verify Snackbar error, no crash, no Room record.
-- ⏳ DEFERRED (instrumented): Requires `importBook()` + Room + Android `Context` — deferred to `androidTest/` sprint.
+- ✅ REGRESSION TESTS (Sprint 18 — androidTest):
+  - `EpubImportTest.epub_randomBytesContent_openReturnsFailure` — 256 random bytes, no ZIP signature → `Result.isFailure`
+  - `EpubImportTest.epub_validZipMissingContainerXml_openReturnsFailure` — valid ZIP, no `META-INF/container.xml` → `Result.isFailure`
 
 **B.7** `fileImport_duplicateBook_noDataCorruption` ✅ SAFE (deterministic UUID + REPLACE strategy)
 - MASVS: MASVS-STORAGE-1
@@ -250,8 +252,9 @@
 - ✓ CONFIRMED SAFE: `bookCacheId(uri.toString())` produces a stable UUID. Same URI → same UUID → `BookDao.upsert()` with `OnConflictStrategy.REPLACE` → row updated in-place. `ReadingProgress` and locator rows are keyed on book ID — they survive the upsert (no cascade delete).
 - ✓ Different URI, same content: different UUID → separate rows. Expected behavior.
 - Pass criteria: Import EPUB X; open it and read to page 5 (creates `ReadingProgress`); import EPUB X again — verify reading progress still shows page 5, library shows one entry, no crash.
-- ✅ REGRESSION TESTS (JVM): `GroupBSecurityTest` — `bookCacheId_idempotent_onDuplicateImport`, `bookCacheId_differentUri_differentId_evenIfSameContent`.
-- ⏳ DEFERRED (instrumented): Room upsert semantics — requires `androidTest/` source tree + `room-testing` dependency.
+- ✅ REGRESSION TESTS:
+  - `GroupBSecurityTest` JVM — `bookCacheId_idempotent_onDuplicateImport`, `bookCacheId_differentUri_differentId_evenIfSameContent`
+  - `DuplicateImportDbTest` androidTest (Sprint 18) — three tests verifying REPLACE upsert does not cascade-delete `reading_progress`: progress survives, library shows one entry, `totalProgression` is preserved.
 
 **B.8** `fileImport_readiumHttpClientExfil` ✅ IMPLEMENTED — BlockingHttpClient replaces DefaultHttpClient
 - MASVS: MASVS-NETWORK-1 · MASVS-PLATFORM-1
@@ -633,7 +636,7 @@
 | Section | Count | Status |
 |---|---|---|
 | A — EPUB3 content injection | 7 | ✅ A.1–A.7 JVM (A.3 hardened Sprint 17); ⏳ A.1/A.2/A.4/A.6/A.7 runtime deferred |
-| B — File import from untrusted sources | 7 | ✅ B.1–B.3, B.5–B.8 JVM; ⏳ B.4, B.6 DB, B.7 DB androidTest (Sprint 18) |
+| B — File import from untrusted sources | 7 | ✅ B.1–B.8 JVM+androidTest (B.4, B.6, B.7 DB Sprint 18) |
 | C — Room DB integrity | 5 | ✅ C.1 androidTest (Sprint 16), C.2, C.3 androidTest (Sprint 16), C.4 source+DB (Sprint 16), C.5 JVM |
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
 | E — TTS / Android speech engine | 4 | ✅ E.1 fix+JVM (Sprint 16), E.2–E.4 JVM; ⏳ E.1 audio-focus AndroidTest later sprint |

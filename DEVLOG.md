@@ -952,3 +952,44 @@ Format: see .claude/skills/devlog/SKILL.md
   GroupASecurityTest.kt, docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Sprint 18 — B.4/B.6/B.7 androidTest (EPUB import instrumented tests).
 - **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 18: B.4/B.6/B.7 androidTest — EPUB import security tests
+
+- **Did:** Two new androidTest classes closing the remaining deferred RED-TEAM items in Group B.
+
+  **B.7 — `DuplicateImportDbTest`** (new, androidTest, 3 tests):
+  `BookDao.upsert()` uses `OnConflictStrategy.REPLACE`. SQLite's `INSERT OR REPLACE`
+  internally DELETEs the conflicting `books` row and INSERTs a new one. Because there
+  is no FK constraint between `reading_progress.bookId` and `books.id`, the DELETE
+  does NOT cascade. Three tests verify: (1) progress survives re-import, (2) library
+  shows one entry after two upserts of the same ID, (3) `totalProgression` value is
+  unchanged. Closes B.7 DB ⏳.
+
+  **B.4 + B.6 — `EpubImportTest`** (new, androidTest, 3 tests):
+  Calls `PublicationRepository(ctx).open(Uri.fromFile(...))` directly — bypasses the
+  `takePersistableUriPermission` step, exercises the full Readium parse path.
+
+  B.4 `epub_pathTraversalZipEntry_readiumDoesNotExtractToDisk`: Creates a ZIP with
+  entry name `../../files/canary_b4.txt` (Java `ZipOutputStream` stores names verbatim).
+  Calls `open()`; asserts `filesDir/canary_b4.txt` does not exist. Readium 3.x is
+  stream-only — no entry is written to disk using the entry name. Regression guard for
+  CVE-2021-40870-class vulnerabilities in future Readium upgrades.
+
+  B.6a `epub_randomBytesContent_openReturnsFailure`: 256 random bytes, no ZIP signature
+  → `AssetRetriever` fails at header check → `Result.isFailure`.
+
+  B.6b `epub_validZipMissingContainerXml_openReturnsFailure`: Valid ZIP structure,
+  no `META-INF/container.xml` → Readium returns `CannotReadMediaType` →
+  `Result.isFailure`. Verifies the error-chain path that prevents `bookDao.upsert()`
+  from being called on a failed parse.
+
+- **Why:** The androidTest infrastructure (room-testing, runner, coroutines-test)
+  landed in Sprint 16. These were the last Group B items blocked on device context.
+  B.7 closes a non-obvious SQLite behaviour risk (REPLACE cascade). B.4 is a regression
+  guard for CVE-2021-40870-class Readium regressions. B.6 exercises the parse-failure
+  error chain that the source-only tests could not verify end-to-end.
+- **Files:** DuplicateImportDbTest.kt (new), EpubImportTest.kt (new),
+  docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** G.4 Compose snapshot tests (needs Paparazzi decision), or C.2 runtime
+  Room ISE verification, or H group androidTest items.
+- **Blockers:** none
