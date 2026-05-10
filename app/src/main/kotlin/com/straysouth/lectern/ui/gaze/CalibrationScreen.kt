@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.R
 import com.straysouth.lectern.gaze.CalibrationPoint
+import com.straysouth.lectern.gaze.CalibrationResult
 import com.straysouth.lectern.gaze.GazeState
 
 private const val GRID_COLS = 3
@@ -53,6 +55,7 @@ fun CalibrationScreen(
     gazeState: GazeState,
     onRecordPoint: (CalibrationPoint) -> Unit,
     onCancel: () -> Unit,
+    onRecalibrate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -78,7 +81,9 @@ fun CalibrationScreen(
                 }
                 is CalibrationUiState.Done ->
                     CalibrationDoneContent(
+                        result = state.result,
                         onDismiss = onCancel,
+                        onRecalibrate = onRecalibrate,
                         modifier = Modifier.align(Alignment.Center),
                     )
                 is CalibrationUiState.CalibrationError ->
@@ -180,11 +185,24 @@ private fun CalibrationHeader(
 }
 
 @Composable
-private fun CalibrationDoneContent(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+private fun CalibrationDoneContent(
+    result: CalibrationResult,
+    onDismiss: () -> Unit,
+    onRecalibrate: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(stringResource(R.string.gaze_calibration_complete), style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.gaze_calibration_mean_error, result.meanErrorPx),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onDismiss) { Text(stringResource(android.R.string.ok)) }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onRecalibrate) { Text(stringResource(R.string.gaze_calibration_recalibrate)) }
     }
 }
 

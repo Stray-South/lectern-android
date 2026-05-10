@@ -35,9 +35,10 @@ sealed class CalibrationUiState {
  * permission before calling toggleGaze(). Use needsPermission StateFlow to
  * signal that a runtime request is required.
  */
-class GazeViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val calibrationRepository = CalibrationRepository(application)
+class GazeViewModel(
+    application: Application,
+    private val calibrationRepository: CalibrationRepository,
+) : AndroidViewModel(application) {
 
     private val _gazeEnabled = MutableStateFlow(false)
     val gazeEnabled: StateFlow<Boolean> = _gazeEnabled.asStateFlow()

@@ -2,6 +2,7 @@ package com.straysouth.lectern.data.repository
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.straysouth.lectern.gaze.CalibrationResult
@@ -16,11 +17,12 @@ class CalibrationRepository(context: Context) {
 
     private val ctx = context.applicationContext
 
-    /** Persists calibration weights. Raw iris/gaze coordinates are never stored. */
+    /** Persists calibration weights and mean error. Raw iris/gaze coordinates are never stored. */
     suspend fun save(result: CalibrationResult) {
         ctx.calibrationDataStore.edit { prefs ->
             prefs[KEY_WEIGHTS_X] = result.weightsX.toJsonString()
             prefs[KEY_WEIGHTS_Y] = result.weightsY.toJsonString()
+            prefs[KEY_MEAN_ERROR] = result.meanErrorPx
         }
     }
 
@@ -28,7 +30,9 @@ class CalibrationRepository(context: Context) {
     suspend fun load(): CalibrationResult? {
         val prefs = ctx.calibrationDataStore.data.first()
         return prefs[KEY_WEIGHTS_X]?.toDoubleArray()?.let { wx ->
-            prefs[KEY_WEIGHTS_Y]?.toDoubleArray()?.let { wy -> CalibrationResult(wx, wy) }
+            prefs[KEY_WEIGHTS_Y]?.toDoubleArray()?.let { wy ->
+                CalibrationResult(wx, wy, prefs[KEY_MEAN_ERROR] ?: 0f)
+            }
         }
     }
 
@@ -40,6 +44,7 @@ class CalibrationRepository(context: Context) {
         // Key names must not match: face|eye|gaze|lookAt (CI check_gaze_data_leak.sh)
         private val KEY_WEIGHTS_X = stringPreferencesKey("weights_x")
         private val KEY_WEIGHTS_Y = stringPreferencesKey("weights_y")
+        private val KEY_MEAN_ERROR = floatPreferencesKey("mean_error_px")
     }
 }
 

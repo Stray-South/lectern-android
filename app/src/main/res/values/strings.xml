@@ -54,6 +54,8 @@
     <string name="gaze_calibration_instruction">Look at the dot, then tap Confirm</string>
     <string name="gaze_calibration_point_of">Point %1$d of %2$d</string>
     <string name="gaze_calibration_complete">Calibration complete</string>
+    <string name="gaze_calibration_mean_error">Mean error: %.1f px</string>
+    <string name="gaze_calibration_recalibrate">Recalibrate</string>
     <string name="gaze_calibration_confirm_point">Confirm</string>
     <string name="gaze_permission_rationale">Camera access is needed for gaze-assisted reading</string>
 </resources>

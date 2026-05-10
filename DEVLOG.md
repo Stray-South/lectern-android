@@ -828,3 +828,46 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** GroupGSecurityTest.kt (new), docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Group A (EPUB3 WebView security) JVM-testable subset or androidTest sprint.
 - **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 15: LOO-CV calibration accuracy metric + DI cleanup
+
+- **Did:** Two independent improvements to the gaze calibration subsystem.
+
+  **Option A — Calibration accuracy metric (LOO-CV):**
+  `CalibrationResult` gains `meanErrorPx: Float = 0f` with `compareTo`-based equality
+  (IEEE 754 NaN safety). `GazeProviderImpl.computeLooMeanErrorPx()` (new private class
+  method, 5 params) computes LOO cross-validation mean Euclidean error: for each of 9
+  calibration points, fits ridge on the other 8, predicts the left-out point, averages
+  Euclidean errors. LOO-CV gives a generalisation error estimate (~20-60 px good session,
+  ~100-200 px bad); in-sample residuals were trivially small because ridge nearly
+  interpolates 9 points with 6 features. Guard: n <= FEATURE_COUNT falls back to in-sample
+  (unreachable in production; all UI call sites use CALIBRATION_TOTAL_POINTS = 9).
+  `featureVector()` extracted to top-level to keep GazeProviderImpl under the
+  TooManyFunctions threshold (13/14). `CalibrationRepository` persists `meanErrorPx`
+  under `floatPreferencesKey("mean_error_px")` with backwards-compat default 0f.
+  `CalibrationDoneContent` shows mean error row and an `OutlinedButton` "Recalibrate"
+  (secondary action, visually subordinate to primary OK `Button`). `CalibrationScreen`
+  gains `onRecalibrate: () -> Unit` callback; `AppContent` in `MainActivity` wires
+  `onRecalibrate = { gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS) }`.
+
+  **Option D — DI cleanup:**
+  `GazeViewModelFactory` (new): `ViewModelProvider.Factory` that injects
+  `CalibrationRepository` into `GazeViewModel`. `GazeViewModel` now accepts
+  `CalibrationRepository` as a constructor parameter instead of constructing it from
+  `application` context directly. `MainActivity` creates the factory and uses
+  `by viewModels { GazeViewModelFactory(application, CalibrationRepository(applicationContext)) }`.
+  `EpubReaderFragment.activityViewModels()` requires no change — retrieves the already-
+  created ViewModel from the Activity's ViewModelStore without needing the factory.
+
+- **Why:** Option A: calibration accuracy was not surfaced to the user; in-sample residuals
+  would have been a misleading metric (always low regardless of session quality). LOO-CV
+  gives users a meaningful signal to decide whether to recalibrate. Option D: the
+  ViewModel self-constructing its own repository makes it untestable in isolation and
+  couples lifecycle management to the ViewModel constructor.
+- **Files:** CalibrationResult.kt, GazeProviderImpl.kt, CalibrationRepository.kt,
+  CalibrationScreen.kt, GazeViewModel.kt, GazeViewModelFactory.kt (new), MainActivity.kt,
+  strings.xml
+- **Next:** Sprint 16 — androidTest infrastructure (room-testing dep, androidTest/ source
+  tree, C.1 migration, C.4 cascade, C.3 concurrency, E.1 TTS background, I.3 TTS race,
+  J.4 permission revocation).
+- **Blockers:** none

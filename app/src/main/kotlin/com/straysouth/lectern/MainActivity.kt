@@ -25,10 +25,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.core.content.ContextCompat
 import com.straysouth.lectern.data.db.Book
+import com.straysouth.lectern.data.repository.CalibrationRepository
 import com.straysouth.lectern.ui.gaze.CALIBRATION_TOTAL_POINTS
 import com.straysouth.lectern.ui.gaze.CalibrationScreen
 import com.straysouth.lectern.ui.gaze.CalibrationUiState
 import com.straysouth.lectern.ui.gaze.GazeViewModel
+import com.straysouth.lectern.ui.gaze.GazeViewModelFactory
 import com.straysouth.lectern.ui.library.LibraryScreen
 import com.straysouth.lectern.ui.library.LibraryViewModel
 import com.straysouth.lectern.ui.reader.ReaderScreen
@@ -37,7 +39,9 @@ import com.straysouth.lectern.ui.theme.LecternTheme
 class MainActivity : AppCompatActivity() {
 
     private val libraryViewModel: LibraryViewModel by viewModels()
-    private val gazeViewModel: GazeViewModel by viewModels()
+    private val gazeViewModel: GazeViewModel by viewModels {
+        GazeViewModelFactory(application, CalibrationRepository(applicationContext))
+    }
 
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -145,6 +149,7 @@ private fun AppContent(
                 gazeViewModel.recordCalibrationPoint(point, CALIBRATION_TOTAL_POINTS)
             },
             onCancel = { gazeViewModel.cancelCalibration() },
+            onRecalibrate = { gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS) },
         )
     }
 }
