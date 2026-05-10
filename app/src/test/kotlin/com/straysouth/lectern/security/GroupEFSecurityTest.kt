@@ -235,11 +235,13 @@ class GroupEFSecurityTest {
             source.contains("httpClient = BlockingHttpClient"),
         )
         // AssetRetriever wiring — first Readium network entry point.
+        // Exact argument form asserted: a bare source.contains("httpClient") would be
+        // satisfied by the field declaration and not catch AssetRetriever being unwired.
         assertTrue(
-            "AssetRetriever must receive httpClient — without this wiring AssetRetriever " +
-                "uses DefaultHttpClient and can make outbound requests to fetch remote " +
-                "assets referenced in EPUB OPF manifests (F.3)",
-            source.contains("AssetRetriever(") && source.contains("httpClient"),
+            "AssetRetriever must receive httpClient as its second argument — without this " +
+                "wiring AssetRetriever uses DefaultHttpClient and can make outbound requests " +
+                "to fetch remote assets referenced in EPUB OPF manifests (F.3)",
+            source.contains("AssetRetriever(appContext.contentResolver, httpClient)"),
         )
         // DefaultPublicationParser wiring — second Readium network entry point.
         // The named-parameter form `httpClient = httpClient` confirms the argument is
