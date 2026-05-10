@@ -544,17 +544,19 @@
 - ✅ REGRESSION TEST: `GroupIJSecurityTest.coroutines_ttsCleanUp_cancelsJobDirectly_notInsideLaunch` — extracts `cleanUpTts()` body, asserts cancel precedes first launch match (regex, covers `launch{`, `launch(...) {`).
 - ⏳ DEFERRED (runtime): Rapid start/stop consistency — requires `ActivityScenario` + TTS engine.
 
-**I.4** `coroutines_gazeStopDuringCalibration_noUnhandledThrow` 🔴
+**I.4** `coroutines_gazeStopDuringCalibration_noUnhandledThrow` ✅ SAFE + regression test
 - MASVS: MASVS-CODE-3
 - Attack: Start calibration, disable gaze mid-calibration. `finishCalibration()` calls `requireNotNull(provider)` after `provider = null`.
 - Pass: `IllegalArgumentException` caught → `CalibrationUiState.CalibrationError` emitted. No unhandled exception.
-- Source: Sprint 14 research confirmed error path handled.
+- ✓ JVM-CONFIRMED: `finishCalibration()` (GazeViewModel lines 184–201) has two separate catch clauses — `catch (e: IllegalArgumentException)` and `catch (e: IllegalStateException)` — each routing to `CalibrationUiState.CalibrationError`.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.coroutines_finishCalibration_catchesBothExceptionTypes_toCalibrationError` — extracts `finishCalibration()` body; asserts both catch types; asserts `≥ 2` occurrences of `CalibrationUiState.CalibrationError` in comment-stripped body.
 
-**I.5** `coroutines_imageAnalysisExecutor_shutdown` 🔴
+**I.5** `coroutines_imageAnalysisExecutor_shutdown` ✅ SAFE + regression test
 - MASVS: MASVS-CODE-3
 - Attack: Toggle gaze on/off rapidly five times. Verify `analysisExecutor` is shutdown on `stop()` without thread leaks.
 - Pass: `analysisExecutor.shutdown()` called in `stop()`. New `GazeProviderImpl` per `startGazeInternal()` session = fresh executor per session.
-- Source: `GazeProviderImpl.kt` — confirmed `analysisExecutor.shutdown()` in `stop()`.
+- ✓ JVM-CONFIRMED: `GazeProviderImpl.stop()` (line 86) calls `analysisExecutor.shutdown()`; line 91 calls `scope.cancel()`.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.coroutines_gazeProvider_stop_shutsDownAnalysisExecutor` — extracts `stop()` body, asserts both `analysisExecutor.shutdown()` and `scope.cancel()`.
 
 ---
 
@@ -577,22 +579,25 @@
 - Pass: Zero Logcat lines with iris coordinate data. `check_gaze_data_leak.sh` CI check prevents source-level regressions.
 - Source: Confirmed from source — gaze logs contain only status messages.
 
-**J.3** `gaze_calibrationWeights_notCorruptedByDegenerate` 🔴
+**J.3** `gaze_calibrationWeights_notCorruptedByDegenerate` ✅ SAFE + regression test
 - MASVS: MASVS-STORAGE-1
 - Attack: Confirm all 9 calibration points at identical positions (degenerate / collinear data). Verify `ridge()` fails gracefully, not silently stores wrong weights.
 - Pass: `check(solver.setA(xtx))` throws `IllegalStateException` → caught → `CalibrationUiState.CalibrationError`. Previously valid weights are NOT overwritten (repository written only on success).
-- Source: `GazeProviderImpl.ridge()` — confirmed `check()` guard.
+- ✓ JVM-CONFIRMED: `GazeProviderImpl.ridge()` line 234 contains `check(solver.setA(xtx)) { "Ridge: matrix not positive definite — degenerate calibration data" }`.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.gaze_ridge_degenerateCalibrationData_checksPositiveDefinite` — extracts `ridge()` body, asserts `check(solver.setA(xtx))` present in comment-stripped source.
 
 **J.4** `gaze_cameraPermissionRevoked_gracefulStop` 🔴
 - MASVS: MASVS-PLATFORM-1
 - Attack: Enable gaze, then revoke CAMERA permission from Settings while running (Android 11+). Verify no crash.
 - Pass: CameraX exception caught by `startGazeInternal()` `IOException` handler. `_gazeEnabled` set to false. App remains functional.
 
-**J.5** `gaze_thermalThrottle_stopsInference` 🔴
+**J.5** `gaze_thermalThrottle_stopsInference` ✅ SAFE + regression test
 - MASVS: MASVS-CODE-4 (system resource safety)
 - Attack: Simulate `THERMAL_STATUS_SEVERE` via `adb shell cmd power set-thermal-override SEVERE`. Verify CameraX frame delivery stops.
 - Pass: `thermalListener` calls `pauseAnalysis()` → `imageAnalysis?.clearAnalyzer()`. Frame delivery and GPU inference stop. State transitions to `GazeState.Paused`.
-- Source: Sprint 13 review fix confirmed `pauseAnalysis()` is called.
+- ✓ JVM-CONFIRMED: `thermalListener` (lines 241–255) handles all four severe statuses: `THERMAL_STATUS_SEVERE`, `THERMAL_STATUS_CRITICAL`, `THERMAL_STATUS_EMERGENCY`, `THERMAL_STATUS_SHUTDOWN`, each calling `pauseAnalysis()`. `pauseAnalysis()` (line 97) calls `imageAnalysis?.clearAnalyzer()`, not just a boolean flag.
+- ✅ REGRESSION TESTS: `GroupIJSecurityTest.gaze_thermalThrottle_pausesAnalysisForAllSevereStatuses` — asserts all 4 status constants + `pauseAnalysis()` in `thermalListener` body. `GroupIJSecurityTest.gaze_pauseAnalysis_clearsAnalyzer_notJustSetsState` — extracts `pauseAnalysis()` body, asserts `imageAnalysis?.clearAnalyzer()`.
+- ⏳ DEFERRED (runtime): `adb shell` thermal override + CameraX frame-count verification (instrumented).
 
 **J.6** `gaze_modelFile_notExtractedToWorldReadable` 🔴
 - MASVS: MASVS-STORAGE-1
@@ -614,8 +619,8 @@
 | F — Supply chain | 6 | 🔴 All new |
 | G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.5 (×2), G.6, G.7 JVM; ⚠️ G.3 design deferred; 🔴 G.4 instrumented |
 | H — Android platform security | 6 | 🔴 All new |
-| I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.3 JVM; 🔴 I.4–I.5 instrumented deferred |
-| J — Gaze tracking pipeline | 6 | ✅ J.1 JVM; 🔴 J.2–J.6 instrumented deferred |
+| I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.5 JVM |
+| J — Gaze tracking pipeline | 6 | ✅ J.1, J.3, J.5 JVM; 🔴 J.2 (runtime logcat), J.4 (permission revoke), J.6 (model path) deferred |
 | **Total** | **58** | **58 new** |
 
 ---
@@ -658,10 +663,10 @@
 - D.2 (D2D transfer design decision)
 - H.1 (network security config — defense in depth)
 - H.2 (INTERNET permission unused — consider removing)
-- I.3 / I.4 (TTS race, calibration race)
+- I.3 ✅ (TTS race — covered)
 
 ### Phase 3 — Before public beta
-- All remaining: E, G, H.3–H.6, I.5, J.3–J.6, F.2–F.6
+- All remaining: E ✅, G ✅, H.3–H.6 ✅, I.4–I.5 ✅, J.3 ✅, J.5 ✅; still open: J.2, J.4, J.6, F.2–F.6
 
 ---
 
