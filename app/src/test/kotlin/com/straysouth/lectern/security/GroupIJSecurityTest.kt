@@ -386,7 +386,7 @@ class GroupIJSecurityTest {
      */
     @Test
     fun gaze_rawIrisUV_neverLoggedInFullGazeModule() {
-        val logTokens = listOf("Log.d(", "Log.i(", "Log.w(", "Log.e(", "Log.v(", "Timber.", "println(")
+        val logTokens = listOf("Log.d(", "Log.i(", "Log.w(", "Log.e(", "Log.v(", "Log.wtf(", "Timber.", "println(")
         val irisTerms = listOf("irisU", "irisV")
         val gazeDirs = listOf(
             File("src/main/kotlin/com/straysouth/lectern/gaze"),
@@ -394,7 +394,11 @@ class GroupIJSecurityTest {
         )
         val violations = mutableListOf<String>()
         for (dir in gazeDirs) {
-            if (!dir.exists()) continue
+            assertTrue(
+                "Gaze source directory not found: ${dir.path} — test would pass vacuously " +
+                    "if the gaze package is restructured; update directory paths (J.2)",
+                dir.exists(),
+            )
             dir.walkTopDown()
                 .filter { it.extension == "kt" }
                 .forEach { file ->
@@ -433,14 +437,13 @@ class GroupIJSecurityTest {
      */
     @Test
     fun gaze_modelFile_loadedFromAssets_notExtractedByIntegrationCode() {
-        val source = sourceFile("gaze/GazeProviderImpl.kt")
+        val codeLines = stripComments(sourceFile("gaze/GazeProviderImpl.kt"))
         assertTrue(
             "GazeProviderImpl must load face_landmarker.task via " +
                 "BaseOptions.setModelAssetPath() — loading from APK assets is the only " +
                 "path that does not extract the model to app-controlled storage (J.6)",
-            source.contains("setModelAssetPath(\"face_landmarker.task\")"),
+            codeLines.contains("setModelAssetPath(\"face_landmarker.task\")"),
         )
-        val codeLines = stripComments(source)
         listOf("filesDir", "getExternalFilesDir", "getCacheDir", "openFileOutput").forEach { api ->
             assertFalse(
                 "GazeProviderImpl must not reference $api — a filesystem path in the " +

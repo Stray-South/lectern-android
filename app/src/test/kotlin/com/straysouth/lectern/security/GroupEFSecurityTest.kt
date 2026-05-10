@@ -250,8 +250,10 @@ class GroupEFSecurityTest {
      * and [PublicationOpener], which stream archive entries in-memory without disk
      * extraction. None of the six extraction-related API tokens must appear.
      *
-     * Note: `File(` is checked via comment-stripped source to avoid a comment such as
-     * `// never pass to File(...)` from producing a false-pass.
+     * Note: `File(` is checked as `" File("` and `"(File("` (space- or paren-anchored) to
+     * avoid matching identifiers that end in `File` (e.g., `SourceFile(`), and via
+     * comment-stripped source to avoid a comment such as `// never pass to File(...)` from
+     * producing a false-pass.
      */
     @Test
     fun supply_readium_cve202140870_noExtractionApiInPublicationRepository() {
@@ -259,7 +261,7 @@ class GroupEFSecurityTest {
         listOf(
             "ZipFile", "ZipInputStream", "ZipContainer",
             "extractAll", "extractFile", "extractEntry",
-            "File(",
+            " File(", "(File(",
         ).forEach { api ->
             assertFalse(
                 "PublicationRepository must not use $api — CVE-2021-40870 exploited " +
