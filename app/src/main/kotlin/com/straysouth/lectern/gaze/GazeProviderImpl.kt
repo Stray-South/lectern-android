@@ -322,8 +322,8 @@ class GazeProviderImpl(
             val features = featureVector(points[leaveOut].irisU.toDouble(), points[leaveOut].irisV.toDouble())
             val pX = (0 until FEATURE_COUNT).sumOf { j -> features[j] * wxLoo.get(j, 0) }
             val pY = (0 until FEATURE_COUNT).sumOf { j -> features[j] * wyLoo.get(j, 0) }
-            val dx = pX - points[leaveOut].screenX
-            val dy = pY - points[leaveOut].screenY
+            val dx = pX - points[leaveOut].screenX.toDouble()
+            val dy = pY - points[leaveOut].screenY.toDouble()
             kotlin.math.sqrt(dx * dx + dy * dy)
         }.average().toFloat()
     }
