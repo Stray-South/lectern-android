@@ -953,6 +953,31 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Next:** Sprint 18 — B.4/B.6/B.7 androidTest (EPUB import instrumented tests).
 - **Blockers:** none
 
+## 2026-05-10T00:00Z — Sprint 18 review fixes: canaryFile cleanup + assertNotNull pattern
+
+- **Did:** Two correctness fixes found in post-DoD review of Sprint 18 androidTest work.
+
+  **Fix 1 — `EpubImportTest.epub_pathTraversalZipEntry_readiumDoesNotExtractToDisk`:**
+  Moved `canaryFile.delete()` from the post-try block into the `finally` clause alongside
+  `zipFile.delete()`. If a future Readium regression writes the canary and throws mid-test,
+  the canary file would have persisted and silently poisoned subsequent test runs. `finally`
+  guarantees cleanup regardless of exception path.
+
+  **Fix 2 — `DuplicateImportDbTest.duplicateImport_progressRowSurvives`:**
+  Replaced `val prog = progress?.totalProgression ?: -1.0; assertEquals(0.75, prog, 1e-9)`
+  with a two-assertion pattern: `assertNotNull("...must still exist...", progress)` followed
+  by `assertEquals("...must be unchanged...", 0.75, progress!!.totalProgression, 1e-9)`.
+  The `?: -1.0` fallback produced `"0.75 ≠ -1.0"` failures if the progress row was absent —
+  misleading because it looked like a value mismatch, not a missing row. The new pattern
+  prints a clear message ("ReadingProgress row for bookId b1 must still exist") on the same
+  failure case.
+
+- **Why:** Review-driven correctness hardening of two androidTest assertions. No production
+  code changed.
+- **Files:** EpubImportTest.kt, DuplicateImportDbTest.kt
+- **Next:** Sprint 19 — C.2 runtime Room ISE verification (SchemaVersionMismatchTest).
+- **Blockers:** none
+
 ## 2026-05-10T00:00Z — Sprint 18: B.4/B.6/B.7 androidTest — EPUB import security tests
 
 - **Did:** Two new androidTest classes closing the remaining deferred RED-TEAM items in Group B.
@@ -992,4 +1017,128 @@ Format: see .claude/skills/devlog/SKILL.md
   docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** G.4 Compose snapshot tests (needs Paparazzi decision), or C.2 runtime
   Room ISE verification, or H group androidTest items.
+- **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 19: C.2 runtime Room ISE + H matrix correction
+
+- **Did:** Two independent completions from the RED-TEAM.md open-items list.
+
+  **C.2 runtime half — `SchemaVersionMismatchTest`** (new androidTest):
+  The JVM half of C.2 (`GroupCSecurityTest.appDatabase_builderDoesNotCallFallbackToDestructiveMigration`)
+  guards the source text. The new instrumented test covers runtime behaviour: writes a raw
+  SQLite file at `user_version = 99` using `SQLiteDatabase.openOrCreateDatabase()` (bypasses
+  Room entirely, sets only `PRAGMA user_version`), then opens it with `Room.databaseBuilder`
+  with only `MIGRATION_1_2` registered. Forces the schema-version check by accessing
+  `openHelper.writableDatabase`. Asserts Room throws `IllegalStateException` or a
+  `RuntimeException` wrapping it (with "migration" in the message) — both forms accepted
+  because Room surfaces the exception differently depending on its internal lazy/eager open
+  path. `fail()` is called if no exception is thrown, closing the data-destruction risk.
+  `dbFile.delete()` in `finally` prevents test-DB leakage between runs.
+  Closes C.2 runtime ⏳ → ✅.
+
+  **H matrix correction:** `docs/security/RED-TEAM.md` coverage table H row corrected from
+  stale `🔴 All new` to `✅ H.1–H.6 JVM` reflecting the tests written in Sprint: Groups E+F+H.
+
+- **Why:** The runtime half of C.2 is the only meaningful verification of the
+  `fallbackToDestructiveMigration` prohibition — source-text assertions prove the call is
+  absent today, but do not prove Room would reject an unknown schema at runtime.
+- **Files:** SchemaVersionMismatchTest.kt (new), docs/security/RED-TEAM.md
+- **Next:** Sprint 20 — E.1 AudioFocusRequest lifecycle, F.5 merged-manifest proxy,
+  G.4 architectural guarantee.
+- **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 20: E.1 AudioFocus + F.5 JVM proxy + G.4 architectural guarantee
+
+- **Did:** Three RED-TEAM.md open items closed in one sprint.
+
+  **E.1 — `AudioFocusRequest` production implementation:**
+  `EpubReaderViewModel` gains `_audioFocusRequest: AudioFocusRequest?` and a lazy
+  `AudioManager` property. `startTts()` builds an `AudioFocusRequest` with
+  `AUDIOFOCUS_GAIN_TRANSIENT` (not `MAY_DUCK` — TTS is spoken word; competing audio must
+  pause, not duck; `MAY_DUCK` delivers `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK` which the
+  listener ignores, causing simultaneous playback). Focus listener calls `pauseTts()` on
+  `AUDIOFOCUS_LOSS` and `AUDIOFOCUS_LOSS_TRANSIENT`. Return value checked:
+  `AUDIOFOCUS_REQUEST_FAILED` → null `_audioFocusRequest` and `return@onSuccess` (do not
+  start TTS over a phone call). Resume path (navigator alive, `!playWhenReady`) re-requests
+  focus before `nav.play()` — focus may have been lost transiently since the last pause
+  without nulling `_ttsNavigator`. `cleanUpTts()` calls `abandonAudioFocusRequest()` on
+  all three exit paths (stop, onCleared, Ended/Failure state).
+  Closes E.1 ⏳ → ✅.
+
+  **F.5 — JVM proxy tests for MediaPipe manifest contributions:**
+  Two new tests in `GroupEFSecurityTest`:
+  - `supply_mediapipe_sourceManifest_internetDeclaredOnce`: asserts INTERNET count == 1 in
+    `src/main/AndroidManifest.xml`. KDoc documents the merged-manifest limitation: source
+    manifest check cannot detect AAR-contributed permissions; merged manifest verification
+    requires a build artifact and must be re-checked on every MediaPipe version bump.
+  - `supply_mediapipe_modelLoadedFromAssets_notRemoteUrl`: asserts
+    `setModelAssetPath("face_landmarker.task")` present and
+    `setModelAssetPath("http` absent — model is loaded from bundled assets, not fetched
+    at runtime.
+  Closes F.5 JVM proxy; runtime half remains ⏳ (needs build artifact).
+
+  **G.4 — Architectural guarantee documented (no code):**
+  Research confirmed Readium's `submitPreferences()` calls
+  `evaluateJavascript("readium.setProperty(...)")` to inject CSS in-place — no DOM
+  remove/re-add, no intermediate flash state. Same compositing sandbox guarantee as A.4
+  (WebView cannot paint over ComposeView). No WebView rendering tool can capture the
+  intermediate state. Closed as architectural guarantee in RED-TEAM.md.
+  Closes G.4 🔴 → ✅ SAFE (architectural).
+
+  **JVM test: `tts_audioFocus_requestedOnStartAndAbandonedOnCleanUp`** (new in
+  `GroupEFSecurityTest`): extracts `startTts()` body, asserts `requestAudioFocus(` present
+  and `AUDIOFOCUS_GAIN_TRANSIENT` used (not `MAY_DUCK`); extracts `cleanUpTts()` body,
+  asserts `abandonAudioFocusRequest(` present.
+
+- **Why:** E.1 closes a real user-impact gap — without audio focus, TTS would play
+  simultaneously with phone calls or navigation prompts. The `GAIN_TRANSIENT` choice ensures
+  competing audio pauses rather than ducks. F.5 + G.4 close the last RED-TEAM items that
+  do not require a physical device.
+- **Files:** EpubReaderViewModel.kt, GroupEFSecurityTest.kt, docs/security/RED-TEAM.md
+- **Next:** Build environment setup (Sprint 1 plan), then full DoD gate sequence.
+- **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 20 review fixes: AudioFocus correctness + F.5 limitation docs
+
+- **Did:** Three rounds of post-review corrections to Sprint 20 work.
+
+  **Round 1 — AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK → AUDIOFOCUS_GAIN_TRANSIENT:**
+  Initial implementation used `MAY_DUCK`. Code review correctly identified: `MAY_DUCK`
+  delivers `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK` to competing apps, which the focus listener
+  (`if (change == AUDIOFOCUS_LOSS || change == AUDIOFOCUS_LOSS_TRANSIENT)`) does not match —
+  both streams play simultaneously. Fixed to `AUDIOFOCUS_GAIN_TRANSIENT` so the competing
+  app receives `AUDIOFOCUS_LOSS` or `AUDIOFOCUS_LOSS_TRANSIENT` and pauses.
+  Stale `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` references in `GroupEFSecurityTest` KDoc
+  (class-level and test-level) also corrected.
+
+  **Round 2 — Return value check for `requestAudioFocus`:**
+  Initial implementation called `audioManager.requestAudioFocus(focusReq)` without checking
+  the result. If another app holds exclusive focus (active phone call), `nav.play()` would
+  be called over the call audio. Fixed: check `granted != AUDIOFOCUS_REQUEST_GRANTED` →
+  null `_audioFocusRequest` and `return@onSuccess`.
+
+  **Round 3 — Resume path re-requests focus:**
+  After `AUDIOFOCUS_LOSS_TRANSIENT` → `pauseTts()`, `_ttsNavigator` remains set but focus
+  is not held. User tapping Play entered the early-return path (`_ttsNavigator?.let { nav
+  -> nav.play(); return }`) without re-requesting focus. Fixed: added focus re-request
+  before `nav.play()` in the resume path — checks existing `_audioFocusRequest` ref so the
+  same builder config is reused.
+
+  **F.5 test rename + limitation documentation:**
+  `supply_mediapipe_doesNotContributeInternetPermission` renamed to
+  `supply_mediapipe_sourceManifest_internetDeclaredOnce`. KDoc extended with explicit
+  limitation: "This reads src/main/AndroidManifest.xml — AAR-contributed permissions only
+  appear in the merged manifest at app/build/intermediates/merged_manifests/. Verify merged
+  manifest manually after every MediaPipe version bump."
+
+  **`nextClassMemberIndex` documentation:**
+  Added KDoc documenting the assumption that `private val`/`private var` patterns only match
+  class-level fields (Kotlin disallows `private` on local variables — structurally safe).
+
+- **Why:** `GAIN_TRANSIENT_MAY_DUCK` would cause simultaneous TTS+phone-call audio; the
+  return value check prevents TTS starting over active calls; the resume path fix prevents
+  playing without a held audio focus grant. All three are correctness gaps with real device
+  impact.
+- **Files:** EpubReaderViewModel.kt, GroupEFSecurityTest.kt
+- **Next:** Build environment setup → full test run.
 - **Blockers:** none
