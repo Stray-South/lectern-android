@@ -107,8 +107,12 @@ class GroupASecurityTest {
         val source = sourceFile("ui/reader/EpubReaderFragment.kt")
         val readGuard = "if (!blockingCallbackRegistered)"
         val setFlag = "blockingCallbackRegistered = true"
-        val readIdx = source.indexOf(readGuard)
-        val setIdx = source.indexOf(setFlag)
+        // stripComments() required before indexOf: a SECURITY A.2 comment that mentions
+        // either string verbatim would return a comment-line offset, making the ordering
+        // assertion pass regardless of the actual code order.
+        val codeLines = stripComments(source)
+        val readIdx = codeLines.indexOf(readGuard)
+        val setIdx = codeLines.indexOf(setFlag)
         assertTrue(
             "EpubReaderFragment must read blockingCallbackRegistered before registering " +
                 "the FragmentLifecycleCallbacks (A.2)",
@@ -217,8 +221,12 @@ class GroupASecurityTest {
             "wrapWebViewsIn() must set root.settings.allowContentAccess = false (A.5)",
             source.contains(accessToken),
         )
-        val whenIdx = source.indexOf(whenBranchToken)
-        val accessIdx = source.indexOf(accessToken)
+        // stripComments() required before indexOf: a KDoc or inline comment mentioning
+        // "is EpubBlockingWebViewClient" earlier in the file would return a comment-line
+        // offset, making the ordering assertion pass regardless of actual code order.
+        val codeLines = stripComments(source)
+        val whenIdx = codeLines.indexOf(whenBranchToken)
+        val accessIdx = codeLines.indexOf(accessToken)
         assertTrue(
             "is EpubBlockingWebViewClient branch not found in EpubReaderFragment (A.5)",
             whenIdx >= 0,

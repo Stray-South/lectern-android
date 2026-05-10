@@ -68,10 +68,14 @@ class GroupBSecurityTest {
                 "dimensions, allowing a 20000x20000 PNG to OOM the app process (B.2)",
             zipBody.contains("inJustDecodeBounds = true"),
         )
+        // Must verify assignment, not just presence: a call that discards the return
+        // value (e.g., dead expression) leaves inSampleSize at its default of 1 and
+        // provides no protection against the ZIP bomb PNG.
         assertTrue(
-            "renderZipPage() must call calculateInSampleSize() to cap bitmap dimensions — " +
-                "pass 1 header read without a sampleSize cap still decodes at full size (B.2)",
-            zipBody.contains("calculateInSampleSize("),
+            "renderZipPage() must assign calculateInSampleSize() result to inSampleSize — " +
+                "a call that discards the return value leaves BitmapFactory.Options at " +
+                "default inSampleSize=1, giving no ZIP bomb protection (B.2)",
+            zipBody.contains("inSampleSize = calculateInSampleSize("),
         )
 
         // renderRarPage — CBR path
@@ -84,8 +88,8 @@ class GroupBSecurityTest {
             rarBody.contains("inJustDecodeBounds = true"),
         )
         assertTrue(
-            "renderRarPage() must call calculateInSampleSize() to cap bitmap dimensions (B.2)",
-            rarBody.contains("calculateInSampleSize("),
+            "renderRarPage() must assign calculateInSampleSize() result to inSampleSize (B.2)",
+            rarBody.contains("inSampleSize = calculateInSampleSize("),
         )
     }
 
@@ -320,7 +324,8 @@ class GroupBSecurityTest {
     // bodies without silently growing them past the next member.
     private fun nextPrivateFunIndex(source: String, afterIdx: Int): Int =
         listOf(
-            "\n    private fun ", "\n    override fun ", "\n    internal fun ",
+            "\n    private fun ", "\n    private suspend fun ",
+            "\n    override fun ", "\n    internal fun ",
             "\n    fun ", "\n    private val ", "\n    private var ",
         )
             .mapNotNull { pattern ->
