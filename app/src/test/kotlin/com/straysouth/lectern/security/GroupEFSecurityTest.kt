@@ -12,8 +12,8 @@ import java.io.File
  * Covers JVM-testable properties:
  *   E.1 — EpubReaderFragment.onStop() calls viewModel.pauseTts() (background-stop fix);
  *           EpubReaderViewModel.onCleared() calls cleanUpTts() (last-resort teardown);
- *           AudioFocusRequest (TRANSIENT_MAY_DUCK) requested in startTts() and abandoned
- *           in cleanUpTts() so music apps duck during TTS and resume after (Sprint 20)
+ *           AudioFocusRequest (AUDIOFOCUS_GAIN_TRANSIENT) requested in startTts() and
+ *           abandoned in cleanUpTts() so competing audio pauses during TTS (Sprint 20)
  *   E.2 — No annotation Room entity in V1; TTS reads Publication content only
  *   E.3 — RECORD_AUDIO and MODIFY_AUDIO_SETTINGS absent from Manifest
  *   E.4 — TtsUiState.EngineUnavailable emitted in ≥ 2 paths in startTts(); TtsBar
@@ -101,8 +101,8 @@ class GroupEFSecurityTest {
      *   2. [AudioManager.abandonAudioFocusRequest] appears in [cleanUpTts] — focus is
      *      released when TTS stops so music apps resume at full volume.
      *
-     * Grant type: `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` — TTS sessions are transient;
-     * other apps duck rather than fully pause, which is correct for a reading app.
+     * Grant type: `AUDIOFOCUS_GAIN_TRANSIENT` — TTS is spoken word; competing audio must
+     * pause, not merely duck. The resume path also re-requests focus after a transient loss.
      */
     @Test
     fun tts_audioFocus_requestedOnStartAndAbandonedOnCleanUp() {
@@ -407,31 +407,31 @@ class GroupEFSecurityTest {
     // ── F.5 — MediaPipe: model from assets, no INTERNET contribution ─────────
 
     /**
-     * MediaPipe Tasks Vision 0.10.35 must not contribute an `INTERNET` permission to the
-     * merged manifest. If MediaPipe requires network access (e.g., for telemetry or remote
-     * model loading), its AAR's `AndroidManifest.xml` would add a `<uses-permission>` that
-     * appears in the merged manifest.
+     * Guards that the app's own `AndroidManifest.xml` (source manifest) declares `INTERNET`
+     * exactly once — for the documented "future Supabase sync (V2)" comment. An accidental
+     * second declaration in the source manifest would be caught here.
      *
-     * JVM proxy strategy: the app's own `AndroidManifest.xml` declares `INTERNET` exactly
-     * once — for "future Supabase sync (V2)" — with a documented comment. If MediaPipe
-     * contributed a second declaration, the manifest merger would produce a second
-     * `INTERNET` line (without the V2 comment). We assert `INTERNET` appears exactly once.
-     *
-     * Additionally asserts that [GazeProviderImpl] loads the model via
-     * `setModelAssetPath("face_landmarker.task")` (APK asset) rather than any HTTP/HTTPS URL.
+     * **Limitation:** this test reads the *source* manifest, not the *merged* manifest
+     * produced by the AGP manifest merger. A dependency AAR (e.g., MediaPipe, Play Services)
+     * that contributes `<uses-permission android:name="android.permission.INTERNET"/>` via
+     * its own `AndroidManifest.xml` would only appear in the merged output at
+     * `app/build/intermediates/merged_manifests/`. Merged-manifest verification requires a
+     * build artifact and must be done in CI (e.g., `grep -c INTERNET` on the merged file).
+     * Re-run this check manually on every MediaPipe version bump.
      *
      * Runtime verification (Network Profiler during a live gaze session) remains deferred.
      */
     @Test
-    fun supply_mediapipe_doesNotContributeInternetPermission() {
+    fun supply_mediapipe_sourceManifest_internetDeclaredOnce() {
         val manifest = manifestXml()
         val internetCount = manifest.lines()
             .count { it.contains("INTERNET") }
         assertTrue(
-            "INTERNET permission must appear exactly once in AndroidManifest.xml — the app " +
-                "declares it for future Supabase sync (V2); a second occurrence would indicate " +
-                "MediaPipe or another dependency is contributing an additional INTERNET " +
-                "declaration, signalling unexpected network capability (F.5). Count: $internetCount",
+            "INTERNET permission must appear exactly once in src/main/AndroidManifest.xml — " +
+                "the app declares it for future Supabase sync (V2). A second source-manifest " +
+                "occurrence signals an accidental duplicate. Note: merged-manifest AAR " +
+                "contributions are not detected here — verify with CI build artifact (F.5). " +
+                "Count: $internetCount",
             internetCount == 1,
         )
     }

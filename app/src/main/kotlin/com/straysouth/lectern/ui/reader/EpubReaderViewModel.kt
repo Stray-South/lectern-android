@@ -191,9 +191,18 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
             _ttsUiState.value = TtsUiState.EngineUnavailable
             return
         }
-        // If navigator already exists, resume only if not already playing
+        // If navigator already exists, resume only if not already playing.
+        // Re-request audio focus: focus may have been lost transiently since the last
+        // play() call (AUDIOFOCUS_LOSS_TRANSIENT → pauseTts() does not null _ttsNavigator).
+        // Without re-requesting, playback would resume without a held focus grant.
         _ttsNavigator?.let { nav ->
-            if (!nav.playback.value.playWhenReady) nav.play()
+            if (!nav.playback.value.playWhenReady) {
+                val req = _audioFocusRequest
+                if (req != null &&
+                    audioManager.requestAudioFocus(req) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+                ) return
+                nav.play()
+            }
             return
         }
         viewModelScope.launch {
