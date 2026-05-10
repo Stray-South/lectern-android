@@ -171,6 +171,199 @@ class GroupIJSecurityTest {
         )
     }
 
+    // ── I.4 — finishCalibration() routes both exception types to CalibrationError ──
+
+    /**
+     * [GazeViewModel.finishCalibration()] calls [GazeProviderImpl.calibrate()], which
+     * throws two distinct exception types on bad data:
+     *   - [IllegalArgumentException] from [requireNotNull(provider)] if the provider
+     *     is null at calibration time.
+     *   - [IllegalStateException] from [ridge()]'s `check(solver.setA(xtx))` guard if
+     *     the calibration matrix is degenerate (not positive-definite).
+     *
+     * Both must be caught and routed to [CalibrationUiState.CalibrationError].
+     * A catch clause that only handles one type will let the other propagate to
+     * [viewModelScope]'s uncaught-exception handler — crashing the calibration overlay
+     * and leaving [GazeProviderImpl] in an undefined state.
+     *
+     * Test strategy: extract the [finishCalibration()] body and assert all four tokens.
+     */
+    @Test
+    fun coroutines_finishCalibration_catchesBothExceptionTypes_toCalibrationError() {
+        val source = sourceFile("ui/gaze/GazeViewModel.kt")
+        val fnIdx = source.indexOf("private fun finishCalibration()")
+        assertTrue("finishCalibration() not found in GazeViewModel.kt (I.4)", fnIdx >= 0)
+        val fnEnd = nextClassMemberIndex(source, fnIdx)
+        val body = source.substring(fnIdx, fnEnd)
+
+        assertTrue(
+            "finishCalibration() must catch IllegalArgumentException — thrown by " +
+                "requireNotNull(provider) when the gaze provider is null at calibration " +
+                "time; uncaught, it crashes the overlay (I.4)",
+            body.contains("catch (e: IllegalArgumentException)"),
+        )
+        assertTrue(
+            "finishCalibration() must catch IllegalStateException — thrown by " +
+                "ridge()'s check(solver.setA(xtx)) guard on degenerate calibration data; " +
+                "uncaught, it leaves GazeProviderImpl in an undefined state (I.4)",
+            body.contains("catch (e: IllegalStateException)"),
+        )
+        assertTrue(
+            "finishCalibration() must route IllegalArgumentException to " +
+                "CalibrationUiState.CalibrationError — without this, the catch is a " +
+                "silent swallow that hides calibration failures (I.4)",
+            body.contains("CalibrationUiState.CalibrationError"),
+        )
+        // Both catch blocks must lead to CalibrationError — count occurrences to confirm
+        // a single shared assignment is not placed outside both catch clauses.
+        val errorOccurrences = body.split("CalibrationUiState.CalibrationError").size - 1
+        assertTrue(
+            "finishCalibration() must reference CalibrationUiState.CalibrationError in " +
+                "both catch blocks — a single reference outside the catches would leave " +
+                "one exception type unhandled (I.4)",
+            errorOccurrences >= 2,
+        )
+    }
+
+    // ── I.5 — GazeProviderImpl.stop() shuts down the analysis executor ────────
+
+    /**
+     * [GazeProviderImpl.stop()] must call [analysisExecutor.shutdown()] to drain and
+     * terminate the CameraX analysis thread. Without an explicit shutdown:
+     *   - The executor stays alive after the gaze session ends.
+     *   - CameraX may continue delivering frames to a closed [ImageAnalysis].
+     *   - Thread-leak detectors (StrictMode, LeakCanary) will flag the runaway thread
+     *     in any Activity that finishes while gaze is active.
+     *
+     * [scope.cancel()] is also asserted — it terminates any in-flight coroutine
+     * launched by [calibrate()] or [bindCamera()]. Without it, a suspend point inside
+     * [bindCamera()] after [stop()] has been called resumes on a dead scope, producing
+     * a [JobCancellationException] propagated to an unattached ViewModel.
+     */
+    @Test
+    fun coroutines_gazeProvider_stop_shutsDownAnalysisExecutor() {
+        val source = sourceFile("gaze/GazeProviderImpl.kt")
+        val fnIdx = source.indexOf("override suspend fun stop()")
+        assertTrue("stop() not found in GazeProviderImpl.kt (I.5)", fnIdx >= 0)
+        val fnEnd = nextClassMemberIndex(source, fnIdx)
+        val body = source.substring(fnIdx, fnEnd)
+
+        assertTrue(
+            "GazeProviderImpl.stop() must call analysisExecutor.shutdown() — without " +
+                "explicit shutdown the CameraX analysis thread keeps running after the " +
+                "gaze session ends, causing thread leaks under StrictMode / LeakCanary (I.5)",
+            body.contains("analysisExecutor.shutdown()"),
+        )
+        assertTrue(
+            "GazeProviderImpl.stop() must call scope.cancel() — without cancellation " +
+                "any in-flight suspend in bindCamera() or calibrate() resumes on a dead " +
+                "scope and produces an unhandled JobCancellationException (I.5)",
+            body.contains("scope.cancel()"),
+        )
+    }
+
+    // ── J.3 — ridge() guard against degenerate calibration matrix ────────────
+
+    /**
+     * [GazeProviderImpl.ridge()] assembles the XᵀX gram matrix from calibration
+     * landmark vectors and solves a ridge-regression system. If fewer than 4 distinct
+     * calibration points are collected, the matrix is rank-deficient (not
+     * positive-definite). An unchecked solve produces a numerically invalid weight
+     * vector that silently miscalibrates the gaze model — identical in appearance to
+     * the D.1 calibration-poisoning attack.
+     *
+     * The guard `check(solver.setA(xtx))` in [ridge()] rejects the solve early,
+     * throwing [IllegalStateException] which [finishCalibration()] routes to
+     * [CalibrationUiState.CalibrationError] (see I.4).
+     */
+    @Test
+    fun gaze_ridge_degenerateCalibrationData_checksPositiveDefinite() {
+        val source = sourceFile("gaze/GazeProviderImpl.kt")
+        val fnIdx = source.indexOf("private fun ridge(")
+        assertTrue("ridge() not found in GazeProviderImpl.kt (J.3)", fnIdx >= 0)
+        val fnEnd = nextClassMemberIndex(source, fnIdx)
+        val body = stripComments(source.substring(fnIdx, fnEnd))
+
+        assertTrue(
+            "ridge() must call check(solver.setA(xtx)) to reject a degenerate " +
+                "calibration matrix — without this guard a rank-deficient solve produces " +
+                "a silent miscalibration indistinguishable from the D.1 attack (J.3)",
+            body.contains("check(solver.setA(xtx))"),
+        )
+    }
+
+    // ── J.5a — Thermal throttle pauses analysis for all four severe statuses ──
+
+    /**
+     * [GazeProviderImpl]'s [thermalListener] must call [pauseAnalysis()] for every
+     * SEVERE thermal status. Android defines four statuses above the MODERATE threshold:
+     *   [PowerManager.THERMAL_STATUS_SEVERE], [THERMAL_STATUS_CRITICAL],
+     *   [THERMAL_STATUS_EMERGENCY], [THERMAL_STATUS_SHUTDOWN].
+     *
+     * Missing any one of the four allows [ImageAnalysis] to keep delivering frames at
+     * peak temperature — risking device throttle, frame drops, or process kill. The
+     * test verifies all four constant names appear in the [thermalListener] body and
+     * that [pauseAnalysis()] is called, confirming the listener is not a no-op stub.
+     */
+    @Test
+    fun gaze_thermalThrottle_pausesAnalysisForAllSevereStatuses() {
+        val source = sourceFile("gaze/GazeProviderImpl.kt")
+        // thermalListener is a property (val), not a fun — locate it directly.
+        val fnIdx = source.indexOf("private val thermalListener")
+        assertTrue("thermalListener not found in GazeProviderImpl.kt (J.5)", fnIdx >= 0)
+        val fnEnd = nextClassMemberIndex(source, fnIdx)
+        val body = source.substring(fnIdx, fnEnd)
+
+        listOf(
+            "THERMAL_STATUS_SEVERE",
+            "THERMAL_STATUS_CRITICAL",
+            "THERMAL_STATUS_EMERGENCY",
+            "THERMAL_STATUS_SHUTDOWN",
+        ).forEach { status ->
+            assertTrue(
+                "thermalListener must handle $status — missing this status allows " +
+                    "frame analysis to continue at dangerous device temperatures (J.5)",
+                body.contains(status),
+            )
+        }
+        assertTrue(
+            "thermalListener must call pauseAnalysis() — without it the thermal " +
+                "listener is a no-op stub that provides no actual throttle protection (J.5)",
+            body.contains("pauseAnalysis()"),
+        )
+    }
+
+    // ── J.5b — pauseAnalysis() clears the CameraX analyzer, not just sets state ─
+
+    /**
+     * [GazeProviderImpl.pauseAnalysis()] must call [imageAnalysis?.clearAnalyzer()] to
+     * detach the [ImageAnalysis.Analyzer] callback from the CameraX pipeline.
+     *
+     * Simply setting an internal `isPaused` flag and returning early from the analyzer
+     * callback is insufficient:
+     *   - CameraX continues acquiring and buffering frames from the sensor.
+     *   - Under thermal throttle the device heats up further while the app idles.
+     *   - A flag-only guard is a single mutable boolean race — the analyzer callback
+     *     may read `isPaused = false` before the write propagates across threads.
+     *
+     * [clearAnalyzer()] is the only safe pause: it stops sensor acquisition entirely.
+     */
+    @Test
+    fun gaze_pauseAnalysis_clearsAnalyzer_notJustSetsState() {
+        val source = sourceFile("gaze/GazeProviderImpl.kt")
+        val fnIdx = source.indexOf("override fun pauseAnalysis()")
+        assertTrue("pauseAnalysis() not found in GazeProviderImpl.kt (J.5)", fnIdx >= 0)
+        val fnEnd = nextClassMemberIndex(source, fnIdx)
+        val body = source.substring(fnIdx, fnEnd)
+
+        assertTrue(
+            "pauseAnalysis() must call imageAnalysis?.clearAnalyzer() — a flag-only " +
+                "pause leaves the CameraX sensor running under thermal throttle and is " +
+                "subject to cross-thread visibility races on the flag value (J.5)",
+            body.contains("imageAnalysis?.clearAnalyzer()"),
+        )
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
@@ -183,6 +376,7 @@ class GroupIJSecurityTest {
     private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
         listOf(
             "\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ",
+            "\n    override suspend fun ", "\n    private suspend fun ", "\n    suspend fun ",
             "\n    val ", "\n    var ", "\n    private val ", "\n    private var ",
             "\n    @",
         )
