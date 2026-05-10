@@ -428,6 +428,24 @@ class GroupASecurityTest {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    // Returns the index of the next class-member declaration after [afterIdx], used to
+    // bound the extracted body of a function for targeted source assertions.
+    // Patterns cover the 4-space-indented member forms present in production classes.
+    // companion object is included so the boundary is found even when it follows the
+    // target function (e.g. EpubBlockingWebViewClient.shouldOverrideUrlLoading →
+    // onPageFinished, which is an override fun and found first; companion object is
+    // still listed for completeness when the target is the last override).
+    private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
+        listOf(
+            "\n    fun ", "\n    private fun ", "\n    override fun ",
+            "\n    internal fun ", "\n    companion object", "\n    private val ",
+            "\n    private var ",
+        )
+            .mapNotNull { pattern ->
+                source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }
+            }
+            .minOrNull() ?: source.length
+
     // Strips single-line comments (//), KDoc body lines (*), and block-comment openers
     // from source before string checks. Prevents comment-only matches from producing
     // false positives or false negatives in security assertions.

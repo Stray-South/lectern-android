@@ -264,6 +264,13 @@ class GroupGSecurityTest {
                 "is insufficient for AuDHD readers (G.3)",
             stripped.contains("SnackbarDuration.Short"),
         )
+        // finally block ensures clearImportError() runs even when LaunchedEffect is
+        // cancelled mid-suspension (second error arriving while first Snackbar is showing).
+        assertTrue(
+            "showSnackbar() call must be wrapped in try/finally so clearImportError() " +
+                "always runs — prevents stale importError ViewModel state on cancellation (G.3)",
+            stripped.contains("try {") && stripped.contains("} finally {"),
+        )
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

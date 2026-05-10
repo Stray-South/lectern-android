@@ -79,12 +79,21 @@ fun LibraryScreen(
         val msg = importError ?: return@LaunchedEffect
         // Indefinite + withDismissAction: error stays visible until the user taps ×.
         // Short (4 s) was insufficient for AuDHD readers who may miss transient messages.
-        snackbarHostState.showSnackbar(
-            message = msg,
-            withDismissAction = true,
-            duration = androidx.compose.material3.SnackbarDuration.Indefinite,
-        )
-        viewModel.clearImportError()
+        // finally: clearImportError() runs even if LaunchedEffect is cancelled mid-suspension
+        // (e.g. a second import error arrives and restarts the effect). Without finally,
+        // cancellation at the showSnackbar suspension point would leave importError non-null,
+        // and the new LaunchedEffect would receive only the new error value — the old ViewModel
+        // state would be cleared when the new Snackbar is dismissed. Using finally ensures
+        // cleanup is always paired with the show attempt regardless of cancellation path.
+        try {
+            snackbarHostState.showSnackbar(
+                message = msg,
+                withDismissAction = true,
+                duration = androidx.compose.material3.SnackbarDuration.Indefinite,
+            )
+        } finally {
+            viewModel.clearImportError()
+        }
     }
 
     val launcher = rememberLauncherForActivityResult(
