@@ -205,13 +205,15 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 initialLocator = initialLocator,
                 initialPreferences = AndroidTtsPreferences(speed = ttsPrefs.value.speed),
             ).onSuccess { nav ->
-                // Request audio focus so music apps duck while TTS plays.
-                // TRANSIENT_MAY_DUCK: TTS is session-based (not permanent); other
-                // apps reduce volume rather than fully pausing — correct for a reading app.
-                // The listener calls pauseTts() on AUDIOFOCUS_LOSS so a phone call or
-                // navigation prompt correctly interrupts playback.
+                // Request audio focus so competing audio pauses while TTS plays.
+                // GAIN_TRANSIENT (not MAY_DUCK): TTS is spoken word — competing audio
+                // must pause, not merely duck. MAY_DUCK would deliver
+                // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK to music apps, which our listener
+                // does not handle, causing both streams to play simultaneously.
+                // The listener calls pauseTts() on AUDIOFOCUS_LOSS / LOSS_TRANSIENT so
+                // phone calls and navigation prompts correctly interrupt TTS.
                 val focusReq = AudioFocusRequest
-                    .Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                     .setAudioAttributes(
                         AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -225,7 +227,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                     }
                     .build()
                 _audioFocusRequest = focusReq
-                audioManager.requestAudioFocus(focusReq)
+                val granted = audioManager.requestAudioFocus(focusReq)
+                if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    // Another app holds exclusive focus (e.g., active phone call).
+                    // Don't start TTS — abandon the ungranted request and return silently.
+                    _audioFocusRequest = null
+                    return@onSuccess
+                }
                 _ttsNavigator = nav
                 nav.play()
                 _ttsCollectionJob = launch {

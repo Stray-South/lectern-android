@@ -119,10 +119,16 @@ class GroupEFSecurityTest {
                 "audio focus internally — the app is responsible.",
             startBody.contains("requestAudioFocus("),
         )
+        // GAIN_TRANSIENT (not MAY_DUCK): TTS is spoken word. MAY_DUCK delivers
+        // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK to competing apps, which our listener
+        // ignores — both streams would play simultaneously. GAIN_TRANSIENT causes
+        // competing audio to pause, preserving TTS intelligibility.
         assertTrue(
-            "startTts() must use AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK — TTS is session-based " +
-                "(not permanent); ducking rather than pausing is correct for reading apps (E.1)",
-            startBody.contains("AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK"),
+            "startTts() must use AUDIOFOCUS_GAIN_TRANSIENT (not MAY_DUCK) — spoken-word " +
+                "TTS requires competing audio to pause, not merely duck. MAY_DUCK delivers " +
+                "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK which our listener does not handle (E.1)",
+            startBody.contains("AUDIOFOCUS_GAIN_TRANSIENT") &&
+                !startBody.contains("AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK"),
         )
 
         // abandonAudioFocusRequest must be called inside cleanUpTts()
@@ -459,6 +465,16 @@ class GroupEFSecurityTest {
      * or [source.length] if none exists. Matches all modifier prefixes (plain, private,
      * override, internal) to avoid silently expanding a function body when a
      * `private fun` or `override fun` follows the target function.
+     */
+    /**
+     * Returns the index of the next class-member declaration after [afterIdx], or
+     * [source.length] if none exists. Matches 4-space-indented member patterns.
+     *
+     * Assumption: `private val` / `private var` entries are class-level fields that
+     * appear BETWEEN function declarations, never as local variables inside a function
+     * body (local variables use `val`/`var` without a `private` modifier in Kotlin).
+     * If a field is added inside a function body with `private val`, this helper will
+     * silently truncate the extracted body — add a brace-depth tracker in that case.
      */
     private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
         listOf(
