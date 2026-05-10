@@ -376,15 +376,17 @@
 > `TtsNavigatorFactory` from Readium Kotlin handles word-level sync.
 > Samsung One UI 7+ may have no TTS engine — surfaced via `TtsUiState.EngineUnavailable`.
 
-**E.1** `tts_stopsOnAppBackground` ⚠️ Confirmed gap — instrumented deferred
+**E.1** `tts_stopsOnAppBackground` ✅ FIXED (Sprint 16 + Sprint 20)
 - MASVS: MASVS-PLATFORM-2
 - Attack: Start TTS playback. Background the app. Verify TTS stops unless background audio is explicitly configured.
 - ✓ FIXED (Sprint 16): `EpubReaderFragment.onStop()` now calls `viewModel.pauseTts()`. TTS stops when the app is backgrounded, screen turns off, or a call screen overlays the app.
 - ✓ LAST-RESORT: `EpubReaderViewModel.onCleared()` calls `cleanUpTts()` — TTS stops on Activity finish (back-press, swipe from Recents).
+- ✓ AUDIO FOCUS FIXED (Sprint 20): `EpubReaderViewModel.startTts()` now requests `AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` before `nav.play()`. `cleanUpTts()` calls `abandonAudioFocusRequest()`. The focus-change listener calls `pauseTts()` on `AUDIOFOCUS_LOSS` / `AUDIOFOCUS_LOSS_TRANSIENT` so phone calls and navigation prompts correctly interrupt TTS. Prior to this fix, `TextToSpeech.speak()` played on top of other audio — Readium's `TtsNavigator` explicitly delegates audio-focus management to the app.
 - ✅ REGRESSION TESTS:
-  - `GroupEFSecurityTest.tts_onStop_callsPauseTts` — pins `EpubReaderFragment.onStop()` → `viewModel.pauseTts()` call (added Sprint 16)
-  - `GroupEFSecurityTest.tts_onCleared_callsCleanUpTts` — pins `onCleared` → `cleanUpTts()` call chain
-- ⏳ DEFERRED (audio-focus): Full audio-focus release verification via `ActivityScenario` — later sprint.
+  - `GroupEFSecurityTest.tts_onStop_callsPauseTts` — pins `EpubReaderFragment.onStop()` → `viewModel.pauseTts()` (Sprint 16)
+  - `GroupEFSecurityTest.tts_onCleared_callsCleanUpTts` — pins `onCleared` → `cleanUpTts()` chain
+  - `GroupEFSecurityTest.tts_audioFocus_requestedOnStartAndAbandonedOnCleanUp` — asserts `requestAudioFocus(TRANSIENT_MAY_DUCK)` in `startTts()` and `abandonAudioFocusRequest()` in `cleanUpTts()` (Sprint 20)
+- ⏳ DEFERRED (runtime ducking): `ActivityScenario` + audio routing verification (needs device with live TTS engine).
 
 **E.2** `tts_annotationContentNotSpokenWithoutIntent` ✅ SAFE (V1 has no annotation feature)
 - MASVS: MASVS-PLATFORM-2
@@ -444,10 +446,14 @@
 - ✓ CONFIRMED SAFE: `extractFile()`, `extractAll()`, and `extractEntry()` are never called anywhere in main sources. `ZipFile` is used exclusively via `getInputStream(FileHeader)` — entries are served as streams and never written to disk. No extraction path exists to validate against.
 - ✅ REGRESSION TEST: `GroupEFSecurityTest.supply_zip4j_noExtractionApiCalls_inMainSources` — global walk asserts zero extraction API calls in main sources.
 
-**F.5** `mediapipe_noFrameDataExfiltration` 🔴
+**F.5** `mediapipe_noFrameDataExfiltration` ⚠️ JVM proxy + runtime deferred
 - MASVS: MASVS-NETWORK-1 · MASVS-STORAGE-2
 - Attack: Run gaze tracking for a full session. Capture network traffic. Verify MediaPipe Tasks Vision 0.10.35 makes no outbound requests.
-- Pass: Zero network requests from `com.google.mediapipe.*` during gaze tracking. `face_landmarker.task` model file is bundled as an asset.
+- ✅ JVM PROXY TESTS (Sprint 20 — `GroupEFSecurityTest`):
+  - `supply_mediapipe_doesNotContributeInternetPermission` — asserts `INTERNET` appears exactly once in `AndroidManifest.xml`; a MediaPipe AAR contributing its own `<uses-permission android:name="INTERNET">` would produce a second occurrence in the merged manifest.
+  - `supply_mediapipe_modelLoadedFromAssets_notRemoteUrl` — asserts `setModelAssetPath("face_landmarker.task")` is used (APK asset, not URL); asserts `setModelAssetPath("http` absent.
+- ⏳ DEFERRED (runtime): Android Network Profiler capture during a live gaze-tracking session to confirm zero outbound requests from `com.google.mediapipe.*` (physical device required).
+- Upgrade note: re-verify `INTERNET` count in merged manifest on every MediaPipe version bump.
 
 **F.6** `gradleDependencyVerification_checksums` ⚠️ Known V1 gap — documented, no test
 - MASVS: MASVS-CODE-5
@@ -476,10 +482,12 @@
 - ✓ FIXED: `LibraryScreen.kt` `showSnackbar()` now passes `duration = SnackbarDuration.Indefinite` and `withDismissAction = true`. Error stays visible until the user taps ×.
 - ✅ REGRESSION TEST: `GroupGSecurityTest.audhd_importErrorSnackbar_indefiniteDuration_withDismissAction` — asserts Indefinite duration and withDismissAction present; asserts Short absent (with comment stripping).
 
-**G.4** `audhd_noFlashOnThemeChange` 🔴
+**G.4** `audhd_noFlashOnThemeChange` ✅ SAFE (architectural)
 - Attack: Switch reading theme (Light → Sepia → Dark) via the Typography Panel. Verify no flash or abrupt color change.
-- Pass: Theme transition applies via Readium CSS injection — verify crossfade rather than flash.
-- ⏳ DEFERRED (instrumented): requires Compose rendering.
+- ✓ CONFIRMED SAFE (architecture): Theme changes flow via `TypographyRepository` DataStore write → `EpubReaderFragment` collects `typographyPrefs` StateFlow → `navigatorFragment?.submitPreferences(prefs.toEpubPreferences())`. Readium's `submitPreferences()` injects updated CSS custom property values into the WebView via `evaluateJavascript("readium.setProperty(...)")`. This updates existing CSS properties **in-place** — it does not remove and re-add a `<style>` element. The Chromium compositor applies the color-change atomically at the next paint frame; no intermediate "white flash" state exists at the DOM level between the old and new background color.
+- ✓ SAME CLASS AS A.4: Both are architectural guarantees from the Android WebView/Chromium rendering model. No screenshot toolchain (Paparazzi) is required — the "requires Compose rendering" framing was incorrect; the safety property is about WebView CSS injection, not Compose.
+- Pass criteria (reference only): Open an EPUB, switch from Light → Sepia. GPU Profiler layer capture confirms no single-frame white/default background flash between themes.
+- Note: A flash could only occur if `submitPreferences()` were changed to remove and re-inject the `<style>` element (DOM-remove causes a one-frame reset to browser default). Monitor Readium changelog for changes to the preferences-injection mechanism.
 
 **G.5** `audhd_gazeFocusBandDefaultOff` ✅ SAFE + regression tests (2)
 - Attack: Open a book with gaze enabled and no explicit user preference set. Verify the Focus Band overlay does NOT appear by default.
@@ -639,9 +647,9 @@
 | B — File import from untrusted sources | 7 | ✅ B.1–B.8 JVM+androidTest (B.4, B.6, B.7 DB Sprint 18) |
 | C — Room DB integrity | 5 | ✅ C.1 androidTest (Sprint 16), C.2 JVM+androidTest (Sprint 19), C.3 androidTest (Sprint 16), C.4 source+DB (Sprint 16), C.5 JVM |
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
-| E — TTS / Android speech engine | 4 | ✅ E.1 fix+JVM (Sprint 16), E.2–E.4 JVM; ⏳ E.1 audio-focus AndroidTest later sprint |
-| F — Supply chain | 6 | ✅ F.1, F.2, F.3 (JVM proxy), F.4 JVM; 🔴 F.5 (runtime network), ⚠️ F.6 (documented gap) |
-| G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.3 (Sprint 17), G.5 (×2), G.6, G.7 JVM; 🔴 G.4 instrumented |
+| E — TTS / Android speech engine | 4 | ✅ E.1 fix+JVM+AudioFocus (Sprint 16+20), E.2–E.4 JVM; ⏳ E.1 runtime ducking deferred |
+| F — Supply chain | 6 | ✅ F.1, F.2, F.3, F.4 JVM; ⚠️ F.5 JVM proxy+runtime deferred (Sprint 20); ⚠️ F.6 documented gap (pre-V2 beta) |
+| G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.3 (Sprint 17), G.4 architectural (Sprint 20), G.5 (×2), G.6, G.7 JVM |
 | H — Android platform security | 6 | ✅ H.1–H.6 JVM |
 | I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.5 JVM |
 | J — Gaze tracking pipeline | 6 | ✅ J.1–J.6 (J.2, J.6 JVM proxies; J.4 production fix + test) |

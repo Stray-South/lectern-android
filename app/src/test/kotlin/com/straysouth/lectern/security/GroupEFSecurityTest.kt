@@ -11,7 +11,9 @@ import java.io.File
  *
  * Covers JVM-testable properties:
  *   E.1 — EpubReaderFragment.onStop() calls viewModel.pauseTts() (background-stop fix);
- *           EpubReaderViewModel.onCleared() calls cleanUpTts() (last-resort teardown)
+ *           EpubReaderViewModel.onCleared() calls cleanUpTts() (last-resort teardown);
+ *           AudioFocusRequest (TRANSIENT_MAY_DUCK) requested in startTts() and abandoned
+ *           in cleanUpTts() so music apps duck during TTS and resume after (Sprint 20)
  *   E.2 — No annotation Room entity in V1; TTS reads Publication content only
  *   E.3 — RECORD_AUDIO and MODIFY_AUDIO_SETTINGS absent from Manifest
  *   E.4 — TtsUiState.EngineUnavailable emitted in ≥ 2 paths in startTts(); TtsBar
@@ -28,8 +30,11 @@ import java.io.File
  *           in main sources; entries served via getInputStream() only
  *
  * Deferred (instrumented):
- *   E.1 audio-focus — verify audio-focus is released via ActivityScenario (complex; later sprint)
+ *   E.1 audio-focus runtime — verify focus ducking via ActivityScenario (later sprint)
  *   E.3 runtime — verify no RECORD_AUDIO permission is requested at runtime
+ *
+ * F.5 — MediaPipe does not contribute INTERNET permission to the merged manifest;
+ *         model is loaded from APK assets, not a remote URL
  *
  * F.6 — gradle/verification-metadata.xml absent (⚠️ known V1 gap; exact pins + CI
  *         accepted as sufficient; add checksums before V2 public beta). No test written:
@@ -79,6 +84,56 @@ class GroupEFSecurityTest {
                 "navigator on Activity finish — no onPause() hook stops TTS on background; " +
                 "this is the last-resort teardown (E.1)",
             body.contains("cleanUpTts()"),
+        )
+    }
+
+    // ── E.1 (audio focus) — TTS requests and releases audio focus ──────────────
+
+    /**
+     * Android TTS (`TextToSpeech.speak()`) does NOT automatically request audio focus.
+     * Readium's `TtsNavigator` explicitly delegates audio-focus management to the app.
+     * Without this fix, TTS plays at full volume on top of music with no ducking, and
+     * phone-call interruptions do not pause TTS.
+     *
+     * Two properties asserted:
+     *   1. [AudioManager.requestAudioFocus] appears in the [startTts] `onSuccess` block —
+     *      focus is requested immediately before playback begins.
+     *   2. [AudioManager.abandonAudioFocusRequest] appears in [cleanUpTts] — focus is
+     *      released when TTS stops so music apps resume at full volume.
+     *
+     * Grant type: `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` — TTS sessions are transient;
+     * other apps duck rather than fully pause, which is correct for a reading app.
+     */
+    @Test
+    fun tts_audioFocus_requestedOnStartAndAbandonedOnCleanUp() {
+        val source = sourceFile("ui/reader/EpubReaderViewModel.kt")
+
+        // requestAudioFocus must be called inside startTts() onSuccess block
+        val startIdx = source.indexOf("fun startTts(")
+        assertTrue("startTts() not found in EpubReaderViewModel.kt", startIdx >= 0)
+        val startEnd = nextClassMemberIndex(source, startIdx)
+        val startBody = source.substring(startIdx, startEnd)
+        assertTrue(
+            "EpubReaderViewModel.startTts() must call audioManager.requestAudioFocus() so " +
+                "music apps duck while TTS plays (E.1). Readium TtsNavigator does not manage " +
+                "audio focus internally — the app is responsible.",
+            startBody.contains("requestAudioFocus("),
+        )
+        assertTrue(
+            "startTts() must use AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK — TTS is session-based " +
+                "(not permanent); ducking rather than pausing is correct for reading apps (E.1)",
+            startBody.contains("AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK"),
+        )
+
+        // abandonAudioFocusRequest must be called inside cleanUpTts()
+        val cleanIdx = source.indexOf("private fun cleanUpTts(")
+        assertTrue("cleanUpTts() not found in EpubReaderViewModel.kt", cleanIdx >= 0)
+        val cleanEnd = nextClassMemberIndex(source, cleanIdx)
+        val cleanBody = source.substring(cleanIdx, cleanEnd)
+        assertTrue(
+            "EpubReaderViewModel.cleanUpTts() must call abandonAudioFocusRequest() so music " +
+                "apps resume at full volume after TTS stops (E.1)",
+            cleanBody.contains("abandonAudioFocusRequest("),
         )
     }
 
@@ -343,6 +398,60 @@ class GroupEFSecurityTest {
         }
     }
 
+    // ── F.5 — MediaPipe: model from assets, no INTERNET contribution ─────────
+
+    /**
+     * MediaPipe Tasks Vision 0.10.35 must not contribute an `INTERNET` permission to the
+     * merged manifest. If MediaPipe requires network access (e.g., for telemetry or remote
+     * model loading), its AAR's `AndroidManifest.xml` would add a `<uses-permission>` that
+     * appears in the merged manifest.
+     *
+     * JVM proxy strategy: the app's own `AndroidManifest.xml` declares `INTERNET` exactly
+     * once — for "future Supabase sync (V2)" — with a documented comment. If MediaPipe
+     * contributed a second declaration, the manifest merger would produce a second
+     * `INTERNET` line (without the V2 comment). We assert `INTERNET` appears exactly once.
+     *
+     * Additionally asserts that [GazeProviderImpl] loads the model via
+     * `setModelAssetPath("face_landmarker.task")` (APK asset) rather than any HTTP/HTTPS URL.
+     *
+     * Runtime verification (Network Profiler during a live gaze session) remains deferred.
+     */
+    @Test
+    fun supply_mediapipe_doesNotContributeInternetPermission() {
+        val manifest = manifestXml()
+        val internetCount = manifest.lines()
+            .count { it.contains("INTERNET") }
+        assertTrue(
+            "INTERNET permission must appear exactly once in AndroidManifest.xml — the app " +
+                "declares it for future Supabase sync (V2); a second occurrence would indicate " +
+                "MediaPipe or another dependency is contributing an additional INTERNET " +
+                "declaration, signalling unexpected network capability (F.5). Count: $internetCount",
+            internetCount == 1,
+        )
+    }
+
+    /**
+     * [GazeProviderImpl] must load the face_landmarker.task model from APK assets via
+     * [BaseOptions.setModelAssetPath], not via a remote URL. A URL-based load would trigger
+     * a network request during gaze initialisation — bypassing [BlockingHttpClient] (which
+     * is WebView/Readium-only) and exfiltrating device metadata to the model server.
+     */
+    @Test
+    fun supply_mediapipe_modelLoadedFromAssets_notRemoteUrl() {
+        val source = sourceFile("gaze/GazeProviderImpl.kt")
+        assertTrue(
+            "GazeProviderImpl must use setModelAssetPath(\"face_landmarker.task\") — the " +
+                "model must be loaded from bundled APK assets, not a remote URL (F.5)",
+            source.contains("setModelAssetPath(\"face_landmarker.task\")"),
+        )
+        // Ensure no HTTP/HTTPS URL appears in the model-loading context.
+        assertFalse(
+            "GazeProviderImpl must not load the model from an http:// or https:// URL — " +
+                "remote model loading would make a network request on gaze init (F.5)",
+            source.contains("setModelAssetPath(\"http"),
+        )
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
@@ -352,7 +461,10 @@ class GroupEFSecurityTest {
      * `private fun` or `override fun` follows the target function.
      */
     private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
-        listOf("\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ")
+        listOf(
+            "\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ",
+            "\n    companion object", "\n    private val ", "\n    private var ",
+        )
             .mapNotNull { pattern ->
                 source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }
             }

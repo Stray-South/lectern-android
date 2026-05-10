@@ -1,6 +1,9 @@
 package com.straysouth.lectern.ui.reader
 
 import android.app.Application
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -100,6 +103,11 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private var _ttsCollectionJob: Job? = null
     // Last sentence locator seen during TTS playback; persisted as anchor on stop.
     private var _lastUtteranceLocator: Locator? = null
+    // Audio focus request held while TTS is active; abandoned in cleanUpTts().
+    private var _audioFocusRequest: AudioFocusRequest? = null
+    private val audioManager: AudioManager by lazy {
+        getApplication<Application>().getSystemService(AudioManager::class.java)
+    }
 
     fun load(bookId: String) {
         if (_publication != null || !_loading.compareAndSet(false, true)) return
@@ -197,6 +205,27 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 initialLocator = initialLocator,
                 initialPreferences = AndroidTtsPreferences(speed = ttsPrefs.value.speed),
             ).onSuccess { nav ->
+                // Request audio focus so music apps duck while TTS plays.
+                // TRANSIENT_MAY_DUCK: TTS is session-based (not permanent); other
+                // apps reduce volume rather than fully pausing — correct for a reading app.
+                // The listener calls pauseTts() on AUDIOFOCUS_LOSS so a phone call or
+                // navigation prompt correctly interrupts playback.
+                val focusReq = AudioFocusRequest
+                    .Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build(),
+                    )
+                    .setOnAudioFocusChangeListener { change ->
+                        if (change == AudioManager.AUDIOFOCUS_LOSS ||
+                            change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+                        ) pauseTts()
+                    }
+                    .build()
+                _audioFocusRequest = focusReq
+                audioManager.requestAudioFocus(focusReq)
                 _ttsNavigator = nav
                 nav.play()
                 _ttsCollectionJob = launch {
@@ -253,7 +282,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // Cancels collection job, closes navigator, resets UI state.
+    // Cancels collection job, closes navigator, resets UI state, releases audio focus.
     // Persists the last utterance locator as anchor so the reading position
     // remains visually marked after TTS stops.
     // Called from stopTts(), onCleared(), and the Ended/Failure branch of the collect.
@@ -263,6 +292,9 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         _ttsNavigator?.close()
         _ttsNavigator = null
         _ttsUiState.value = TtsUiState.Idle
+        // Release audio focus so music apps resume at full volume after TTS stops.
+        _audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        _audioFocusRequest = null
         val bookId = _bookId ?: return
         val anchor = _lastUtteranceLocator ?: return
         _lastUtteranceLocator = null
