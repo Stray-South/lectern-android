@@ -21,6 +21,9 @@ import java.io.File
  *   F.2 — CVE-2021-40870: PublicationRepository delegates entirely to Readium's
  *           AssetRetriever/PublicationOpener; no ZipFile/ZipInputStream/File( call
  *           present that could reintroduce a disk-write extraction path
+ *   F.3 — BlockingHttpClient is wired into both AssetRetriever and
+ *           DefaultPublicationParser; mere presence is insufficient — both Readium
+ *           network entry points must receive the blocking implementation
  *   F.4 — zip4j extraction APIs (extractFile, extractAll, extractEntry) never called
  *           in main sources; entries served via getInputStream() only
  *
@@ -198,6 +201,54 @@ class GroupEFSecurityTest {
                 "supply chain integrity requires exact pins (F.1):\n" +
                 floatingLines.joinToString("\n"),
             floatingLines.isEmpty(),
+        )
+    }
+
+    // ── F.3 — BlockingHttpClient wired into both Readium network entry points ──
+
+    /**
+     * [BlockingHttpClient] prevents Readium from making outbound HTTPS calls during
+     * EPUB open. Its existence alone (tested by B.8) is insufficient — if it were
+     * declared but not passed to [AssetRetriever] or [DefaultPublicationParser], both
+     * would fall back to [DefaultHttpClient] and make outbound requests.
+     *
+     * Two wiring points must be confirmed in [PublicationRepository]:
+     *   1. [AssetRetriever] receives [httpClient] — blocks the asset-retrieval layer.
+     *   2. [DefaultPublicationParser] receives `httpClient = httpClient` — blocks the
+     *      parser layer. Both must be blocked; a gap in either allows outbound requests
+     *      on any EPUB that references a remote OPF or resource URL.
+     *
+     * Exact token strategy: assert the assignment `httpClient = BlockingHttpClient`
+     * (private field initialisation) and the two call-site tokens that follow it.
+     * Comment-stripped source prevents a KDoc or inline comment from satisfying the
+     * assertions.
+     */
+    @Test
+    fun supply_readium_blockingHttpClient_wiredIntoBothNetworkEntryPoints() {
+        val source = stripComments(sourceFile("data/repository/PublicationRepository.kt"))
+
+        // Field assignment — BlockingHttpClient is the implementation, not just an import.
+        assertTrue(
+            "PublicationRepository must assign httpClient = BlockingHttpClient — " +
+                "BlockingHttpClient present as an import but not assigned provides no " +
+                "network protection; Readium would use DefaultHttpClient (F.3)",
+            source.contains("httpClient = BlockingHttpClient"),
+        )
+        // AssetRetriever wiring — first Readium network entry point.
+        assertTrue(
+            "AssetRetriever must receive httpClient — without this wiring AssetRetriever " +
+                "uses DefaultHttpClient and can make outbound requests to fetch remote " +
+                "assets referenced in EPUB OPF manifests (F.3)",
+            source.contains("AssetRetriever(") && source.contains("httpClient"),
+        )
+        // DefaultPublicationParser wiring — second Readium network entry point.
+        // The named-parameter form `httpClient = httpClient` confirms the argument is
+        // passed to the parser, not just present somewhere in the file.
+        assertTrue(
+            "DefaultPublicationParser must receive httpClient = httpClient — without " +
+                "this wiring the parser layer uses DefaultHttpClient and can fetch remote " +
+                "resources during EPUB parsing (F.3)",
+            source.contains("httpClient = httpClient"),
         )
     }
 
