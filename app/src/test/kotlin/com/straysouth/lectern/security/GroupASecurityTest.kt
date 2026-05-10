@@ -14,7 +14,9 @@ import java.io.File
  *   A.2 — EpubBlockingWebViewClient predicate: host != null && host != "readium";
  *           blockingCallbackRegistered guard: read before register, set after
  *   A.3 — EpubReaderFragment does not implement EpubNavigatorFragment.Listener;
- *           createFragmentFactory() receives no listener argument
+ *           createFragmentFactory() receives no listener argument;
+ *           EpubBlockingWebViewClient.shouldOverrideUrlLoading() has an explicit
+ *           scheme allowlist blocking intent://, market://, etc. (defence-in-depth)
  *   A.4 — ComposeView overlay is added to FrameLayout AFTER navigatorContainer in
  *           onCreateView() — FrameLayout insertion order is the compositing-z guarantee
  *   A.5 — allowContentAccess = false applied unconditionally in wrapWebViewsIn(),
@@ -163,6 +165,48 @@ class GroupASecurityTest {
                 "absence of the parameter is the correct V1 posture (A.3)",
             codeLines.contains("createFragmentFactory(") &&
                 !codeLines.contains("createFragmentFactory(listener"),
+        )
+    }
+
+    /**
+     * Defence-in-depth for A.3: [EpubBlockingWebViewClient.shouldOverrideUrlLoading]
+     * must explicitly block non-http/https schemes before delegating to Readium.
+     * The null-listener pattern prevents [onExternalLinkActivated] from firing for
+     * `<a href="intent://...">` clicks, but JS-initiated top-frame navigations
+     * (`window.location = "intent://..."`) may not reach that path on all Android
+     * versions. An explicit scheme allowlist closes this gap independently.
+     *
+     * Two properties verified:
+     *   1. [ALLOWED_NAVIGATION_SCHEMES] constant is defined containing "https" and "http".
+     *   2. [shouldOverrideUrlLoading] body contains the scheme guard and [return true].
+     */
+    @Test
+    fun epub_blockingWebViewClient_shouldOverrideUrlLoading_schemeDenylist() {
+        val source = sourceFile("ui/reader/EpubBlockingWebViewClient.kt")
+        assertTrue(
+            "EpubBlockingWebViewClient must define ALLOWED_NAVIGATION_SCHEMES " +
+                "containing \"https\" — all Readium internal links use https://readium/... (A.3)",
+            source.contains("ALLOWED_NAVIGATION_SCHEMES") &&
+                source.contains("\"https\""),
+        )
+        assertTrue(
+            "EpubBlockingWebViewClient must define ALLOWED_NAVIGATION_SCHEMES " +
+                "containing \"http\" (A.3)",
+            source.contains("\"http\""),
+        )
+        val fnIdx = source.indexOf("override fun shouldOverrideUrlLoading(")
+        assertTrue("shouldOverrideUrlLoading not found in EpubBlockingWebViewClient.kt", fnIdx >= 0)
+        val nextIdx = nextClassMemberIndex(source, fnIdx)
+        val body = source.substring(fnIdx, nextIdx)
+        assertTrue(
+            "shouldOverrideUrlLoading must check scheme !in ALLOWED_NAVIGATION_SCHEMES " +
+                "to block intent://, market://, javascript: and other non-http schemes (A.3)",
+            body.contains("scheme !in ALLOWED_NAVIGATION_SCHEMES"),
+        )
+        assertTrue(
+            "shouldOverrideUrlLoading must return true (consumed) for blocked schemes — " +
+                "returning false would allow the WebView's default handler to process the URL (A.3)",
+            body.contains("return true"),
         )
     }
 

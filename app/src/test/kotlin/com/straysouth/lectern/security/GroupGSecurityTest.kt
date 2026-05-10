@@ -22,10 +22,10 @@ import java.io.File
  *           copy terms defined in scripts/check_banned_strings.sh; JVM-layer
  *           defence-in-depth alongside the shell CI gate
  *
+ *   G.3 — Import-error Snackbar uses SnackbarDuration.Indefinite + withDismissAction;
+ *           error stays visible until the user taps × (AuDHD readers must not miss it)
+ *
  * Deferred (instrumented or design decisions):
- *   G.3 — Snackbar duration: showSnackbar(msg) uses default SnackbarDuration.Short
- *           (4s). Asserting Short blesses a questionable AuDHD UX; asserting
- *           Indefinite fails today. Deferred to product decision before V2 beta.
  *   G.4 — Theme-change flash: requires Compose rendering — instrumented test only.
  *
  * Limitation (G.1): tween() calls using a named constant (e.g. tween(ANIM_MS)) are
@@ -231,6 +231,38 @@ class GroupGSecurityTest {
                 "loss-framing, and contingent-reward mechanics are prohibited (G.7):\n" +
                 violations.joinToString("\n"),
             violations.isEmpty(),
+        )
+    }
+
+    // ── G.3 — Import-error Snackbar is Indefinite + dismissable ─────────────
+
+    /**
+     * AuDHD readers may not notice a 4-second transient error message (the old
+     * [SnackbarDuration.Short] default). The Snackbar must:
+     *   1. Use [SnackbarDuration.Indefinite] — stays until explicitly dismissed.
+     *   2. Pass [withDismissAction] = true — provides a "×" close button.
+     *   3. NOT use [SnackbarDuration.Short] anywhere in [LibraryScreen].
+     *
+     * Comment-stripping guards against a code comment mentioning "Short" for documentation.
+     */
+    @Test
+    fun audhd_importErrorSnackbar_indefiniteDuration_withDismissAction() {
+        val source = sourceFile("ui/library/LibraryScreen.kt")
+        val stripped = stripComments(source)
+        assertTrue(
+            "LibraryScreen must pass SnackbarDuration.Indefinite to showSnackbar() " +
+                "so AuDHD readers are not timed out before they can read the error (G.3)",
+            stripped.contains("SnackbarDuration.Indefinite"),
+        )
+        assertTrue(
+            "LibraryScreen must pass withDismissAction = true to showSnackbar() " +
+                "so the user has an explicit affordance to dismiss the error (G.3)",
+            stripped.contains("withDismissAction = true"),
+        )
+        assertFalse(
+            "LibraryScreen must not use SnackbarDuration.Short — 4-second auto-dismiss " +
+                "is insufficient for AuDHD readers (G.3)",
+            stripped.contains("SnackbarDuration.Short"),
         )
     }
 

@@ -77,7 +77,13 @@ fun LibraryScreen(
 
     LaunchedEffect(importError) {
         val msg = importError ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
+        // Indefinite + withDismissAction: error stays visible until the user taps ×.
+        // Short (4 s) was insufficient for AuDHD readers who may miss transient messages.
+        snackbarHostState.showSnackbar(
+            message = msg,
+            withDismissAction = true,
+            duration = androidx.compose.material3.SnackbarDuration.Indefinite,
+        )
         viewModel.clearImportError()
     }
 

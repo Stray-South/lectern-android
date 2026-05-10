@@ -915,3 +915,40 @@ Format: see .claude/skills/devlog/SKILL.md
   GroupEFSecurityTest.kt, docs/security/RED-TEAM.md, DEVLOG.md
 - **Next:** Group A (EPUB3 WebView security) JVM tests, or G.4 Compose snapshot tests.
 - **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 17: G.3 Snackbar fix + A.3 intent-scheme hardening
+
+- **Did:** Three improvements across AuDHD UX and WebView security.
+
+  **G.3 — Snackbar indefinite duration:**
+  `LibraryScreen.kt` import-error Snackbar changed from default `SnackbarDuration.Short`
+  (4-second auto-dismiss) to `SnackbarDuration.Indefinite` + `withDismissAction = true`.
+  Error messages now stay visible until the user explicitly taps ×. Suspend semantics
+  are correct: `showSnackbar` suspends until dismissed, then `clearImportError()` runs.
+  If a new error arrives mid-display, `LaunchedEffect(importError)` relaunches, cancels
+  the old coroutine (dismissing the current Snackbar), and shows the new error.
+  `GroupGSecurityTest.audhd_importErrorSnackbar_indefiniteDuration_withDismissAction`
+  pins this with three assertions (Indefinite present, withDismissAction present,
+  Short absent — comment-stripped).
+
+  **A.3 — Explicit intent-scheme block in shouldOverrideUrlLoading:**
+  `EpubBlockingWebViewClient.shouldOverrideUrlLoading()` now has an explicit scheme
+  allowlist (`ALLOWED_NAVIGATION_SCHEMES = setOf("https", "http")` in a companion
+  object). Any URL with a scheme outside that set is returned `true` (consumed) before
+  delegating to Readium. Blocks `intent://`, `market://`, `javascript:`, `content://`,
+  `file://` regardless of whether the null-listener mitigation (A.3) is intact.
+  Readium's internal links resolve to `https://readium/...` and pass the allowlist.
+  `GroupASecurityTest.epub_blockingWebViewClient_shouldOverrideUrlLoading_schemeDenylist`
+  asserts the constant, the scheme guard, and the `return true` branch.
+
+  **RED-TEAM.md table:** Groups A and B rows corrected from "🔴 All new" (stale since
+  Sprint 12) to reflect actual JVM test coverage. G.3 closed from ⚠️ deferred to ✅.
+  A.3 entry updated from ⚠️ fragile to ✅ hardened.
+
+- **Why:** G.3: AuDHD readers miss transient 4-second error messages — the design
+  decision was clear and the fix one line. A.3: accidental null-listener mitigation
+  is fragile; an explicit scheme guard is the correct intentional security control.
+- **Files:** LibraryScreen.kt, EpubBlockingWebViewClient.kt, GroupGSecurityTest.kt,
+  GroupASecurityTest.kt, docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** Sprint 18 — B.4/B.6/B.7 androidTest (EPUB import instrumented tests).
+- **Blockers:** none

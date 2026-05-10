@@ -125,9 +125,10 @@
   2. `navigateToUrl()` → `internalLinkFromUrl(url)` — `intent://` URL cannot relativize against `readium://` baseUrl → returns `null`
   3. `navigateToUrl()` → `listener.onExternalLinkActivated(url)` — **lectern passes `listener = null`** to `createFragmentFactory()` (only `initialLocator` + `initialPreferences` are passed)
   4. Null listener → onExternalLinkActivated() never called → Intent never fired → URL silently dropped ✓
-- ⚠️ FRAGILE: This is accidental mitigation, not intentional security. If lectern ever adds a listener without explicit scheme validation, the risk returns.
-- ⚠️ JS `window.location = "intent://..."` may NOT be caught by `shouldOverrideUrlLoading` on all Android versions (top-frame navigations only; behavior differs for `window.open()` and redirects).
-- ✅ DOCUMENTED: `EpubReaderFragment.setupNavigator()` now has an inline comment marking the null-listener as a security invariant with the required scheme-allowlist caveat for any future listener. See `SECURITY A.3` comment.
+- ✓ HARDENED (Sprint 17): `EpubBlockingWebViewClient.shouldOverrideUrlLoading()` now has an explicit scheme allowlist (`ALLOWED_NAVIGATION_SCHEMES = setOf("https", "http")`). Any URL whose scheme is not "https" or "http" returns `true` (consumed) before delegating to Readium. This blocks `intent://`, `market://`, `javascript:`, `content://`, `file://`, and any future custom scheme — regardless of whether the null-listener path is intact.
+- ✅ REGRESSION TESTS:
+  - `GroupASecurityTest.epub_noExternalLinkListener_classDeclaresNoListenerInterface` — null-listener invariant
+  - `GroupASecurityTest.epub_blockingWebViewClient_shouldOverrideUrlLoading_schemeDenylist` — scheme allowlist + `return true` guard (Sprint 17)
 - Pass criteria: Write a test that clicks an `intent://` link in an EPUB — verify no system dialog appears and no Activity is started.
 - Android-specific: iOS has no equivalent `intent://` scheme risk.
 
@@ -467,10 +468,10 @@
 - ✓ CONFIRMED: Zero `postDelayed(`, zero `CountDownTimer(` in main sources. All `LaunchedEffect` usages react to state-flow emissions (deletedBookId, needsPermission, importError) — none drive timed navigation.
 - ✅ REGRESSION TEST: `GroupGSecurityTest.audhd_noAutoAdvance_noTimerDrivenNavigation` — comment-stripped + inline-tail-stripped global walk asserts absence of both timer APIs.
 
-**G.3** `audhd_errorMessagesInlineNotAutoDismissed` ⚠️ Design decision deferred
+**G.3** `audhd_errorMessagesInlineNotAutoDismissed` ✅ FIXED (Sprint 17)
 - Attack: Trigger an import error (malformed EPUB). Verify the Snackbar error message does not auto-dismiss before the user can read it.
-- `snackbarHostState.showSnackbar(msg)` uses default `SnackbarDuration.Short` (4s). No JVM test written: asserting `Short` blesses a questionable AuDHD UX; asserting `Indefinite` fails today.
-- ⏳ TODO before V2 beta: decide Snackbar duration policy for error messages. `Indefinite` + explicit dismiss is recommended for AuDHD users.
+- ✓ FIXED: `LibraryScreen.kt` `showSnackbar()` now passes `duration = SnackbarDuration.Indefinite` and `withDismissAction = true`. Error stays visible until the user taps ×.
+- ✅ REGRESSION TEST: `GroupGSecurityTest.audhd_importErrorSnackbar_indefiniteDuration_withDismissAction` — asserts Indefinite duration and withDismissAction present; asserts Short absent (with comment stripping).
 
 **G.4** `audhd_noFlashOnThemeChange` 🔴
 - Attack: Switch reading theme (Light → Sepia → Dark) via the Typography Panel. Verify no flash or abrupt color change.
@@ -631,13 +632,13 @@
 
 | Section | Count | Status |
 |---|---|---|
-| A — EPUB3 content injection | 7 | 🔴 All new |
-| B — File import from untrusted sources | 7 | 🔴 All new |
+| A — EPUB3 content injection | 7 | ✅ A.1–A.7 JVM (A.3 hardened Sprint 17); ⏳ A.1/A.2/A.4/A.6/A.7 runtime deferred |
+| B — File import from untrusted sources | 7 | ✅ B.1–B.3, B.5–B.8 JVM; ⏳ B.4, B.6 DB, B.7 DB androidTest (Sprint 18) |
 | C — Room DB integrity | 5 | ✅ C.1 androidTest (Sprint 16), C.2, C.3 androidTest (Sprint 16), C.4 source+DB (Sprint 16), C.5 JVM |
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
 | E — TTS / Android speech engine | 4 | ✅ E.1 fix+JVM (Sprint 16), E.2–E.4 JVM; ⏳ E.1 audio-focus AndroidTest later sprint |
 | F — Supply chain | 6 | ✅ F.1, F.2, F.3 (JVM proxy), F.4 JVM; 🔴 F.5 (runtime network), ⚠️ F.6 (documented gap) |
-| G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.5 (×2), G.6, G.7 JVM; ⚠️ G.3 design deferred; 🔴 G.4 instrumented |
+| G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.3 (Sprint 17), G.5 (×2), G.6, G.7 JVM; 🔴 G.4 instrumented |
 | H — Android platform security | 6 | 🔴 All new |
 | I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.5 JVM |
 | J — Gaze tracking pipeline | 6 | ✅ J.1–J.6 (J.2, J.6 JVM proxies; J.4 production fix + test) |

@@ -61,7 +61,20 @@ internal class EpubBlockingWebViewClient(
     override fun shouldOverrideUrlLoading(
         view: WebView,
         request: WebResourceRequest,
-    ): Boolean = delegate.shouldOverrideUrlLoading(view, request)
+    ): Boolean {
+        // Explicit scheme allowlist: block intent://, market://, content://, file://,
+        // javascript:, and any other non-http scheme before delegating to Readium.
+        // The null-listener pattern (A.3) already prevents startActivity() from firing
+        // via onExternalLinkActivated; this is defence-in-depth covering JS-initiated
+        // top-frame navigations (window.location = "intent://...") which may not reach
+        // the Readium null-listener path on all Android versions.
+        // Readium internal links resolve to https://readium/... — scheme "https" — and pass.
+        val scheme = request.url.scheme?.lowercase()
+        if (scheme != null && scheme !in ALLOWED_NAVIGATION_SCHEMES) {
+            return true  // consumed — no navigation, no Intent
+        }
+        return delegate.shouldOverrideUrlLoading(view, request)
+    }
 
     override fun onPageFinished(view: WebView, url: String) {
         delegate.onPageFinished(view, url)
@@ -77,6 +90,13 @@ internal class EpubBlockingWebViewClient(
     // if its client overrides this — dropping the call would silently blank pages.
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
         delegate.onReceivedSslError(view, handler, error)
+    }
+
+    companion object {
+        // Readium serves all internal resources at https://readium/... — "https" covers all
+        // internal chapter links. "http" included for completeness; network_security_config.xml
+        // blocks cleartext independently at the OS level.
+        private val ALLOWED_NAVIGATION_SCHEMES = setOf("https", "http")
     }
 
     // HTTP 403 with empty body — clean, debuggable block visible in Network DevTools.
