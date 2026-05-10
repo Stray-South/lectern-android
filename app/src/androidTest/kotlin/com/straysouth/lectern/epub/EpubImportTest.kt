@@ -60,6 +60,7 @@ class EpubImportTest {
             repo.open(Uri.fromFile(zipFile)) // result is failure (not a valid EPUB) — expected
         } finally {
             zipFile.delete()
+            canaryFile.delete()
         }
 
         assertFalse(

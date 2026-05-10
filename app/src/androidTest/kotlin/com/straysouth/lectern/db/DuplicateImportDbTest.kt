@@ -82,10 +82,14 @@ class DuplicateImportDbTest {
 
         val progress = db.readingProgressDao().observeAll().first()
             .firstOrNull { it.bookId == "b1" }
+        assertNotNull(
+            "ReadingProgress row for bookId b1 must still exist after re-import (B.7)",
+            progress,
+        )
         assertEquals(
             "totalProgression must be unchanged after book re-import (B.7)",
             0.75,
-            progress?.totalProgression ?: -1.0,
+            progress!!.totalProgression,
             1e-9,
         )
     }
