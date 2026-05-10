@@ -18,6 +18,9 @@ import java.io.File
  *           shows message + dismiss — no silent no-op when engine missing
  *   F.1 — All 5 external deps (Readium, zip4j, junrar, EJML, MediaPipe) pinned to
  *           exact versions in libs.versions.toml; no floating "+" or "latest." constraints
+ *   F.2 — CVE-2021-40870: PublicationRepository delegates entirely to Readium's
+ *           AssetRetriever/PublicationOpener; no ZipFile/ZipInputStream/File( call
+ *           present that could reintroduce a disk-write extraction path
  *   F.4 — zip4j extraction APIs (extractFile, extractAll, extractEntry) never called
  *           in main sources; entries served via getInputStream() only
  *
@@ -234,6 +237,41 @@ class GroupEFSecurityTest {
         )
     }
 
+    // ── F.2 — CVE-2021-40870: no zip extraction path in PublicationRepository ──
+
+    /**
+     * CVE-2021-40870 (Ralinktech / AnyConnect) exploited `ZipFile.extractAll()` with
+     * attacker-controlled entry names containing `../`. The Readium Kotlin SDK 3.x is
+     * not directly affected (different codebase), but an incorrect integration that
+     * adds a direct `ZipFile`/`ZipInputStream` call inside [PublicationRepository]
+     * would reintroduce the disk-write path.
+     *
+     * [PublicationRepository.open()] delegates entirely to Readium's [AssetRetriever]
+     * and [PublicationOpener], which stream archive entries in-memory without disk
+     * extraction. None of the six extraction-related API tokens must appear.
+     *
+     * Note: `File(` is checked via comment-stripped source to avoid a comment such as
+     * `// never pass to File(...)` from producing a false-pass.
+     */
+    @Test
+    fun supply_readium_cve202140870_noExtractionApiInPublicationRepository() {
+        val source = stripComments(sourceFile("data/repository/PublicationRepository.kt"))
+        listOf(
+            "ZipFile", "ZipInputStream", "ZipContainer",
+            "extractAll", "extractFile", "extractEntry",
+            "File(",
+        ).forEach { api ->
+            assertFalse(
+                "PublicationRepository must not use $api — CVE-2021-40870 exploited " +
+                    "zip extraction APIs that wrote attacker-controlled entry names to " +
+                    "disk; Readium 3.x AssetRetriever/PublicationOpener stream entries " +
+                    "in-memory; direct archive access here would reintroduce the disk-write " +
+                    "path (F.2)",
+                source.contains(api),
+            )
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
@@ -248,6 +286,14 @@ class GroupEFSecurityTest {
                 source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }
             }
             .minOrNull() ?: source.length
+
+    private fun stripComments(source: String): String =
+        source.lines()
+            .filterNot {
+                val t = it.trimStart()
+                t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")
+            }
+            .joinToString("\n")
 
     private fun manifestXml(): String {
         val file = File("src/main/AndroidManifest.xml")

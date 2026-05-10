@@ -20,6 +20,10 @@ import java.io.File
  *           finish, leaving the TTS navigator open past onCleared()
  *   J.1 — CalibrationRepository.save() stores only weightsX / weightsY; raw iris
  *           UV coordinates (irisU, irisV) are never persisted to DataStore
+ *   J.2 — irisU / irisV never appear in a log call across the full gaze module
+ *           (gaze/ and ui/gaze/ — extends GroupDSecurityTest D.3 to all files)
+ *   J.6 — GazeProviderImpl loads face_landmarker.task via setModelAssetPath() from
+ *           APK assets; integration code contains no filesDir / getCacheDir extraction
  *
  * Deferred (instrumented):
  *   I.4 — verify coroutine scope cancellation propagates correctly to TTS navigator
@@ -363,6 +367,88 @@ class GroupIJSecurityTest {
                 "subject to cross-thread visibility races on the flag value (J.5)",
             body.contains("imageAnalysis?.clearAnalyzer()"),
         )
+    }
+
+    // ── J.2 — Iris UV never logged anywhere in the gaze module ──────────────
+
+    /**
+     * Raw iris UV coordinates ([irisU], [irisV]) must not appear in any log call
+     * across the entire gaze module. [GroupDSecurityTest.D.3] covers only
+     * [GazeProviderImpl] and [GazeViewModel]; this test extends coverage to every
+     * source file under `gaze/` and `ui/gaze/`, including [CalibrationPoint],
+     * [CalibrationResult], [CalibrationScreen], and [GazeState].
+     *
+     * Strategy: for each .kt file in those directories, strip comments (to avoid
+     * a false pass from a comment such as `// never log irisU`), then check that
+     * no line contains both a log-call token AND an iris coordinate term.
+     * A bare field reference that is not inside a log call is permitted — the test
+     * targets logging specifically, not all usage of the field names.
+     */
+    @Test
+    fun gaze_rawIrisUV_neverLoggedInFullGazeModule() {
+        val logTokens = listOf("Log.d(", "Log.i(", "Log.w(", "Log.e(", "Log.v(", "Timber.", "println(")
+        val irisTerms = listOf("irisU", "irisV")
+        val gazeDirs = listOf(
+            File("src/main/kotlin/com/straysouth/lectern/gaze"),
+            File("src/main/kotlin/com/straysouth/lectern/ui/gaze"),
+        )
+        val violations = mutableListOf<String>()
+        for (dir in gazeDirs) {
+            if (!dir.exists()) continue
+            dir.walkTopDown()
+                .filter { it.extension == "kt" }
+                .forEach { file ->
+                    val lines = stripComments(file.readText()).lines()
+                    lines.forEachIndexed { idx, line ->
+                        val hasLog = logTokens.any { line.contains(it) }
+                        val hasIris = irisTerms.any { line.contains(it) }
+                        if (hasLog && hasIris) {
+                            violations += "${file.name}:${idx + 1}: $line"
+                        }
+                    }
+                }
+        }
+        assertTrue(
+            "No log call in the gaze module may reference irisU or irisV — raw iris UV " +
+                "coordinates enable gaze re-identification; ADR-J: ephemeral in-memory only (J.2):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
+    // ── J.6 — MediaPipe model loaded from APK assets, not world-readable storage ─
+
+    /**
+     * [GazeProviderImpl.createLandmarker()] must load `face_landmarker.task` via
+     * [BaseOptions.setModelAssetPath()], which resolves against the APK's bundled
+     * assets. This prevents the model from being written to app-external or
+     * world-readable storage by the integration code.
+     *
+     * Note: MediaPipe may internally extract the model to `filesDir` for GPU
+     * acceleration. That extraction is framework-internal and not world-readable
+     * (app-private `files/` directory, mode 0600). The assertion here verifies that
+     * the *integration* does not add a second, app-controlled extraction path — i.e.,
+     * the Lectern code never passes the model through `filesDir`, `getCacheDir`,
+     * `getExternalFilesDir`, or `openFileOutput`.
+     */
+    @Test
+    fun gaze_modelFile_loadedFromAssets_notExtractedByIntegrationCode() {
+        val source = sourceFile("gaze/GazeProviderImpl.kt")
+        assertTrue(
+            "GazeProviderImpl must load face_landmarker.task via " +
+                "BaseOptions.setModelAssetPath() — loading from APK assets is the only " +
+                "path that does not extract the model to app-controlled storage (J.6)",
+            source.contains("setModelAssetPath(\"face_landmarker.task\")"),
+        )
+        val codeLines = stripComments(source)
+        listOf("filesDir", "getExternalFilesDir", "getCacheDir", "openFileOutput").forEach { api ->
+            assertFalse(
+                "GazeProviderImpl must not reference $api — a filesystem path in the " +
+                    "integration code would create an app-controlled extraction route " +
+                    "for the model file outside the APK asset sandbox (J.6)",
+                codeLines.contains(api),
+            )
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

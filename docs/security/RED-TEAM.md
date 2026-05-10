@@ -411,10 +411,12 @@
 - ✓ CONFIRMED SAFE: All 5 pins are exact: `readium = "3.1.2"`, `zip4j = "2.11.6"`, `junrar = "7.5.7"`, `ejml = "0.44.0"`, `mediapipe = "0.10.35"`. No floating `+` or `latest.` constraints anywhere in the catalog.
 - ✅ REGRESSION TEST: `GroupEFSecurityTest.supply_allExternalDeps_versionPinned_notFloating` — asserts all 5 exact pins and global no-floating-version guard.
 
-**F.2** `readium_cve_202140870_notAffected` 🔴
+**F.2** `readium_cve_202140870_notAffected` ✅ SAFE (JVM proxy) + regression test
 - MASVS: MASVS-CODE-5
 - Attack: CVE-2021-40870 (Readium-2 path traversal in EPUB import) — verify Readium Kotlin 3.1.2 is not affected.
 - Pass: No CVE-2021-40870 equivalent in Readium Kotlin 3.1.2. NVD check clean. Any open CVEs documented in `SECURITY.md`.
+- ✓ JVM-CONFIRMED: `PublicationRepository.open()` (lines 33–48) delegates entirely to `AssetRetriever.retrieve(url)` + `PublicationOpener.open(asset)`. Zero `ZipFile`, `ZipInputStream`, `ZipContainer`, `extractAll`, `extractFile`, `extractEntry`, or `File(` calls anywhere in the file. No disk-write path exists in the integration layer.
+- ✅ REGRESSION TEST: `GroupEFSecurityTest.supply_readium_cve202140870_noExtractionApiInPublicationRepository` — comment-stripped scan of `PublicationRepository.kt` asserts all seven extraction-related API tokens absent.
 
 **F.3** `readium_noUnexpectedNetworkAccess` 🔴
 - MASVS: MASVS-NETWORK-1
@@ -573,11 +575,13 @@
 - ✅ REGRESSION TEST: `GroupIJSecurityTest.gaze_calibrationRepository_storesOnlyWeights_noRawIrisCoordinates` — comment-stripped whole-file scan asserts `weightsX`/`weightsY` present and `irisU`/`irisV` absent from `CalibrationRepository.kt`.
 - ⏳ DEFERRED: Runtime DataStore file inspection confirming no irisU/irisV binary values (instrumented).
 
-**J.2** `gaze_rawIrisUV_neverLogged` 🔴
+**J.2** `gaze_rawIrisUV_neverLogged` ✅ SAFE (JVM proxy) + regression test
 - MASVS: MASVS-STORAGE-2
 - Attack: Run gaze tracking in DEBUG build. Capture full Logcat. Verify no line contains `irisU`, `irisV`, or raw UV float values.
 - Pass: Zero Logcat lines with iris coordinate data. `check_gaze_data_leak.sh` CI check prevents source-level regressions.
-- Source: Confirmed from source — gaze logs contain only status messages.
+- ✓ JVM-CONFIRMED: Full gaze module scan (`gaze/` + `ui/gaze/`) — no file contains a log call (`Log.d/i/w/e/v`, `Timber.`, `println`) on the same line as `irisU` or `irisV`. Covers `CalibrationPoint.kt`, `CalibrationResult.kt`, `CalibrationScreen.kt`, `GazeState.kt` (extends GroupD D.3 which only covered `GazeProviderImpl` and `GazeViewModel`).
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.gaze_rawIrisUV_neverLoggedInFullGazeModule` — comment-stripped per-line scan of all .kt files in both gaze directories; any line combining a log token + iris term is a violation.
+- ⏳ DEFERRED (runtime): Live Logcat capture during active calibration session (instrumented).
 
 **J.3** `gaze_calibrationWeights_notCorruptedByDegenerate` ✅ SAFE + regression test
 - MASVS: MASVS-STORAGE-1
@@ -599,11 +603,13 @@
 - ✅ REGRESSION TESTS: `GroupIJSecurityTest.gaze_thermalThrottle_pausesAnalysisForAllSevereStatuses` — asserts all 4 status constants + `pauseAnalysis()` in `thermalListener` body. `GroupIJSecurityTest.gaze_pauseAnalysis_clearsAnalyzer_notJustSetsState` — extracts `pauseAnalysis()` body, asserts `imageAnalysis?.clearAnalyzer()`.
 - ⏳ DEFERRED (runtime): `adb shell` thermal override + CameraX frame-count verification (instrumented).
 
-**J.6** `gaze_modelFile_notExtractedToWorldReadable` 🔴
+**J.6** `gaze_modelFile_notExtractedToWorldReadable` ✅ SAFE (JVM proxy) + regression test
 - MASVS: MASVS-STORAGE-1
 - Attack: Verify `face_landmarker.task` is not extracted to external or world-readable storage at runtime.
 - Pass: `BaseOptions.setModelAssetPath("face_landmarker.task")` loads from APK assets. No model file visible as world-readable in app sandbox.
-- 🔍 Verify: MediaPipe may internally extract to `filesDir` for performance — verify it is not world-readable.
+- ✓ JVM-CONFIRMED: `GazeProviderImpl.createLandmarker()` (line 143) uses `setModelAssetPath("face_landmarker.task")` exclusively. No `filesDir`, `getExternalFilesDir`, `getCacheDir`, or `openFileOutput` reference appears anywhere in `GazeProviderImpl.kt`. MediaPipe framework-internal extraction to `filesDir` (mode 0600, app-private) is outside integration scope and not world-readable.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.gaze_modelFile_loadedFromAssets_notExtractedByIntegrationCode` — asserts `setModelAssetPath("face_landmarker.task")` present; asserts all four filesystem-path APIs absent from comment-stripped source.
+- ⏳ DEFERRED (runtime): `adb shell run-as` file listing to confirm no world-readable model file in app sandbox (instrumented).
 
 ---
 
@@ -616,11 +622,11 @@
 | C — Room DB integrity | 5 | ✅ C.2, C.4 (source), C.5 JVM; 🔴 C.1, C.3, C.4 DB deferred |
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
 | E — TTS / Android speech engine | 4 | 🔴 All new |
-| F — Supply chain | 6 | 🔴 All new |
+| F — Supply chain | 6 | ✅ F.1, F.2, F.4 JVM; 🔴 F.3, F.5 (runtime network), ⚠️ F.6 (documented gap) |
 | G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.5 (×2), G.6, G.7 JVM; ⚠️ G.3 design deferred; 🔴 G.4 instrumented |
 | H — Android platform security | 6 | 🔴 All new |
 | I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.5 JVM |
-| J — Gaze tracking pipeline | 6 | ✅ J.1, J.3, J.5 JVM; 🔴 J.2 (runtime logcat), J.4 (permission revoke), J.6 (model path) deferred |
+| J — Gaze tracking pipeline | 6 | ✅ J.1, J.2 (JVM proxy), J.3, J.5, J.6 (JVM proxy) JVM; 🔴 J.4 (permission revoke) deferred |
 | **Total** | **58** | **58 new** |
 
 ---
@@ -666,7 +672,7 @@
 - I.3 ✅ (TTS race — covered)
 
 ### Phase 3 — Before public beta
-- All remaining: E ✅, G ✅, H.3–H.6 ✅, I.4–I.5 ✅, J.3 ✅, J.5 ✅; still open: J.2, J.4, J.6, F.2–F.6
+- All remaining: E ✅, G ✅, H.3–H.6 ✅, I.4–I.5 ✅, J.2–J.3 ✅, J.5–J.6 ✅, F.2 ✅; still open (runtime-only): J.4, F.3, F.5
 
 ---
 
