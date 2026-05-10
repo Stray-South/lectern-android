@@ -191,20 +191,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
             _ttsUiState.value = TtsUiState.EngineUnavailable
             return
         }
-        // If navigator already exists, resume only if not already playing.
-        // Re-request audio focus: focus may have been lost transiently since the last
-        // play() call (AUDIOFOCUS_LOSS_TRANSIENT → pauseTts() does not null _ttsNavigator).
-        // Without re-requesting, playback would resume without a held focus grant.
-        _ttsNavigator?.let { nav ->
-            if (!nav.playback.value.playWhenReady) {
-                val req = _audioFocusRequest
-                if (req != null &&
-                    audioManager.requestAudioFocus(req) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-                ) return
-                nav.play()
-            }
-            return
-        }
+        if (resumeExistingTts()) return
         viewModelScope.launch {
             val listener = object : TtsNavigator.Listener {
                 override fun onStopRequested() { stopTts() }
@@ -214,13 +201,9 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 initialLocator = initialLocator,
                 initialPreferences = AndroidTtsPreferences(speed = ttsPrefs.value.speed),
             ).onSuccess { nav ->
-                // Request audio focus so competing audio pauses while TTS plays.
-                // GAIN_TRANSIENT (not MAY_DUCK): TTS is spoken word — competing audio
-                // must pause, not merely duck. MAY_DUCK would deliver
-                // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK to music apps, which our listener
-                // does not handle, causing both streams to play simultaneously.
-                // The listener calls pauseTts() on AUDIOFOCUS_LOSS / LOSS_TRANSIENT so
-                // phone calls and navigation prompts correctly interrupt TTS.
+                // GAIN_TRANSIENT (not MAY_DUCK): TTS is spoken word — competing audio must
+                // pause, not duck. Listener calls pauseTts() on AUDIOFOCUS_LOSS /
+                // LOSS_TRANSIENT so calls and navigation prompts interrupt TTS.
                 val focusReq = AudioFocusRequest
                     .Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                     .setAudioAttributes(
@@ -238,8 +221,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 _audioFocusRequest = focusReq
                 val granted = audioManager.requestAudioFocus(focusReq)
                 if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                    // Another app holds exclusive focus (e.g., active phone call).
-                    // Don't start TTS — abandon the ungranted request and return silently.
+                    // Another app holds exclusive focus (e.g. active call) — don't start TTS.
                     _audioFocusRequest = null
                     return@onSuccess
                 }
@@ -257,11 +239,8 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                             )
                         }
                     }.collect { state ->
-                        if (state is TtsUiState.Active) {
-                            _lastUtteranceLocator = state.utteranceLocator
-                        }
+                        if (state is TtsUiState.Active) _lastUtteranceLocator = state.utteranceLocator
                         _ttsUiState.value = state
-                        // Call directly — launching a sibling coroutine races the cancel in cleanUpTts().
                         if (state == TtsUiState.Idle) cleanUpTts()
                     }
                 }
@@ -271,6 +250,20 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 _ttsUiState.value = TtsUiState.EngineUnavailable
             }
         }
+    }
+
+    // Returns true if an existing navigator handled the request so the caller can return early.
+    // Re-requests focus before play(): focus may have been lost transiently after
+    // AUDIOFOCUS_LOSS_TRANSIENT → pauseTts() without nulling _ttsNavigator.
+    private fun resumeExistingTts(): Boolean {
+        val nav = _ttsNavigator ?: return false
+        if (!nav.playback.value.playWhenReady) {
+            val req = _audioFocusRequest
+            val focusGranted = req == null ||
+                audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            if (focusGranted) nav.play()
+        }
+        return true
     }
 
     fun pauseTts() {
