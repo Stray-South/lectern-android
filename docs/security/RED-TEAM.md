@@ -418,10 +418,13 @@
 - ✓ JVM-CONFIRMED: `PublicationRepository.open()` (lines 33–48) delegates entirely to `AssetRetriever.retrieve(url)` + `PublicationOpener.open(asset)`. Zero `ZipFile`, `ZipInputStream`, `ZipContainer`, `extractAll`, `extractFile`, `extractEntry`, or `File(` calls anywhere in the file. No disk-write path exists in the integration layer.
 - ✅ REGRESSION TEST: `GroupEFSecurityTest.supply_readium_cve202140870_noExtractionApiInPublicationRepository` — comment-stripped scan of `PublicationRepository.kt` asserts all seven extraction-related API tokens absent.
 
-**F.3** `readium_noUnexpectedNetworkAccess` 🔴
+**F.3** `readium_noUnexpectedNetworkAccess` ✅ SAFE (JVM proxy) + regression test
 - MASVS: MASVS-NETWORK-1
 - Attack: Open a book, read pages, activate TTS. Capture all traffic via Android Network Profiler. Verify zero outbound requests from `org.readium.*`.
 - Pass: All EPUB assets load from local storage only. No Readium analytics, CDN, or telemetry endpoints contacted.
+- ✓ JVM-CONFIRMED: `PublicationRepository` wires `BlockingHttpClient` into both Readium network entry points: `AssetRetriever(appContext.contentResolver, httpClient)` (line 18) and `DefaultPublicationParser(httpClient = httpClient, ...)` (line 22). Both layers are blocked; either being unwired would allow Readium to fall back to `DefaultHttpClient`.
+- ✅ REGRESSION TEST: `GroupEFSecurityTest.supply_readium_blockingHttpClient_wiredIntoBothNetworkEntryPoints` — asserts field assignment, exact `AssetRetriever` call-site form, and named-param `httpClient = httpClient` in `DefaultPublicationParser`. Three independently-removable wiring points, all verified.
+- ⏳ DEFERRED (runtime): Android Network Profiler capture during live EPUB read session (instrumented).
 
 **F.4** `zip4j_pathTraversalPrevented` ✅ SAFE (no extraction path) + regression test
 - MASVS: MAVSV-STORAGE-1 · MASVS-CODE-5
@@ -590,10 +593,13 @@
 - ✓ JVM-CONFIRMED: `GazeProviderImpl.ridge()` line 234 contains `check(solver.setA(xtx)) { "Ridge: matrix not positive definite — degenerate calibration data" }`.
 - ✅ REGRESSION TEST: `GroupIJSecurityTest.gaze_ridge_degenerateCalibrationData_checksPositiveDefinite` — extracts `ridge()` body, asserts `check(solver.setA(xtx))` present in comment-stripped source.
 
-**J.4** `gaze_cameraPermissionRevoked_gracefulStop` 🔴
+**J.4** `gaze_cameraPermissionRevoked_gracefulStop` ✅ SAFE + regression test + production fix
 - MASVS: MASVS-PLATFORM-1
 - Attack: Enable gaze, then revoke CAMERA permission from Settings while running (Android 11+). Verify no crash.
-- Pass: CameraX exception caught by `startGazeInternal()` `IOException` handler. `_gazeEnabled` set to false. App remains functional.
+- Pass: CameraX exception caught; `_gazeEnabled` set to false; app remains functional.
+- ✓ PRODUCTION FIX: `GazeViewModel.startGazeInternal()` previously only caught `IOException`. Added `SecurityException` catch (thrown by CameraX on permission revocation) with full cleanup: `_gazeEnabled.value = false`, `_gazeState.value = GazeState.Paused`, `gazeStateCollectionJob?.cancel()`, `provider = null`. `stopGazeInternal()` also gains `SecurityException` catch. `gazeStateCollectionJob` promoted to a field so `stopGazeInternal()` can cancel the state-collection coroutine even when called concurrently while `start()` is in-flight.
+- ✅ REGRESSION TEST: `GroupIJSecurityTest.coroutines_gazeStart_catchesSecurityException_onPermissionRevoke` — extracts `startGazeInternal()` body; asserts `catch (e: SecurityException)` present; 500-char window asserts all four cleanup tokens inside the catch block.
+- ⏳ DEFERRED (runtime): Live permission revocation via Settings + CameraX crash-free verification (instrumented).
 
 **J.5** `gaze_thermalThrottle_stopsInference` ✅ SAFE + regression test
 - MASVS: MASVS-CODE-4 (system resource safety)
@@ -622,11 +628,11 @@
 | C — Room DB integrity | 5 | ✅ C.2, C.4 (source), C.5 JVM; 🔴 C.1, C.3, C.4 DB deferred |
 | D — DataStore and local storage | 5 | ✅ All 5 JVM; D.2 confirmed benign; D.1/D.4 ADB deferred |
 | E — TTS / Android speech engine | 4 | 🔴 All new |
-| F — Supply chain | 6 | ✅ F.1, F.2, F.4 JVM; 🔴 F.3, F.5 (runtime network), ⚠️ F.6 (documented gap) |
+| F — Supply chain | 6 | ✅ F.1, F.2, F.3 (JVM proxy), F.4 JVM; 🔴 F.5 (runtime network), ⚠️ F.6 (documented gap) |
 | G — AuDHD-first safety regressions | 7 | ✅ G.1, G.2, G.5 (×2), G.6, G.7 JVM; ⚠️ G.3 design deferred; 🔴 G.4 instrumented |
 | H — Android platform security | 6 | 🔴 All new |
 | I — Kotlin coroutines / dispatcher safety | 5 | ✅ I.1–I.5 JVM |
-| J — Gaze tracking pipeline | 6 | ✅ J.1, J.2 (JVM proxy), J.3, J.5, J.6 (JVM proxy) JVM; 🔴 J.4 (permission revoke) deferred |
+| J — Gaze tracking pipeline | 6 | ✅ J.1–J.6 (J.2, J.6 JVM proxies; J.4 production fix + test) |
 | **Total** | **58** | **58 new** |
 
 ---
@@ -672,7 +678,7 @@
 - I.3 ✅ (TTS race — covered)
 
 ### Phase 3 — Before public beta
-- All remaining: E ✅, G ✅, H.3–H.6 ✅, I.4–I.5 ✅, J.2–J.3 ✅, J.5–J.6 ✅, F.2 ✅; still open (runtime-only): J.4, F.3, F.5
+- All remaining: E ✅, G ✅, H.3–H.6 ✅, I.4–I.5 ✅, J.2–J.6 ✅, F.2–F.3 ✅; still open (runtime-only): F.5
 
 ---
 
