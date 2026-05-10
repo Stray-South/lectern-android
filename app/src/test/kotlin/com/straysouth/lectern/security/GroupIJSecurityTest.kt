@@ -398,19 +398,32 @@ class GroupIJSecurityTest {
         val fnEnd = nextClassMemberIndex(source, fnIdx)
         val codeLines = stripComments(source.substring(fnIdx, fnEnd))
 
+        val seIdx = codeLines.indexOf("catch (e: SecurityException)")
         assertTrue(
             "startGazeInternal() must catch SecurityException — thrown by CameraX when " +
                 "CAMERA permission is revoked at runtime on Android 11+; uncaught, it " +
                 "collapses viewModelScope and leaves _gazeEnabled = true with no feed (J.4)",
-            codeLines.contains("catch (e: SecurityException)"),
+            seIdx >= 0,
         )
-        val seIdx = codeLines.indexOf("catch (e: SecurityException)")
-        val disableIdx = codeLines.indexOf("_gazeEnabled.value = false", seIdx)
+        // Window-bound: assert _gazeEnabled.value = false appears within the catch block
+        // (~300 chars after the catch keyword) rather than anywhere after it. This prevents
+        // the assertion from passing if the assignment is moved outside the catch body.
+        val catchWindow = codeLines.substring(seIdx, (seIdx + 300).coerceAtMost(codeLines.length))
         assertTrue(
-            "startGazeInternal() SecurityException catch must set _gazeEnabled.value = false — " +
-                "a catch that does not disable gaze leaves the UI in an inconsistent state " +
-                "where gaze appears active but the camera feed is dead (J.4)",
-            disableIdx > seIdx,
+            "startGazeInternal() SecurityException catch must set _gazeEnabled.value = false " +
+                "within the catch block — a catch that does not disable gaze leaves the UI " +
+                "showing gaze as active with a dead camera feed (J.4)",
+            catchWindow.contains("_gazeEnabled.value = false"),
+        )
+        assertTrue(
+            "startGazeInternal() SecurityException catch must reset _gazeState to Paused — " +
+                "without this the UI can show GazeState.Tracking after permission revocation (J.4)",
+            catchWindow.contains("_gazeState.value = GazeState.Paused"),
+        )
+        assertTrue(
+            "startGazeInternal() SecurityException catch must null provider — " +
+                "leaving provider non-null leaks the failed GazeProviderImpl reference (J.4)",
+            catchWindow.contains("provider = null"),
         )
     }
 
