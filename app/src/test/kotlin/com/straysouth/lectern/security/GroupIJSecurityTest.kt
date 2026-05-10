@@ -405,9 +405,9 @@ class GroupIJSecurityTest {
                 "collapses viewModelScope and leaves _gazeEnabled = true with no feed (J.4)",
             seIdx >= 0,
         )
-        // Window-bound: assert all three assignments appear within the catch block body
+        // Window-bound: assert all four assignments appear within the catch block body
         // (500 chars after the catch keyword) rather than anywhere after it. 500 gives
-        // ~240 chars of margin over the current ~256-char stripped block; prevents the
+        // ~230 chars of margin over the current ~270-char stripped block; prevents the
         // assertions from passing if any assignment is moved outside the catch body.
         val catchWindow = codeLines.substring(seIdx, (seIdx + 500).coerceAtMost(codeLines.length))
         assertTrue(
@@ -423,9 +423,9 @@ class GroupIJSecurityTest {
         )
         assertTrue(
             "startGazeInternal() SecurityException catch must cancel the state-collection " +
-                "coroutine via collectJob.cancel() — without cancellation the collector runs " +
-                "indefinitely against the abandoned GazeProviderImpl instance (J.4)",
-            catchWindow.contains("collectJob.cancel()"),
+                "coroutine via gazeStateCollectionJob?.cancel() — without cancellation the " +
+                "collector runs indefinitely against the abandoned GazeProviderImpl (J.4)",
+            catchWindow.contains("gazeStateCollectionJob?.cancel()"),
         )
         assertTrue(
             "startGazeInternal() SecurityException catch must null provider — " +

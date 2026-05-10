@@ -13,6 +13,7 @@ import com.straysouth.lectern.gaze.GazeState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import androidx.lifecycle.LifecycleOwner
 
@@ -58,6 +59,9 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
     // True while TTS is playing and has suppressed gaze inference. Cleared by stopGazeInternal()
     // so a manual gaze-off during TTS does not leave the flag dangling.
     private var gazePausedByTts = false
+    // Holds the Job collecting GazeProviderImpl.gazeState. Stored as a field so
+    // stopGazeInternal() can cancel it even when called concurrently while start() is in-flight.
+    private var gazeStateCollectionJob: Job? = null
 
     /** Called from MainActivity.onCreate() — must be set before toggleGaze(). */
     fun attachLifecycleOwner(owner: LifecycleOwner) {
@@ -152,9 +156,9 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
             calibrationRepository = calibrationRepository,
         )
         provider = p
-        // Collect gaze state updates. Stored so catch blocks can cancel it if start() fails —
-        // without cancellation the collector runs indefinitely against the abandoned provider.
-        val collectJob = viewModelScope.launch {
+        // Collect gaze state updates. Stored as a field so stopGazeInternal() can cancel it
+        // even when called concurrently while start() is still in-flight.
+        gazeStateCollectionJob = viewModelScope.launch {
             p.gazeState.collect { _gazeState.value = it }
         }
         // Start provider (binds CameraX, creates FaceLandmarker).
@@ -165,7 +169,8 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "GazeProvider.start() failed", e)
                 _gazeEnabled.value = false
                 _gazeState.value = GazeState.Paused
-                collectJob.cancel()
+                gazeStateCollectionJob?.cancel()
+                gazeStateCollectionJob = null
                 provider = null
             } catch (e: SecurityException) {
                 // Thrown by CameraX when CAMERA permission is revoked at runtime (Android 11+).
@@ -173,7 +178,8 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "GazeProvider.start() failed — camera permission revoked", e)
                 _gazeEnabled.value = false
                 _gazeState.value = GazeState.Paused
-                collectJob.cancel()
+                gazeStateCollectionJob?.cancel()
+                gazeStateCollectionJob = null
                 provider = null
             }
         }
@@ -183,6 +189,8 @@ class GazeViewModel(application: Application) : AndroidViewModel(application) {
         gazePausedByTts = false   // clear TTS flag so re-enable works cleanly
         _gazeEnabled.value = false
         _gazeState.value = GazeState.Paused
+        gazeStateCollectionJob?.cancel()
+        gazeStateCollectionJob = null
         viewModelScope.launch {
             try {
                 provider?.stop()
