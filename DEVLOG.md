@@ -1142,3 +1142,30 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Files:** EpubReaderViewModel.kt, GroupEFSecurityTest.kt
 - **Next:** Build environment setup → full test run.
 - **Blockers:** none
+
+## 2026-05-10T00:00Z — Sprint 23: connectedAndroidTest compile fixes + schema assets
+
+- **Did:** Fixed two compile errors in `DuplicateImportDbTest.kt` blocking
+  `connectedDebugAndroidTest`: (1) added missing `org.junit.Assert.assertNotNull`
+  import; (2) fixed `Double?` type mismatch — `progress!!.totalProgression` returns
+  `Double?` (nullable field), but `assertEquals(Double, Double, Double)` requires
+  non-null; fixed with `progress!!.totalProgression!!`.
+  Wired schema JSON files as androidTest assets in `build.gradle.kts`:
+  `sourceSets { getByName("androidTest").assets.srcDirs("$projectDir/schemas") }`.
+  Without this, `MigrationTestHelper.createDatabase()` throws
+  `FileNotFoundException: Cannot find the schema file in the assets folder` for
+  `AppDatabase/1.json` at runtime on device.
+  All 13 instrumented tests now pass on `Lectern_API36(AVD)`.
+  Phase 5 emulator security checks completed: D.4 (pkgFlags lacks ALLOW_BACKUP ✅),
+  J.6 (app data dir 700, no world-readable files ✅), D.3/J.2 (logcat gaze scan
+  empty ✅), J.4 (CAMERA grant+revoke round-trip clean ✅).
+- **Why:** `connectedDebugAndroidTest` had been blocked by compile errors introduced
+  when `assertNotNull` was added in a prior sprint without the import, and by the Room
+  testing helper requiring schema JSON on-device as assets (not just on the build host
+  in `app/schemas/`).
+- **Files:** app/build.gradle.kts,
+  app/src/androidTest/kotlin/com/straysouth/lectern/db/DuplicateImportDbTest.kt
+- **Next:** Physical-device-only deferred items (E.1 audio routing, F.3/H.2 Network
+  Profiler, J.4/J.5/J.6 runtime instrumentation); F.6 dependency verification before
+  V2 beta.
+- **Blockers:** none
