@@ -4,32 +4,36 @@ set -euo pipefail
 
 echo "=== Lectern Android preflight ==="
 
-echo "[1/7] Build..."
+echo "[1/8] Build..."
 ./gradlew assembleDebug --no-daemon --quiet
 echo "  PASS"
 
-echo "[2/7] Unit tests..."
+echo "[2/8] Unit tests..."
 ./gradlew testDebugUnitTest --no-daemon --quiet
 echo "  PASS"
 
-echo "[3/7] Detekt..."
+echo "[3/8] Detekt..."
 ./gradlew detekt --no-daemon --quiet
 echo "  PASS"
 
-echo "[4/7] ktlint..."
+echo "[4/8] ktlint..."
 ./gradlew ktlintCheck --no-daemon --quiet
 echo "  PASS"
 
-echo "[5/7] Banned strings..."
+echo "[5/8] Banned strings..."
 bash "$(dirname "$0")/check_banned_strings.sh"
 echo "  PASS"
 
-echo "[6/7] Gaze data leak..."
+echo "[6/8] Gaze data leak..."
 bash "$(dirname "$0")/check_gaze_data_leak.sh"
 echo "  PASS"
 
-echo "[7/7] Audio session ownership..."
+echo "[7/8] Audio session ownership..."
 bash "$(dirname "$0")/check_audio_session.sh"
+echo "  PASS"
+
+echo "[8/8] Banned dependencies..."
+bash "$(dirname "$0")/check_banned_deps.sh"
 echo "  PASS"
 
 echo ""
