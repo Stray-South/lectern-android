@@ -215,11 +215,19 @@ class GazeViewModel(
                 _calibrationUiState.value = CalibrationUiState.Done(result)
             } catch (e: IllegalArgumentException) {
                 Log.e(TAG, "Calibration failed", e)
-                _calibrationUiState.value = CalibrationUiState.CalibrationError(e.message ?: "Calibration failed")
+                // Do not surface e.message — third-party exception text bypasses RULES.md
+                // §AuDHD copy review. Diagnostic detail stays in Log.e above; user sees
+                // a fixed, vetted string. (kotlin.check failures throw with message
+                // "Check failed." which would otherwise display verbatim.)
+                _calibrationUiState.value = CalibrationUiState.CalibrationError(
+                    "Couldn't complete calibration. Try again.",
+                )
             } catch (e: IllegalStateException) {
                 // Thrown by ridge() when calibration data is degenerate (not positive definite).
                 Log.e(TAG, "Calibration failed — degenerate data", e)
-                _calibrationUiState.value = CalibrationUiState.CalibrationError(e.message ?: "Calibration failed")
+                _calibrationUiState.value = CalibrationUiState.CalibrationError(
+                    "Couldn't complete calibration. Try again.",
+                )
             }
         }
     }
