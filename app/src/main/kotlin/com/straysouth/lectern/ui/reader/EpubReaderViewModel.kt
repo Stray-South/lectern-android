@@ -97,7 +97,10 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // Stored on load so cleanUpTts() can persist the anchor without a bookId parameter.
     private var _bookId: String? = null
 
-    private var _ttsNavigator: AndroidTtsNav? = null
+    // @Volatile: read on the audio-focus thread via pauseTts() (invoked from
+    // AudioSessionCoordinator.onLoss); written on viewModelScope (Main).
+    // ADR-AND-A documents the cross-thread reception contract.
+    @Volatile private var _ttsNavigator: AndroidTtsNav? = null
     private var _ttsCollectionJob: Job? = null
     // Last sentence locator seen during TTS playback; persisted as anchor on stop.
     private var _lastUtteranceLocator: Locator? = null

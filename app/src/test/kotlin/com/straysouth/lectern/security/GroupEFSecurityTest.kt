@@ -512,6 +512,7 @@ class GroupEFSecurityTest {
                 val t = it.trimStart()
                 t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")
             }
+            .map { it.substringBefore("//") }
             .joinToString("\n")
 
     private fun manifestXml(): String {
