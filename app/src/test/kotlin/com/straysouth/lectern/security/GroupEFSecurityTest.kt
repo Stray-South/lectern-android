@@ -12,8 +12,9 @@ import java.io.File
  * Covers JVM-testable properties:
  *   E.1 — EpubReaderFragment.onStop() calls viewModel.pauseTts() (background-stop fix);
  *           EpubReaderViewModel.onCleared() calls cleanUpTts() (last-resort teardown);
- *           AudioFocusRequest (AUDIOFOCUS_GAIN_TRANSIENT) requested in startTts() and
- *           abandoned in cleanUpTts() so competing audio pauses during TTS (Sprint 20)
+ *           AudioFocusRequest (AUDIOFOCUS_GAIN_TRANSIENT) acquired and released via
+ *           AudioSessionCoordinator (ADR-AND-A) so competing audio pauses during TTS
+ *           (Sprint 20 invariants); VM does not call AudioManager directly (Sprint 24)
  *   E.2 — No annotation Room entity in V1; TTS reads Publication content only
  *   E.3 — RECORD_AUDIO and MODIFY_AUDIO_SETTINGS absent from Manifest
  *   E.4 — TtsUiState.EngineUnavailable emitted in ≥ 2 paths in startTts(); TtsBar
@@ -87,59 +88,78 @@ class GroupEFSecurityTest {
         )
     }
 
-    // ── E.1 (audio focus) — TTS requests and releases audio focus ──────────────
+    // ── E.1 (audio focus) — AudioSessionCoordinator is sole owner ──────────────
 
     /**
-     * Android TTS (`TextToSpeech.speak()`) does NOT automatically request audio focus.
-     * Readium's `TtsNavigator` explicitly delegates audio-focus management to the app.
-     * Without this fix, TTS plays at full volume on top of music with no ducking, and
-     * phone-call interruptions do not pause TTS.
-     *
-     * Two properties asserted:
-     *   1. [AudioManager.requestAudioFocus] appears in the [startTts] `onSuccess` block —
-     *      focus is requested immediately before playback begins.
-     *   2. [AudioManager.abandonAudioFocusRequest] appears in [cleanUpTts] — focus is
-     *      released when TTS stops so music apps resume at full volume.
-     *
-     * Grant type: `AUDIOFOCUS_GAIN_TRANSIENT` — TTS is spoken word; competing audio must
-     * pause, not merely duck. The resume path also re-requests focus after a transient loss.
+     * ADR-AND-A: `AudioSessionCoordinator` is the sole file permitted to call
+     * `AudioManager.requestAudioFocus` and `abandonAudioFocusRequest`. This test
+     * pins the Sprint 20 invariants (GAIN_TRANSIENT not MAY_DUCK; release on cleanup)
+     * at the coordinator boundary. The CI grep gate
+     * `scripts/check_audio_session.sh` enforces the sole-owner rule repo-wide.
      */
     @Test
-    fun tts_audioFocus_requestedOnStartAndAbandonedOnCleanUp() {
-        val source = sourceFile("ui/reader/EpubReaderViewModel.kt")
+    fun tts_audioFocus_ownedByAudioSessionCoordinator() {
+        val source = sourceFile("audio/AudioSessionCoordinator.kt")
 
-        // requestAudioFocus must be called inside startTts() onSuccess block
-        val startIdx = source.indexOf("fun startTts(")
-        assertTrue("startTts() not found in EpubReaderViewModel.kt", startIdx >= 0)
-        val startEnd = nextClassMemberIndex(source, startIdx)
-        val startBody = source.substring(startIdx, startEnd)
         assertTrue(
-            "EpubReaderViewModel.startTts() must call audioManager.requestAudioFocus() so " +
-                "music apps duck while TTS plays (E.1). Readium TtsNavigator does not manage " +
-                "audio focus internally — the app is responsible.",
-            startBody.contains("requestAudioFocus("),
+            "AudioSessionCoordinator must call audioManager.requestAudioFocus() — TTS " +
+                "playback requires explicit focus acquisition (ADR-AND-A, Sprint 20).",
+            source.contains("requestAudioFocus("),
         )
         // GAIN_TRANSIENT (not MAY_DUCK): TTS is spoken word. MAY_DUCK delivers
         // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK to competing apps, which our listener
         // ignores — both streams would play simultaneously. GAIN_TRANSIENT causes
         // competing audio to pause, preserving TTS intelligibility.
         assertTrue(
-            "startTts() must use AUDIOFOCUS_GAIN_TRANSIENT (not MAY_DUCK) — spoken-word " +
-                "TTS requires competing audio to pause, not merely duck. MAY_DUCK delivers " +
-                "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK which our listener does not handle (E.1)",
-            startBody.contains("AUDIOFOCUS_GAIN_TRANSIENT") &&
-                !startBody.contains("AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK"),
+            "AudioSessionCoordinator must use AUDIOFOCUS_GAIN_TRANSIENT (not MAY_DUCK) — " +
+                "spoken-word TTS requires competing audio to pause, not duck. MAY_DUCK " +
+                "delivers AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK which the listener does not " +
+                "handle (E.1 / Sprint 20).",
+            source.contains("AUDIOFOCUS_GAIN_TRANSIENT") &&
+                !source.contains("AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK"),
         )
-
-        // abandonAudioFocusRequest must be called inside cleanUpTts()
-        val cleanIdx = source.indexOf("private fun cleanUpTts(")
-        assertTrue("cleanUpTts() not found in EpubReaderViewModel.kt", cleanIdx >= 0)
-        val cleanEnd = nextClassMemberIndex(source, cleanIdx)
-        val cleanBody = source.substring(cleanIdx, cleanEnd)
         assertTrue(
-            "EpubReaderViewModel.cleanUpTts() must call abandonAudioFocusRequest() so music " +
-                "apps resume at full volume after TTS stops (E.1)",
-            cleanBody.contains("abandonAudioFocusRequest("),
+            "AudioSessionCoordinator must call abandonAudioFocusRequest() so music apps " +
+                "resume at full volume after TTS stops (E.1).",
+            source.contains("abandonAudioFocusRequest("),
+        )
+    }
+
+    /**
+     * ADR-AND-A: `EpubReaderViewModel` must not call `AudioManager` directly.
+     * It delegates to `AudioSessionCoordinator` for acquire/release. Direct calls
+     * in the VM would re-introduce the sole-owner violation that this ADR closes.
+     *
+     * The complementary CI gate `scripts/check_audio_session.sh` greps the whole
+     * `app/src/main/kotlin` tree; this unit-level assertion makes a VM-only
+     * regression a JVM-test failure too (belt + suspenders).
+     */
+    @Test
+    fun tts_viewModelDelegatesToAudioSessionCoordinator() {
+        // stripComments to avoid spurious failure if a future KDoc / inline comment
+        // references the forbidden token. Matches the pattern used by the F.3
+        // PublicationRepository tests.
+        val source = stripComments(sourceFile("ui/reader/EpubReaderViewModel.kt"))
+
+        assertFalse(
+            "EpubReaderViewModel must not call requestAudioFocus directly — route through " +
+                "AudioSessionCoordinator (ADR-AND-A).",
+            source.contains("requestAudioFocus("),
+        )
+        assertFalse(
+            "EpubReaderViewModel must not call abandonAudioFocus / abandonAudioFocusRequest " +
+                "directly — route through AudioSessionCoordinator (ADR-AND-A).",
+            source.contains("abandonAudioFocus"),
+        )
+        assertFalse(
+            "EpubReaderViewModel must not construct AudioFocusRequest.Builder directly — " +
+                "the coordinator owns request lifecycle (ADR-AND-A).",
+            source.contains("AudioFocusRequest"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must reference AudioSessionCoordinator — proving it " +
+                "delegates audio focus rather than ignoring it (ADR-AND-A).",
+            source.contains("AudioSessionCoordinator"),
         )
     }
 

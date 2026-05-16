@@ -19,6 +19,20 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - No `runBlocking` in production code paths
 - GazeProvider uses `Dispatchers.Default.limitedParallelism(1)`
 
+## Audio (ADR-AND-A)
+- `com.straysouth.lectern.audio.AudioSessionCoordinator` is the **sole** file
+  permitted to call `AudioManager.requestAudioFocus`,
+  `AudioManager.abandonAudioFocusRequest`, or construct `AudioFocusRequest.Builder`.
+- All other code routes audio-focus transitions through the coordinator
+  (`acquireForTts(onLoss)`, `reacquire()`, `release()`).
+- Direct `AudioManager` focus calls outside the coordinator fail
+  `scripts/check_audio_session.sh` and the JVM tests
+  `tts_audioFocus_ownedByAudioSessionCoordinator` +
+  `tts_viewModelDelegatesToAudioSessionCoordinator`.
+- Sprint 20 invariants are coordinator-internal:
+  `AUDIOFOCUS_GAIN_TRANSIENT` (not MAY_DUCK); return-value check;
+  resume re-acquires before `nav.play()`.
+
 ## Privacy (non-negotiable)
 - No telemetry SDK: no Firebase Analytics, Crashlytics (default),
   Mixpanel, Amplitude, Segment, Bugsnag, Datadog
