@@ -62,9 +62,8 @@ transitions for surfaces that do not exist.
 - `app/src/main/kotlin/com/straysouth/lectern/audio/AudioSessionCoordinator.kt`
 - `app/src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt` (delegates)
 - `RULES.md` §Audio
-- `scripts/check_audio_session.sh` (PR-C2 — not yet present at the time
-  this ADR is written; both ship together with this ADR landing first
-  and the script in a follow-up PR)
+- `scripts/check_audio_session.sh` (CI grep gate — see ADR-AND-A
+  §"Pinned by")
 
 ## Consequences
 

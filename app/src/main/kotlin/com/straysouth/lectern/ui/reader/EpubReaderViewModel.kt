@@ -205,6 +205,9 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 val granted = audioSession.acquireForTts(onLoss = ::pauseTts)
                 if (!granted) {
                     // Another app holds exclusive focus (e.g. active call) — don't start TTS.
+                    // Close the just-created navigator to release its TextToSpeech binding;
+                    // without this the engine binding leaks (nav is unreachable after return).
+                    nav.close()
                     return@onSuccess
                 }
                 _ttsNavigator = nav

@@ -163,6 +163,47 @@ class GroupEFSecurityTest {
         )
     }
 
+    /**
+     * Regression: when [audioSession.acquireForTts] returns false (e.g. an
+     * active phone call holds exclusive focus), the just-created [TtsNavigator]
+     * must be closed before `return@onSuccess`. Without the close, the
+     * navigator is GC-unreachable while its `TextToSpeech` system service
+     * binding remains live — a real leak surfaced by the Sprint 24
+     * AudioSessionCoordinator extraction audit.
+     */
+    @Test
+    fun tts_audioFocus_denied_closesNavigator() {
+        val source = stripComments(sourceFile("ui/reader/EpubReaderViewModel.kt"))
+        val startIdx = source.indexOf("fun startTts(")
+        assertTrue("startTts() not found in EpubReaderViewModel.kt", startIdx >= 0)
+        val startEnd = nextClassMemberIndex(source, startIdx)
+        val startBody = source.substring(startIdx, startEnd)
+
+        // Find the !granted block specifically — it is the only path that
+        // exits the onSuccess block without assigning nav to _ttsNavigator.
+        val deniedIdx = startBody.indexOf("if (!granted)")
+        assertTrue(
+            "startTts() must guard the focus-denied path with `if (!granted)` so the TTS " +
+                "navigator can be closed before return@onSuccess.",
+            deniedIdx >= 0,
+        )
+        // Within ~400 chars of the !granted guard, nav.close() must appear
+        // before return@onSuccess. 400 chars is generous — the entire block is
+        // ~5 lines in the canonical form.
+        val deniedWindow = startBody.substring(
+            deniedIdx,
+            minOf(deniedIdx + 400, startBody.length),
+        )
+        val closeIdx = deniedWindow.indexOf("nav.close()")
+        val returnIdx = deniedWindow.indexOf("return@onSuccess")
+        assertTrue(
+            "Focus-denied branch of startTts() must call nav.close() to release the TTS " +
+                "engine binding before return. Without this, the TtsNavigator (and its " +
+                "TextToSpeech service binding) leaks for the life of the process.",
+            closeIdx in 0 until returnIdx,
+        )
+    }
+
     // ── E.2 — No annotation feature in V1 ────────────────────────────────────
 
     /**
