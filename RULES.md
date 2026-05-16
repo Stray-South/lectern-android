@@ -9,7 +9,8 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - Zero ktlint errors on merge
 - No force-unwrap `!!` — use `requireNotNull(msg)` or `?.let`
 - No catching exceptions to silence them — fail loudly
-- No `println` / `Log.d` left in shipped code (debug builds OK)
+- No `println` / `Log.d` / `Log.v` left in shipped code (debug builds OK) —
+  enforced by `scripts/check_release_logging.sh`
 - No `TODO` / `FIXME` / `HACK` comments in non-test code
 
 ## Threading
@@ -34,9 +35,10 @@ CI enforces all of them. Zero exceptions without an ADR entry.
   resume re-acquires before `nav.play()`.
 
 ## Privacy (non-negotiable)
-- No telemetry SDK: no Firebase Analytics, Crashlytics (default),
-  Mixpanel, Amplitude, Segment, Bugsnag, Datadog
-- No analytics SDK in build.gradle.kts
+- No telemetry/analytics SDK: no Firebase (any module), Crashlytics,
+  Mixpanel, Amplitude, Segment, Bugsnag, Datadog, Sentry, AppsFlyer, Adjust
+- No analytics SDK in `app/build.gradle.kts` or `gradle/libs.versions.toml` —
+  enforced by `scripts/check_banned_deps.sh`
 - No raw gaze coordinates written to Room, DataStore, or any file
 - No Room entity names matching: face, eye, gaze, lookAt
 - Never annotate a `@Entity` class with `@Serializable` (KSP2 bug #1896 — use a separate DTO class)
@@ -52,7 +54,10 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 ## AuDHD copy
 - No streak, consecutive, wrong, incorrect, failed, missed,
   great job, keep it up, daily goal, 🔥, 🏆, ⭐ in strings.xml
-- CI grep enforced (matches lectern-ios check_banned_strings.sh)
+- Same tokens forbidden in `app/src/main/kotlin/**/*.kt` user-facing string
+  literals (word-bounded; `Log.*` and `Exception(...)` diagnostic lines and
+  comment lines exempted). Both passes enforced by
+  `scripts/check_banned_strings.sh`.
 - No therapeutic claims in any user-visible string
 
 ## Phase boundary
