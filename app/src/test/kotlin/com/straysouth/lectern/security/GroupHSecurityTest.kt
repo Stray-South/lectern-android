@@ -1,5 +1,6 @@
 package com.straysouth.lectern.security
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -232,6 +233,95 @@ class GroupHSecurityTest {
         )
     }
 
+    // ── H.5b — Only MainActivity is exported ─────────────────────────────────
+
+    /**
+     * Stronger version of H.5 (no exported ContentProvider): the launcher
+     * MainActivity is the only declared component with android:exported="true".
+     * Any future Service / BroadcastReceiver / additional Activity must be
+     * added with android:exported="false" and an explicit permission gate,
+     * with this test relaxed to allow the new exported component only after
+     * an ADR documents the entrypoint.
+     *
+     * Source-manifest only; AAR-contributed components on the merged manifest
+     * are not covered here (consistent with supply_mediapipe_sourceManifest_
+     * internetDeclaredOnce discipline — see GroupEFSecurityTest F.5).
+     */
+    @Test
+    fun platform_onlyMainActivityIsExported() {
+        val manifest = manifestXml()
+        // Match any component element (activity/service/receiver/provider)
+        // that carries android:exported="true". [^>]* spans newlines because
+        // newline ≠ '>' — Android manifests routinely declare attrs on
+        // separate lines.
+        val exportedComponentPattern = Regex(
+            "<(activity|service|receiver|provider)\\b[^>]*android:exported=\"true\"[^>]*>",
+        )
+        val exported = exportedComponentPattern.findAll(manifest).toList()
+        assertEquals(
+            "AndroidManifest.xml must declare exactly one exported component " +
+                "(the launcher MainActivity). Found ${exported.size}: " +
+                exported.joinToString("\n") { it.value.lineSequence().first().trim() },
+            1,
+            exported.size,
+        )
+        val element = exported.single().value
+        assertTrue(
+            "The single exported component must be the .MainActivity activity. " +
+                "Got: ${element.take(120)}",
+            element.contains(".MainActivity"),
+        )
+    }
+
+    // ── H.7 — No PendingIntent in main sources ───────────────────────────────
+
+    /**
+     * Fail-closed: V1 has no notifications, widgets, or alarms. Zero
+     * PendingIntent construction is the simplest enforceable posture.
+     *
+     * When a future feature legitimately requires PendingIntent (notification,
+     * AlarmManager, etc.), this test must be updated to assert
+     * PendingIntent.FLAG_IMMUTABLE co-presence in the same file. API 31+
+     * requires the mutability flag; without IMMUTABLE, a third-party app
+     * can hijack the intent by intercepting it before delivery.
+     *
+     * Pattern targets the five factory methods: getActivity, getActivities,
+     * getBroadcast, getService, getForegroundService. Imports like
+     * "import android.app.PendingIntent.FLAG_IMMUTABLE" do not match
+     * because they lack the "(" suffix.
+     */
+    @Test
+    fun platform_noPendingIntent_inMainSources() {
+        val mainSources = File("src/main/kotlin")
+        assertTrue(
+            "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
+            mainSources.exists(),
+        )
+        val factoryCalls = listOf(
+            "PendingIntent.getActivity(",
+            "PendingIntent.getActivities(",
+            "PendingIntent.getBroadcast(",
+            "PendingIntent.getService(",
+            "PendingIntent.getForegroundService(",
+        )
+        val violations = mainSources.walkTopDown()
+            .filter { it.extension == "kt" }
+            .filter { file ->
+                val stripped = stripComments(file.readText())
+                factoryCalls.any { stripped.contains(it) }
+            }
+            .map { it.name }
+            .toList()
+        assertTrue(
+            "No main-source file must construct a PendingIntent — V1 fail-closed " +
+                "posture (no notifications, widgets, or alarms). When PendingIntent " +
+                "is legitimately introduced, relax this test to assert FLAG_IMMUTABLE " +
+                "co-presence and document the entrypoint with an ADR (H.7):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
     // ── H.6 — FLAG_SECURE absent (intentional) ───────────────────────────────
 
     /**
@@ -294,4 +384,18 @@ class GroupHSecurityTest {
         )
         return file.readText()
     }
+
+    // Strips single-line comments (//), KDoc body lines (*), and block-comment
+    // openers (/*) from source before string checks. Mirrors the helper in
+    // GroupASecurityTest. Also strips inline comment tails via
+    // substringBefore("//") so that a token appearing only after a // on a
+    // code line does not count.
+    private fun stripComments(source: String): String =
+        source.lines()
+            .filterNot {
+                val t = it.trimStart()
+                t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")
+            }
+            .map { it.substringBefore("//") }
+            .joinToString("\n")
 }
