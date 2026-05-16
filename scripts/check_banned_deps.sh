@@ -29,7 +29,18 @@ for f in app/build.gradle.kts gradle/libs.versions.toml; do
     if [ ! -f "$f" ]; then
         continue
     fi
-    if grep -niE "$PATTERN" "$f"; then
+    # Strip Kotlin DSL (//) and TOML (#) comments before pattern match so
+    # a vendor name in a doc comment ("// rejected firebase per RULES.md")
+    # does not trigger a false-alarm CI failure. Block-comments and
+    # multi-line strings are not used in dep files in practice.
+    matches=$(awk '{
+        line = $0
+        sub(/\/\/.*/, "", line)
+        sub(/#.*/, "", line)
+        if (tolower(line) ~ pat) print FILENAME ":" NR ": " $0
+    }' pat="$PATTERN" FILENAME="$f" "$f")
+    if [ -n "$matches" ]; then
+        echo "$matches"
         echo "BANNED DEPENDENCY in $f"
         FOUND=1
     fi

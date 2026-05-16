@@ -10,7 +10,8 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - No force-unwrap `!!` — use `requireNotNull(msg)` or `?.let`
 - No catching exceptions to silence them — fail loudly
 - No `println` / `Log.d` / `Log.v` left in shipped code (debug builds OK) —
-  enforced by `scripts/check_release_logging.sh`
+  enforced by `scripts/check_release_logging.sh`. `Log.i` / `Log.w` / `Log.e`
+  remain allowed in main sources as legitimate diagnostic paths.
 - No `TODO` / `FIXME` / `HACK` comments in non-test code
 
 ## Threading
