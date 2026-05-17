@@ -50,8 +50,9 @@ the device.
 
 **3. Gaze overlay specifically (handoff §13).** The gaze focus band
 renders a calibrated pixel-Y position (per ADR-AND-L V1 design) — a
-derived display coordinate, not raw iris UV. Per ADR-AND-J, raw
-biometric data (iris UV, calibration weight vectors) never leaves
+derived display coordinate, not raw iris UV. Per ADR-AND-J (gaze
+ephemerality, on branch `docs/adr-and-backfill` until Track A merges),
+raw biometric data (iris UV, calibration weight vectors) never leaves
 `GazeProviderImpl` in-memory scope and is never persisted in a form
 that can be screenshotted. A screenshot of the overlay reveals
 "what part of the screen the user was looking at" — behavioral, not
@@ -92,7 +93,9 @@ architectural lift. The ADR is intentionally easy to reverse.
 ## Cross-references
 
 - ADR-AND-J — gaze ephemerality: raw biometric data never persists in
-  a form that could be screenshotted
+  a form that could be screenshotted. **Note:** ADR-AND-J currently
+  lives on branch `docs/adr-and-backfill` and is not yet on trunk;
+  the cross-reference resolves once that branch merges.
 - ADR-AND-L — Focus Band scope: gaze overlay is pixel-Y only, no
   semantic text correspondence; ADR-AND-R extends the "what is
   actually captured by a screenshot" analysis
