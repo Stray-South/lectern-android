@@ -1169,3 +1169,124 @@ Format: see .claude/skills/devlog/SKILL.md
   Profiler, J.4/J.5/J.6 runtime instrumentation); F.6 dependency verification before
   V2 beta.
 - **Blockers:** none
+
+## 2026-05-16T00:00Z — Sprint 24: Phase 1 gap closure (Sets 1-2)
+
+- **Did:** Closed 7 of 10 original Sev-2s from the cross-platform Android-parity
+  handoff inventory. Eight local branches across two stacks.
+
+  **Set 1 — Audio coordinator extraction + CI grep gate (4 commits, 2 branches):**
+  - `AudioSessionCoordinator.kt` extracted from `EpubReaderViewModel.kt`. Sole
+    owner of `AudioManager.requestAudioFocus` / `abandonAudioFocusRequest` /
+    `AudioFocusRequest.Builder`. Sprint 20 invariants preserved at the
+    coordinator boundary (AUDIOFOCUS_GAIN_TRANSIENT, granted-check, resume
+    re-acquire). Three new methods: `acquireForTts(onLoss)`, `reacquire()`,
+    `release()` (idempotent).
+  - `EpubReaderViewModel._ttsNavigator` annotated `@Volatile` — the `onLoss`
+    callback fires on the audio-focus thread and reads it cross-thread.
+  - `TtsNavigator` leak on focus-denied path fixed (`nav.close()` before
+    `return@onSuccess`); regression test
+    `tts_audioFocus_denied_closesNavigator` added.
+  - `GroupEFSecurityTest.tts_audioFocus_requestedOnStartAndAbandonedOnCleanUp`
+    rewritten into two tests: `tts_audioFocus_ownedByAudioSessionCoordinator`
+    + `tts_viewModelDelegatesToAudioSessionCoordinator`. `stripComments`
+    extended with inline-tail strip.
+  - `docs/adr/ADR-AND-A.md` formalises the sole-owner rule.
+  - `RULES.md §Audio` references the rule.
+  - `scripts/check_audio_session.sh` (repo-wide CI grep gate) — mirror of
+    iOS pattern. Wired into `preflight.sh` as step `[7/7]`.
+
+  **Set 2 — Four CI gates + RULES.md citations (5 commits, 4 branches):**
+  - `scripts/check_banned_deps.sh` — analytics/telemetry vendor ban
+    (Firebase, Crashlytics, Mixpanel, Amplitude, Segment, Bugsnag, Datadog,
+    Sentry, AppsFlyer, Adjust). Wired as preflight `[8/9]`.
+  - `scripts/check_release_logging.sh` — bans `Log.d` / `Log.v` / `println`
+    in main sources. Awk-based inline-comment strip; BSD-awk-compatible
+    regex (no `\<` word-boundary). One pre-existing Log.d at
+    `GazeProviderImpl.kt:70` removed (benign init-state log; state already
+    represented by `GazeState.Paused` field initializer). Wired as preflight
+    `[9/9]`.
+  - `scripts/check_banned_strings.sh` — extended with second pass scanning
+    `app/src/main/kotlin/**/*.kt` for word-bounded banned tokens. Log.* and
+    Exception(...) lines exempted (diagnostic). `GazeViewModel`
+    CalibrationError fallback string rephrased; `e.message ?:` channel
+    dropped entirely (kotlin.check failures throw "Check failed." — would
+    leak to user verbatim).
+  - `RULES.md` extended with citations to all three new scripts, vendor
+    list expanded to match script coverage.
+
+- **Why:** Phase 0 inventory identified the audio coordinator (Sev-2 #2),
+  4 CI gates (Sev-2 #4/#5/#6), and citation gaps. Closes them.
+- **Tests:** 87 → 88 (regression test on TtsNavigator leak fix).
+- **Files:** AudioSessionCoordinator.kt (new); EpubReaderViewModel.kt;
+  GazeProviderImpl.kt; GazeViewModel.kt; GroupEFSecurityTest.kt;
+  ADR-AND-A.md (new); RULES.md; preflight.sh + 3 new scripts in scripts/.
+- **Adversarial findings closed during this sprint:** BSD-awk
+  incompatibility, e.message channel leak (kotlin.check "Check failed."),
+  ADR-AND-A forward-reference cleanup, TtsNavigator focus-denied leak,
+  comment-stripping in deps script, Log.i ambiguity in RULES.md.
+- **Next:** Set 3 contract tests; Set 4 FLAG_SECURE ADR; Set 5 repo
+  hygiene.
+- **Blockers:** none. Local-only; nothing pushed.
+
+## 2026-05-17T00:00Z — Sprint 25: Phase 1 closure (Sets 3-5)
+
+- **Did:** Closed remaining Phase 0 inventory items. 7 commits, 4 branches.
+
+  **Set 3 — Contract tests (3 commits, 2 branches):**
+  - `epub_noJavascriptInterface_inMainSources` in GroupASecurityTest —
+    mirror of `epub_noDirectEvaluateJavascript_inMainSources`; bans
+    `WebView.addJavascriptInterface()` in `app/src/main/kotlin`.
+  - `platform_onlyMainActivityIsExported` in GroupHSecurityTest —
+    stronger version of `platform_noContentProviderExported`; asserts
+    exactly one `android:exported="true"` element in source manifest,
+    that element being `.MainActivity`.
+  - `platform_noPendingIntent_inMainSources` in GroupHSecurityTest —
+    fail-closed (V1 has no notifications/widgets/alarms); will need
+    relaxation to `FLAG_IMMUTABLE` co-presence when first PendingIntent
+    is legitimately introduced.
+  - `GroupIJSecurityTest.stripComments` harmonised with inline-tail strip
+    (chokepoint fix per `feedback_chokepoint_over_per_instance` —
+    closed a recurring 3-audit Sev-2 finding).
+  - Tests 88 → 91.
+
+  **Set 4 — FLAG_SECURE ADR (2 commits, 1 branch):**
+  - `docs/adr/ADR-AND-R.md` formalises the FLAG_SECURE-absent decision
+    that was previously documented only in `GroupHSecurityTest.kt:327-335`
+    KDoc and `docs/security/RED-TEAM.md §H.6`. Three rationales
+    (accessibility regression risk, V1 threat model, gaze overlay) +
+    V2 reconsideration triggers (private annotation, login, encrypted
+    content, third-party-confidential display, foreground service).
+  - `RULES.md §Privacy` cites the ADR + existing test.
+
+  **Set 5 — Repo hygiene (4 commits, 3 branches):**
+  - `MANIFEST.md` (top-level project navigation table) — repo files, ADR
+    registry (3 trunk-reachable + 15 in-flight on parallel branches),
+    CI script registry, 8 security test groups (91 unit + 6 instrumented).
+  - `memory-bank/{01..06}.md` — project brief, product context, system
+    patterns (Compose + Readium + Room + CameraX/MediaPipe + TTS),
+    tech context (verbatim versions), active context (Sets 1-5 state),
+    progress (shipped features + test citations).
+  - `.claude/surgical-engineer.md` — Android adaptation of iOS working-
+    mode doc (4-phase Research → Plan → Act → Verify, tool discipline,
+    anti-theatre rules, BSD-vs-gawk lesson, 9-gate preflight DoD,
+    full bot-review fix chain).
+  - `java_pid50481.hprof` (602 MB working-tree heap dump, never tracked)
+    deleted. `.gitignore` clarified with explanatory comment.
+
+- **Why:** Phase 0 inventory items #7/#8/#9/#10/#11/#12/#15 closed.
+- **Tests:** 91 / 0 failures throughout — no test regressions across
+  Sprint 24-25 work. Preflight 9/9 green at every commit boundary.
+- **Files:** GroupASecurityTest.kt; GroupHSecurityTest.kt;
+  GroupIJSecurityTest.kt; ADR-AND-R.md (new); RULES.md; MANIFEST.md
+  (new); memory-bank/ (new dir, 6 files); .claude/surgical-engineer.md
+  (new); .gitignore.
+- **Adversarial findings closed during this sprint:** ADR-AND-J
+  dangling cross-reference annotation; DataStore store-count error
+  (5 → 8 corrected); CalibrationResult field-type description
+  (`DoubleArray` not `Float`); foreground-service attribution in
+  06-progress.md backed by an ADR-AND-R V2 trigger addition.
+- **Next:** Push order decision; cross-branch doc cleanup PR after
+  Track A merges (ADR-AND-B §"Known gap" closure, ADR-AND-I citation,
+  ADR-AND-N §"Known gap" closure, RULES.md §"Gaze data" label fix).
+- **Blockers:** none. 14 local branches; nothing pushed.

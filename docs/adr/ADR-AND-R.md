@@ -69,6 +69,10 @@ relevant Activity or Window:
 - Encrypted-content reading surface (DRM-protected publications)
 - Third-party-confidential display (preview of unpublished material,
   reviewer copies, etc.)
+- Foreground service with a persistent notification — the notification
+  shade is visible in screenshots; if its content reflects reading
+  state (current book, gaze indicator, etc.) the screenshot-capture
+  threat surface widens
 
 Adding FLAG_SECURE later is a one-line
 `getWindow().setFlags(FLAG_SECURE, FLAG_SECURE)` per Activity; no

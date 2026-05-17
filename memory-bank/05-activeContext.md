@@ -14,7 +14,7 @@
 
 ## In-flight Phase 1 work (post-handoff gap closure)
 
-**11 local branches**, none pushed, organized in 4 sets + Set 5 docs.
+**14 local branches**, none pushed, organized in 4 sets + Set 5 docs.
 
 ### Track A — Standalone ADR docs (parallel to Track B/C)
 
