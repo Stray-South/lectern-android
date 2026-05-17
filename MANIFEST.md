@@ -26,13 +26,18 @@ Mirrors `lectern-ios/MANIFEST.md` adapted for the Android codebase.
 
 ## ADR registry
 
-### Reachable on trunk (or current Set 4+5 stack)
+Letters used: A through R (no S+ yet).
+
+### Currently on disk in this branch / stack
 
 - `docs/adr/ADR-AND-A.md` — AudioSessionCoordinator sole-owner
+  (added on `refactor/audio-session-coordinator`, present on Set 4+5 stack)
 - `docs/adr/ADR-AND-L.md` — Focus Band scope / WebView limitation
+  (already on trunk)
 - `docs/adr/ADR-AND-R.md` — FLAG_SECURE absence
+  (added on `docs/adr-and-r-flag-secure`, present on Set 4+5 stack)
 
-### In-flight on parallel branches (not yet merged to trunk)
+### Not on disk in this branch — live on parallel un-merged branches
 
 - `docs/adr/ADR-AND-E.md` — Gaze stack: MediaPipe-on-RGB
   (branch: `docs/adr-and-e-gaze-stack`)

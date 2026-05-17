@@ -40,9 +40,10 @@ product goal.
 
 - All user data persists locally (Room + DataStore). No cloud in V1.
 - Gaze biometric data (iris UV, raw frames) is in-memory only —
-  only the 13-double `CalibrationResult` weight vector ever reaches
-  disk, and that goes to app-private DataStore excluded from cloud
-  backup and D2D transfer.
+  only the derived `CalibrationResult` (two 6-element `DoubleArray`
+  weight vectors + one `Float` mean error) ever reaches disk, and
+  that goes to app-private DataStore excluded from cloud backup
+  and D2D transfer.
 - `allowBackup = false` in `AndroidManifest.xml`.
 - Camera permission gated at runtime (front camera not required at
   install).

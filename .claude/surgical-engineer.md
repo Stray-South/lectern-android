@@ -142,7 +142,7 @@ Each gate has a planted-violation negative test verifying detection. When adding
 | Confident wrong answers | Cite `file:line`. Don't claim code behavior without reading the actual file. |
 | Stale memory references | Verify the file/function/flag exists before using it in a recommendation. |
 | Self-review theatre | Dispatch `Agent(code-reviewer)` for non-trivial work. Skip the claim if no review happened. |
-| Test counts paraphrased | Show actual output. "All 91 pass" needs the line "TOTAL=91" from the test-results XML or `tests="91"` from gradle. |
+| Test counts paraphrased | Show actual output. "All 91 pass" needs either the `tests="91"` attribute from `app/build/test-results/testDebugUnitTest/TEST-*.xml`, or a `TOTAL=N` line from an awk summariser over those XML files. Bare claims without one of those don't count. |
 | Tool errors hidden in summary | If a command fails, surface it. Don't bury it in a "next steps" line. |
 | BSD vs gawk regex incompatibility | `\<` / `\>` word boundaries are gawk-only — macOS dev machines ship BSD awk. Use explicit `(^\|[^A-Za-z0-9_])...([^A-Za-z0-9_]\|$)` instead. |
 

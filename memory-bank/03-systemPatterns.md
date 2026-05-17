@@ -24,7 +24,10 @@
 
 ## DataStore preferences
 
-- 5 stores: typography, tts, focusBand, anchor, calibration
+- 8 stores (one `preferencesDataStore` per concern):
+  `typography_prefs`, `tts_prefs`, `focus_band_prefs`, `anchor_prefs`,
+  `calibration_prefs`, `reader_prefs` (locator), `comics_page_prefs`,
+  `pdf_page_prefs`
 - All excluded from cloud backup via `data_extraction_rules.xml`
   `<cloud-backup>` blanket exclusion
 - Calibration store + tts speed prefs additionally excluded from D2D
@@ -60,8 +63,9 @@ description.
   GPU delegate, model from `app/src/main/assets/face_landmarker.task`
 - Raw `Bitmap` frames + iris UV are in-memory only — never logged, never
   persisted (`gaze_rawIrisUV_neverLoggedInFullGazeModule`)
-- Only the 13-double `CalibrationResult` (6-float weightsX + 6-float
-  weightsY + 1 meanErrorPx) persists, to DataStore at
+- Only the derived `CalibrationResult` persists — two `DoubleArray(6)`
+  ridge-regression weight vectors (`weightsX`, `weightsY`) plus a single
+  `Float meanErrorPx` — written to DataStore at
   `files/datastore/calibration_prefs.preferences_pb`
 - 6-feature ridge regression `[u, v, u², v², uv, 1]`, λ = 1e-4, EJML solver
 - LOO-CV mean error reported (not in-sample residual)
