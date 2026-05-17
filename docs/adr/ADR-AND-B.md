@@ -42,6 +42,13 @@ with awk-based comment stripping (BSD-compatible) and an allowlist for
 the security-test source set. Two real `.kt` violations were fixed in
 the same commit.
 
+> **Cross-branch note:** Sprint 2 (`752f00e`) introduced a basic
+> `find`-loop `.kt` scan; `aa5b203` (Sprint 24 Set 2 PR-F) added the
+> awk comment-stripping + test allowlist that fully closes this gap.
+> The referenced commit lives on the Track C stack
+> (`ci/banned-strings-extend-kotlin`); reachable on trunk only after
+> the Track C stack merges.
+
 ## Code markers
 
 - `scripts/check_banned_strings.sh`

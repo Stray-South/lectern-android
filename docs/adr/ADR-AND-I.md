@@ -49,7 +49,9 @@ silently — see ADR-AND-N.
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/BlockingHttpClient.kt`
 - `scripts/check_banned_deps.sh` — preflight gate enforcing Decision §3
   (no analytics / telemetry / crash-reporting SDK in `app/build.gradle.kts`
-  or `gradle/libs.versions.toml`).
+  or `gradle/libs.versions.toml`). Added in Sprint 24 Set 2 on the
+  Track C stack (`ci/banned-deps-grep-gate`, `7cb07cc`); reachable on
+  trunk only after the Track C stack merges.
 
 ## Consequences
 
