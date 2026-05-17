@@ -1310,7 +1310,8 @@ Format: see .claude/skills/devlog/SKILL.md
   - `DEVLOG.md` — this entry.
 
   **Branch 2 — `docs/cleanup-track-a-side`** (off `docs/adr-and-backfill`,
-  ships after Track A merges to trunk):
+  carries Track A's 14 ADRs + 3 closure notes; ships after the Track C
+  stack lands on trunk so the cited tests/scripts are reachable):
   - `docs/adr/ADR-AND-B.md §Known gap` — closure note pointing to
     `aa5b203` (`ci/banned-strings-extend-kotlin`, Sprint 24 Set 2 PR-F).
   - `docs/adr/ADR-AND-I.md §Code markers` — citation added for
