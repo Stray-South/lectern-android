@@ -83,6 +83,11 @@ would not fail CI.~~
 sites with comment-stripping (mirrors the
 `epub_noDirectEvaluateJavascript_inMainSources` pattern).
 
+> **Cross-branch note:** The referenced test lives on the Track C
+> stack (`tests/no-javascript-interface` onward). This closure
+> citation becomes reachable on trunk only after the Track C stack
+> merges. Pre-merge order: Track A → Track C stack → this PR.
+
 ## Consequences
 
 - The WebView cannot reach the internet, the device filesystem
