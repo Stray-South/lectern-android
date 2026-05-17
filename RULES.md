@@ -45,6 +45,9 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - Never annotate a `@Entity` class with `@Serializable` (KSP2 bug #1896 — use a separate DTO class)
 - Calibration weights: DataStore only, allowBackup = false
 - allowBackup = false in AndroidManifest.xml — no exceptions
+- `FLAG_SECURE` NOT applied to any Activity / Window in V1 — see ADR-AND-R
+  for the accessibility-vs-screen-capture trade-off; pinned by
+  `GroupHSecurityTest.platform_flagSecureAbsent_screenshotsPermitted`
 
 ## Accessibility
 - Every `@Composable` screen has a `semantics {}` block
