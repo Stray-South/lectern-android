@@ -71,13 +71,17 @@ on every load:
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/BlockingHttpClient.kt`
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/PublicationRepository.kt`
 
-## Known gap (adjacent candidate)
+## Known gap (CLOSED — Sprint 25 Set 3 PR-G, `106e8b9`)
 
-`WebView.addJavascriptInterface` is not currently pinned by a test.
+~~`WebView.addJavascriptInterface` is not currently pinned by a test.
 Grep confirms zero usages in main sources today, but a future addition
-would not fail CI. Tracked as a separate test PR
-(`epub_noJavascriptInterface_inMainSources`, mirroring the
-`evaluateJavascript` scan).
+would not fail CI.~~
+
+**Status:** CLOSED by `tests/no-javascript-interface` (`106e8b9`).
+`GroupASecurityTest.epub_noJavascriptInterface_inMainSources` walks
+`app/src/main/kotlin` and asserts zero `addJavascriptInterface(` call
+sites with comment-stripping (mirrors the
+`epub_noDirectEvaluateJavascript_inMainSources` pattern).
 
 ## Consequences
 

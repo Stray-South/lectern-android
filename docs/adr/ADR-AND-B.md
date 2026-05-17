@@ -30,12 +30,17 @@ A separate unit test, `GroupGSecurityTest.audhd_stringsXml_noBannedCopy`,
 re-runs the equivalent check in-process so the gate fails at the JVM
 test layer even if the shell script is bypassed.
 
-## Known gap
+## Known gap (CLOSED — Sprint 24 Set 2 PR-F, `aa5b203`)
 
-The script scans only `res/values/*.xml`. Compose `Text("…")` literals
-and string constants in `.kt` source are not currently scanned. This
-gap is tracked separately and will be closed by extending the script
-to `app/src/main/kotlin/**/*.kt` with a small allowlist for tests.
+~~The script scans only `res/values/*.xml`. Compose `Text("…")` literals
+and string constants in `.kt` source are not currently scanned.~~
+
+**Status:** CLOSED by `ci/banned-strings-extend-kotlin` (`aa5b203`).
+`check_banned_strings.sh` now performs a two-pass scan: XML files in
+`res/values/*.xml` and Kotlin sources in `app/src/main/kotlin/**/*.kt`
+with awk-based comment stripping (BSD-compatible) and an allowlist for
+the security-test source set. Two real `.kt` violations were fixed in
+the same commit.
 
 ## Code markers
 

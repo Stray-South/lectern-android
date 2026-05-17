@@ -47,6 +47,9 @@ silently — see ADR-AND-N.
 - `gradle/libs.versions.toml`
 - `app/src/main/AndroidManifest.xml`
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/BlockingHttpClient.kt`
+- `scripts/check_banned_deps.sh` — preflight gate enforcing Decision §3
+  (no analytics / telemetry / crash-reporting SDK in `app/build.gradle.kts`
+  or `gradle/libs.versions.toml`).
 
 ## Consequences
 
