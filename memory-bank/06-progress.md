@@ -167,7 +167,9 @@ Trunk-side (`docs/cleanup-trunk-side`, ships immediately):
 - `05-activeContext.md` §Open questions q2 marked closed.
 - `DEVLOG.md` Sprint 26 entry describing both halves of the cleanup.
 
-Track-A-side (`docs/cleanup-track-a-side`, ships after Track A merges):
+Track-A-side (`docs/cleanup-track-a-side`, built on `docs/adr-and-backfill`
+so it carries Track A's 14 ADRs; ships after the Track C stack lands on
+trunk so the cited tests/scripts are reachable):
 
 - `ADR-AND-B.md` §"Known gap" — closure note pointing to `aa5b203`
   (`ci/banned-strings-extend-kotlin`, Sprint 24 Set 2 PR-F).

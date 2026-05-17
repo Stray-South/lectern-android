@@ -74,7 +74,9 @@ close in Set 5 PR-M.
    trivially once ADR-AND-A/E/etc references resolve on trunk.
 2. ~~**Cross-branch doc cleanup PR**~~ — **CLOSED 2026-05-17 (Sprint 26):**
    split into `docs/cleanup-trunk-side` (ships immediately) and
-   `docs/cleanup-track-a-side` (ships after Track A merges). See
+   `docs/cleanup-track-a-side` (built on `docs/adr-and-backfill`,
+   carries Track A's 14 ADRs + 3 closure notes; ships after the
+   Track C stack lands on trunk so cited tests/scripts are reachable). See
    `06-progress.md §Cross-branch follow-ups`.
 
 ## Recent ADR landings (since the last DEVLOG digest)
