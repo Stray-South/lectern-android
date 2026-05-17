@@ -86,7 +86,9 @@ sites with comment-stripping (mirrors the
 > **Cross-branch note:** The referenced test lives on the Track C
 > stack (`tests/no-javascript-interface` onward). This closure
 > citation becomes reachable on trunk only after the Track C stack
-> merges. Pre-merge order: Track A → Track C stack → this PR.
+> merges. Pre-merge order: Track C stack → this PR (this PR is
+> built on `docs/adr-and-backfill` and carries Track A's 14 ADRs
+> together with the 3 closure notes).
 
 ## Consequences
 
