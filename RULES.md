@@ -70,7 +70,7 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - No mediapipe/opencv/mlkit in build.gradle.kts until Sprint 5+
 - No Supabase dependency until V2 sync design is approved
 
-## Gaze data (ADR-AND-H equivalent)
+## Gaze data (ADR-AND-J equivalent)
 - No write path to Room, DataStore, or network for raw gaze coords
 - Calibration: DataStore<Preferences> with allowBackup = false
 - CI grep: no Room entity or DataStore key matching face|eye|gaze|lookAt

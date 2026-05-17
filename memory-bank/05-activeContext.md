@@ -72,9 +72,10 @@ close in Set 5 PR-M.
 1. **Push order** — Track A first (docs) or Track B+C first (code)?
    Recommendation: A first, then B/C — docs land cleanly; code rebases
    trivially once ADR-AND-A/E/etc references resolve on trunk.
-2. **Cross-branch doc cleanup PR** — After Track A merges, several
-   "dangling reference" annotations in ADR-AND-R and `memory-bank/`
-   can be removed in a follow-up doc PR.
+2. ~~**Cross-branch doc cleanup PR**~~ — **CLOSED 2026-05-17 (Sprint 26):**
+   split into `docs/cleanup-trunk-side` (ships immediately) and
+   `docs/cleanup-track-a-side` (ships after Track A merges). See
+   `06-progress.md §Cross-branch follow-ups`.
 
 ## Recent ADR landings (since the last DEVLOG digest)
 
