@@ -12,6 +12,7 @@ Mirrors `lectern-ios/MANIFEST.md` adapted for the Android codebase.
 | Project README | `README.md` | Stack summary + dev commands |
 | Working-mode rules | `.claude/surgical-engineer.md` | 4-phase Research → Plan → Act → Verify workflow |
 | RED-TEAM coverage | `docs/security/RED-TEAM.md` | Security & adversarial test surface map |
+| V2 scope plan | `docs/plans/v2-scope.md` | Scoping for 9 deferred V2 features + ADR-AND-S+ slot reservations |
 
 ## Memory bank
 

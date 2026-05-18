@@ -1340,3 +1340,48 @@ Format: see .claude/skills/devlog/SKILL.md
   V2 planning research (deferred items in `06-progress.md §Deferred V2+`);
   pre-push hygiene sweep.
 - **Blockers:** none. 16 local branches (added 2); nothing pushed.
+
+## 2026-05-17T00:00Z — Sprint 27: V2 scope plan
+
+- **Did:** Wrote `docs/plans/v2-scope.md` — scoping doc for the 9
+  deferred V2 features tracked in `memory-bank/06-progress.md
+  §Deferred (V2+)`. Followed Research → Plan → Execute → Adversarial
+  Review loop per `.claude/surgical-engineer.md`.
+
+  **Doc structure:**
+  - Conventions (4 rules establishing V2 precedent — esp. "one new
+    ADR per V2 feature, V1 ADRs are immutable history")
+  - ADR slot reservations: S=Cloud sync, T=Annotations, U=STT,
+    V=DRM/LCP, W=Foreground service
+  - 9 feature scope cards (uniform template): summary, iOS parity,
+    new surfaces, V1 ADRs in play, V1 tests affected,
+    FLAG_SECURE triggers, dependencies, ADR-needed test, T-shirt
+    size, open questions
+  - Dependency graph
+  - Cross-cutting risk register (5 risks, all with mitigation surface)
+  - Out-of-scope clarifications (Focus Band V2 = V3 per ADR-AND-L;
+    LLM stays forbidden; multi-user is V3)
+  - Maintenance notes for future contributors
+
+  **F5 envelope-consumer (V2.5):** committed to TBD stub with 4
+  explicit owner questions blocking scope. Only repo reference is
+  `06-progress.md:137-138`; no iOS-side ADR found.
+
+- **Why:** V2 work is currently uncatalogued except as a 9-bullet
+  list. Without a scoping doc, the first V2 feature to ship has to
+  re-derive: which ADR slot it claims, which V1 tests it replaces,
+  whether FLAG_SECURE triggers fire, what dependencies it has.
+- **Cascade addressed in plan:** ADR forward-ref drift (I and J both
+  point at "ADR-AND-S+"); FLAG_SECURE helper-extraction precedent
+  (4 V2 features fire the same trigger); test-gate replacement (not
+  relaxation) discipline; cross-branch readability (this branch is
+  off `chore/hprof-cleanup`, references Track A ADRs by name).
+- **Tests:** 91 / 0 failures. Preflight 9/9 green. Doc-only; zero
+  source change.
+- **Files:** docs/plans/v2-scope.md (new, ~440 lines), MANIFEST.md,
+  memory-bank/06-progress.md, DEVLOG.md.
+- **Next:** Adversarial review of the V2 scope doc per Sets 1-5
+  pattern. After DoD: Pre-push hygiene sweep (item C from earlier
+  plan).
+- **Blockers:** F5 envelope-consumer scope blocked on owner input
+  (4 questions in §V2.5). All other V2 items scoped.

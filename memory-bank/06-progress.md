@@ -130,18 +130,23 @@ Status key: ✅ shipped & tested · 🚧 in progress · 🔲 deferred (V2+)
 
 ## Deferred (V2+) 🔲
 
-- Cloud sync (Supabase planned)
-- Annotations (highlights, notes)
-- Retrieval / spaced repetition
-- RSVP reader
-- F5-class envelope-consumer features (paragraph tint, focus vignette,
-  gaze-TTS soft pause)
-- A11y V2 (chapter rotor with heading levels)
-- STT captions (would require `RECORD_AUDIO` permission, currently
-  forbidden by `tts_noMicrophonePermissionRequested`)
-- DRM / Readium LCP adapter
-- Foreground service (any introduction would require FLAG_SECURE
-  re-evaluation per ADR-AND-R V2 trigger list)
+Full scoping in [`docs/plans/v2-scope.md`](../docs/plans/v2-scope.md)
+(Sprint 27). Summary list retained here for grep-discoverability:
+
+- V2.1 Cloud sync (Supabase planned) — ADR-AND-S
+- V2.2 Annotations (highlights, notes) — ADR-AND-T
+- V2.3 Retrieval / spaced repetition — ADR optional
+- V2.4 RSVP reader — ADR optional
+- V2.5 F5-class envelope-consumer features (paragraph tint, focus
+  vignette, gaze-TTS soft pause) — **TBD, needs owner scope**
+- V2.6 A11y V2 (chapter rotor with heading levels) — ADR optional
+- V2.7 STT captions (`RECORD_AUDIO` permission; reverses
+  `tts_noMicrophonePermissionRequested`) — ADR-AND-U
+- V2.8 DRM / Readium LCP adapter — ADR-AND-V
+- V2.9 Foreground service (`ADR-AND-R` V2 trigger 5 fires) — ADR-AND-W
+
+Focus Band V2 (line-level gaze highlight) is **V3 per `ADR-AND-L`**,
+not V2. Listed there, not here.
 
 ## Recent material fix-ups (cross-set)
 
