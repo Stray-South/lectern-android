@@ -1378,7 +1378,7 @@ Format: see .claude/skills/devlog/SKILL.md
   off `chore/hprof-cleanup`, references Track A ADRs by name).
 - **Tests:** 91 / 0 failures. Preflight 9/9 green. Doc-only; zero
   source change.
-- **Files:** docs/plans/v2-scope.md (new, ~440 lines), MANIFEST.md,
+- **Files:** docs/plans/v2-scope.md (new, ~516 lines), MANIFEST.md,
   memory-bank/06-progress.md, DEVLOG.md.
 - **Next:** Adversarial review of the V2 scope doc per Sets 1-5
   pattern. After DoD: Pre-push hygiene sweep (item C from earlier

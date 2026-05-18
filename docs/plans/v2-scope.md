@@ -22,8 +22,13 @@ an implementation plan — each feature ships behind its own ADR.
 
 ## Conventions established by this doc
 
-1. **One new ADR per V2 feature.** V1 ADRs are immutable history;
-   V2 work does not amend `ADR-AND-{A..R}`, it adds `ADR-AND-S+`.
+1. **One new ADR per V2 feature that introduces a new constraint,
+   permission, network surface, or reverses a fail-closed V1 test.**
+   V1 ADRs are immutable history; V2 work does not amend
+   `ADR-AND-{A..R}`, it adds `ADR-AND-S+`. Features that don't meet
+   the constraint/permission/surface/test-reversal bar may ship with
+   a DEVLOG entry only (per-card "ADR needed?" answers below
+   indicate which features fall in each bucket).
 2. **ADR slot reservations are reservable, not committed.** The
    letter assignments below indicate intent; if the implementation
    order differs, slots reassign in the order they are actually
@@ -246,7 +251,7 @@ external `.txt` ingest separate from Readium).
 **TBD — needs scope from owner.**
 
 The only reference to "F5-class envelope-consumer" in this repo is
-`06-progress.md:137-138`:
+`06-progress.md:140-141`:
 
 > - F5-class envelope-consumer features (paragraph tint, focus vignette,
 >   gaze-TTS soft pause)
