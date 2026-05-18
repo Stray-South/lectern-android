@@ -1434,7 +1434,7 @@ Format: see .claude/skills/devlog/SKILL.md
             │      └─ docs/cleanup-track-a-side  (3 commits)
             └─ refactor/audio-session-coordinator → … → chore/hprof-cleanup
                     └─ docs/cleanup-trunk-side  (3 commits)
-                          └─ docs/v2-scope        (4 commits)  ← NEW STACK POINT
+                          └─ docs/v2-scope        ← NEW STACK POINT (post-rebase)
   ```
 
   Recommended merge order to trunk:
