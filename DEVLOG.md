@@ -1365,7 +1365,7 @@ Format: see .claude/skills/devlog/SKILL.md
 
   **F5 envelope-consumer (V2.5):** committed to TBD stub with 4
   explicit owner questions blocking scope. Only repo reference is
-  `06-progress.md:137-138`; no iOS-side ADR found.
+  `06-progress.md:140-141`; no iOS-side ADR found.
 
 - **Why:** V2 work is currently uncatalogued except as a 9-bullet
   list. Without a scoping doc, the first V2 feature to ship has to
