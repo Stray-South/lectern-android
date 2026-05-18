@@ -1385,3 +1385,65 @@ Format: see .claude/skills/devlog/SKILL.md
   plan).
 - **Blockers:** F5 envelope-consumer scope blocked on owner input
   (4 questions in §V2.5). All other V2 items scoped.
+
+## 2026-05-18T00:00Z — Sprint 28: Pre-push hygiene sweep
+
+- **Did:** Ran a defensive pre-push sweep across all 17 plan-relevant
+  branches.
+
+  **Checks performed:**
+  - Working-tree cleanliness on every branch: 0 dirty files
+  - Preflight at 6 relevant tips (`docs/v2-scope`,
+    `docs/cleanup-trunk-side`, `docs/cleanup-track-a-side`,
+    `chore/hprof-cleanup`, `docs/adr-and-backfill`,
+    `sprint/14-calibration-entry-point`): all green
+  - Track A vs Track B/C file overlap analysis: zero overlap —
+    conflict-free
+  - Merge-conflict prediction via `git merge-tree`: one risk
+    surfaced (DEVLOG.md sibling-branch conflict between Sprint 26
+    and Sprint 27 entries)
+  - Build-artifact search (`.hprof`, etc.) in tree: none
+
+  **Action taken (with user authorization):**
+  Rebased `docs/v2-scope` from off `chore/hprof-cleanup` onto
+  `docs/cleanup-trunk-side`. Sprint 26 and Sprint 27 DEVLOG entries
+  are now chronological (25 → 26 → 27) instead of sibling-branch
+  appends that would collide at merge time. Conflict resolved
+  manually during rebase: kept both Sprint entries verbatim. All
+  three v2-scope commits replayed cleanly at new SHAs (`f8faaa7`,
+  `86a1522`, `010f815`).
+
+  **Post-rebase verification:**
+  - `git merge-base --is-ancestor docs/cleanup-trunk-side
+    docs/v2-scope`: YES (fast-forward ready)
+  - Sequential merge prediction (trunk ← cleanup-trunk-side,
+    then trunk ← v2-scope): both steps clean
+  - Preflight on new `docs/v2-scope` tip: 9/9 green
+
+- **Why:** Sibling-branch topology was about to force a manual
+  conflict resolution at the first push window. Rebasing put the
+  Sprint entries in the order they were authored.
+- **Tests:** 91 / 0 failures. Preflight 9/9 green.
+- **Topology snapshot post-rebase:**
+
+  ```
+   sprint/14-calibration-entry-point  (trunk)
+            │
+            ├─ docs/adr-and-e-gaze-stack       (Track A, 1 commit)
+            ├─ docs/adr-and-backfill           (Track A, 1 commit)
+            │      └─ docs/cleanup-track-a-side  (3 commits)
+            └─ refactor/audio-session-coordinator → … → chore/hprof-cleanup
+                    └─ docs/cleanup-trunk-side  (3 commits)
+                          └─ docs/v2-scope        (3 commits)  ← NEW STACK POINT
+  ```
+
+  Recommended merge order to trunk:
+  1. Track A: `docs/adr-and-e-gaze-stack`, `docs/adr-and-backfill`
+  2. Track C stack tip: `chore/hprof-cleanup`
+  3. `docs/cleanup-trunk-side`
+  4. `docs/v2-scope`
+  5. `docs/cleanup-track-a-side` (last — cites artifacts from
+     steps 1+2 per Sprint 26 cross-branch notes)
+
+- **Next:** Push when ready. All hygiene items closed.
+- **Blockers:** none. 17 local branches; nothing pushed.
