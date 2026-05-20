@@ -27,7 +27,7 @@ Android gaze tracking uses MediaPipe Tasks Vision `FaceLandmarker` as the
 sole inference engine, fed by a CameraX `ImageAnalysis` pipeline bound to
 the front camera. There is no second provider and no fallback path.
 
-Configuration (`GazeProviderImpl.kt:142-158`):
+Configuration (`GazeProviderImpl.kt:143-158`):
 - `RunningMode.LIVE_STREAM` — async result delivery via listener
 - `numFaces = 1` — multi-face capture is forbidden; widens the threat
   surface without serving a single-reader use case
