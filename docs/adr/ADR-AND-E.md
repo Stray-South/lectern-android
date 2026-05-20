@@ -27,7 +27,7 @@ Android gaze tracking uses MediaPipe Tasks Vision `FaceLandmarker` as the
 sole inference engine, fed by a CameraX `ImageAnalysis` pipeline bound to
 the front camera. There is no second provider and no fallback path.
 
-Configuration (`GazeProviderImpl.kt:130-148`):
+Configuration (`GazeProviderImpl.kt:142-158`):
 - `RunningMode.LIVE_STREAM` — async result delivery via listener
 - `numFaces = 1` — multi-face capture is forbidden; widens the threat
   surface without serving a single-reader use case
@@ -37,17 +37,17 @@ Configuration (`GazeProviderImpl.kt:130-148`):
 - Model: `face_landmarker.task` loaded from `app/src/main/assets/` — never
   downloaded at runtime
 - Iris landmarks: indices 468 (left) and 473 (right) — pinned by
-  `GazeProviderImpl.kt:41-42`
+  `GazeProviderImpl.kt:40-41`
 
-Calibration (`GazeProviderImpl.kt:103-128`):
+Calibration (`GazeProviderImpl.kt:110-139`):
 - Feature vector `[u, v, u², v², uv, 1]` (FEATURE_COUNT = 6)
 - Ridge regression, λ = 1e-4, fit via EJML `LinearSolverFactory_DDRM`
 - Minimum 6 calibration points; 9 recommended
 - LOO-CV mean error reported (in-sample residual rejected as
   trivially-low)
 - Output: `CalibrationResult { weightsX: DoubleArray(6), weightsY:
-  DoubleArray(6), meanErrorPx: Double }` — 13 doubles + metadata,
-  derived only
+  DoubleArray(6), meanErrorPx: Float }` — 12 doubles + 1 float +
+  metadata, derived only
 
 Camera (`GazeProviderImpl.kt:161-182`):
 - `CameraSelector.DEFAULT_FRONT_CAMERA`
