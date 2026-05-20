@@ -1447,3 +1447,74 @@ Format: see .claude/skills/devlog/SKILL.md
 
 - **Next:** Push when ready. All hygiene items closed.
 - **Blockers:** none. 17 local branches; nothing pushed.
+
+## 2026-05-20T00:00Z — Sprint 29: Bot-review fix wave (Gemini)
+
+- **Did:** Closed 11 real findings from Gemini code-review across 5
+  open PRs (#1, #2, #3, #5, #6). PR #4 not yet reviewed. PR #3 had
+  one FP (stripComments at GroupA:489 IS harmonized identically to
+  GroupEF:550) verified and rejected per
+  `feedback_reviewer_fp_verification`.
+
+  **Phase A — chore/hprof-cleanup stack (deepest cascade):**
+  - `AudioSessionCoordinator.kt:29` — wrapped `getSystemService` in
+    `requireNotNull` with diagnostic message. Platform-type assignment
+    to non-null val was an implicit force-unwrap; RULES.md forbids.
+  - Rebased `docs/cleanup-trunk-side` and `docs/v2-scope` onto the
+    new `chore/hprof-cleanup` tip. Both rebases clean.
+
+  **Phase A (on v2-scope) — FLAG_SECURE helper refinement:**
+  - `docs/plans/v2-scope.md §Cross-cutting risk register` — corrected
+    the FLAG_SECURE helper guidance from one-way
+    `enableFlagSecureOnActivity()` to bidirectional DisposableEffect-
+    based Composable side-effect. Single-Activity Compose means the
+    one-way version would leak FLAG_SECURE across non-sensitive
+    screens (Settings, Library) after the user leaves a sensitive
+    Composable.
+
+  **Phase B — adr-and-backfill stack:**
+  - `ADR-AND-N.md` (×2) — corrected `toJson` to `toJSON` (Decision §8
+    + Pinned-by table). Readium's actual API uses all-caps casing;
+    test assertions in `GroupASecurityTest:385` check
+    `contains("toJSON()")`.
+  - Rebased `docs/cleanup-track-a-side` onto new
+    `docs/adr-and-backfill`. Clean rebase.
+
+  **Phase B (on cleanup-track-a-side) — ADR-AND-B/N completeness:**
+  - `ADR-AND-B.md §Decision` — updated to describe both XML and `.kt`
+    scans (Sprint 24 Set 2 closure).
+  - `ADR-AND-B.md §Consequences` — updated; `.kt` is no longer
+    uncovered.
+  - `ADR-AND-B.md` XML path — added `app/src/main/` prefix for
+    consistency with the adjacent `.kt` path.
+  - `ADR-AND-N.md §Pinned-by` table — added
+    `epub_noJavascriptInterface_inMainSources` row.
+  - `ADR-AND-N.md §Code-markers` — added reference to the new test.
+
+  **Phase C — isolated leaf:**
+  - `ADR-AND-E.md` (4 fixes) — line refs corrected to current source
+    state (`GazeProviderImpl.kt`): config 130-148→142-158, iris
+    41-42→40-41, calibration 103-128→109-139. CalibrationResult type
+    corrected: `meanErrorPx: Double`→`Float`; "13 doubles"→"12 doubles
+    + 1 float".
+
+  **FP rejected (PR #3, GroupASecurityTest stripComments at line 424):**
+  Gemini flagged stripComments as inconsistent with the harmonized
+  helpers in GroupEF/H/IJ. Verified: GroupA:489 is byte-identical to
+  GroupEF:550. Gemini's anchor at line 424 is the call site of
+  stripComments(); the helper definition at line 489 was missed.
+  Posted threaded reply on the inline comment.
+
+- **Tests:** 91 / 0 failures across all branches. Preflight 9/9 green
+  at every tip. Considered extending
+  `GroupGSecurityTest.audhd_stringsXml_noBannedCopy` to `.kt` (per
+  Gemini's PR #6 side-suggestion); rejected as bonus refactor — the
+  shell-script gate has substantive filter logic (Log.*, Exception,
+  word-bounded match) that a naive JVM mirror can't match. Shell
+  script remains authoritative for `.kt`; XML has both gates.
+- **Force-pushes:** 6 — chore/hprof-cleanup, docs/cleanup-trunk-side,
+  docs/v2-scope, docs/adr-and-backfill, docs/cleanup-track-a-side,
+  docs/adr-and-e-gaze-stack. All `--force-with-lease`.
+- **Next:** Wait for Gemini re-review post-push; check PR #4 review
+  status. Adversarial agent pass on each branch tip optional.
+- **Blockers:** none.
