@@ -26,7 +26,9 @@ import android.media.AudioManager
 class AudioSessionCoordinator(context: Context) {
 
     private val audioManager: AudioManager =
-        context.getSystemService(AudioManager::class.java)
+        requireNotNull(context.getSystemService(AudioManager::class.java)) {
+            "AudioManager system service is unavailable — TTS cannot acquire audio focus"
+        }
 
     private var request: AudioFocusRequest? = null
 
