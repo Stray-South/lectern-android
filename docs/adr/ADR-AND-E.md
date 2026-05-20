@@ -27,7 +27,7 @@ Android gaze tracking uses MediaPipe Tasks Vision `FaceLandmarker` as the
 sole inference engine, fed by a CameraX `ImageAnalysis` pipeline bound to
 the front camera. There is no second provider and no fallback path.
 
-Configuration (`GazeProviderImpl.kt:143-158`):
+Configuration (`GazeProviderImpl.kt:143-159`):
 - `RunningMode.LIVE_STREAM` — async result delivery via listener
 - `numFaces = 1` — multi-face capture is forbidden; widens the threat
   surface without serving a single-reader use case
@@ -97,9 +97,9 @@ achieved via:
 
 1. In-memory-only inference — raw `Bitmap` frames and iris UV coordinates
    never leave `GazeProviderImpl` scope
-2. Derived-weights-only persistence — only the 13-double
-   `CalibrationResult` reaches `DataStore`, scoped to app-internal-private
-   storage and excluded from cloud backup + D2D transfer
+2. Derived-weights-only persistence — only the `CalibrationResult`
+   (12 doubles + 1 float) reaches `DataStore`, scoped to app-internal-
+   private storage and excluded from cloud backup + D2D transfer
 3. Single-provider architecture — no second inference path that could
    silently widen the data surface
 
