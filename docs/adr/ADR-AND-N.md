@@ -42,8 +42,8 @@ on every load:
 7. **No external link listener.** `EpubBlockingWebViewClient` does
    not declare a listener interface for external links — closing the
    "open this in browser" exfil channel.
-8. **Locator serialisation via `toJson`.** EPUB locators round-trip
-   through `Locator.toJson()`, not string interpolation, to prevent
+8. **Locator serialisation via `toJSON`.** EPUB locators round-trip
+   through `Locator.toJSON()`, not string interpolation, to prevent
    injection via crafted publication metadata.
 
 ## Pinned by (all in `GroupASecurityTest`)
@@ -57,7 +57,7 @@ on every load:
 | No direct `evaluateJavascript` in main sources | `epub_noDirectEvaluateJavascript_inMainSources` |
 | `BlockingHttpClient` wired, not default | `epub_publicationRepository_blockingHttpClient_noDefaultHttpClient` |
 | No external link listener interface declared | `epub_noExternalLinkListener_classDeclaresNoListenerInterface` |
-| Locator serialisation uses `toJson` not interpolation | `epub_locatorSerialization_usesToJson_notStringInterpolation` |
+| Locator serialisation uses `toJSON` not interpolation | `epub_locatorSerialization_usesToJson_notStringInterpolation` |
 | Reader overlay z-order added after navigator container | `epub_overlay_addedAfterNavigatorContainer_zOrderCorrect` |
 
 ## Code markers
