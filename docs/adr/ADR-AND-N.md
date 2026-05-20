@@ -61,6 +61,7 @@ on every load:
 | No external link listener interface declared | `epub_noExternalLinkListener_classDeclaresNoListenerInterface` |
 | Locator serialisation uses `toJSON` not interpolation | `epub_locatorSerialization_usesToJson_notStringInterpolation` |
 | Reader overlay z-order added after navigator container | `epub_overlay_addedAfterNavigatorContainer_zOrderCorrect` |
+| No `addJavascriptInterface(` call sites in main sources | `epub_noJavascriptInterface_inMainSources` |
 
 ## Code markers
 
@@ -70,6 +71,9 @@ on every load:
 - `app/src/main/kotlin/com/straysouth/lectern/ui/reader/ReaderOverlay.kt`
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/BlockingHttpClient.kt`
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/PublicationRepository.kt`
+- `app/src/test/kotlin/com/straysouth/lectern/security/GroupASecurityTest.kt`
+  (`epub_noJavascriptInterface_inMainSources` — pinned by Sprint 25
+  Set 3 PR-G, `106e8b9`; closes the prior Known-gap below)
 
 ## Known gap (CLOSED — Sprint 25 Set 3 PR-G, `106e8b9`)
 
