@@ -472,9 +472,11 @@ class GroupASecurityTest {
     // still listed for completeness when the target is the last override).
     private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
         listOf(
-            "\n    fun ", "\n    private fun ", "\n    override fun ",
-            "\n    internal fun ", "\n    companion object", "\n    private val ",
-            "\n    private var ",
+            "\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ",
+            "\n    override suspend fun ", "\n    private suspend fun ", "\n    suspend fun ",
+            "\n    internal suspend fun ", "\n    protected suspend fun ",
+            "\n    val ", "\n    var ", "\n    private val ", "\n    private var ",
+            "\n    companion object", "\n    @",
         )
             .mapNotNull { pattern ->
                 source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }

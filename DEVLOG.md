@@ -220,7 +220,7 @@ Format: see .claude/skills/devlog/SKILL.md
   requirement); `proxy.use{}` ImageProxy close contract; `SystemClock.uptimeMillis()`
   monotonic timestamps; thermal throttle gated to API 29+ via `Build.VERSION_CODES.Q`.
   CalibrationRepository keys: "weights_x" / "weights_y" — pass `check_gaze_data_leak.sh`.
-  Iris averaging: average of lm468+lm473 (both centers) per ADR-AND-L.
+  Iris averaging: average of lm468+lm473 (both centers) per ADR-AND-E.
   ReaderOverlay: RemoveRedEye icon (filled when tracking, outlined otherwise).
   EpubReaderFragment: `activityViewModels()` GazeViewModel; real CAMERA permission
   check in `onGazeToggle`.
