@@ -27,7 +27,12 @@ great job | keep it up | daily goal | 🔥 | 🏆 | ⭐
 ```
 
 Match (case-insensitive) → exit 1, block merge. Wired into
-`scripts/preflight.sh` step `[5/9] Banned strings...`.
+`scripts/preflight.sh` step `Banned strings...`.
+
+> Two-pass behaviour + the new preflight step count reflect the
+> post-merge state of the Track C stack (`ci/banned-strings-extend-kotlin`,
+> `aa5b203`). On Track A in isolation the script is still single-pass
+> over XML; see §"Known gap" below for the cross-branch dependency.
 
 A separate unit test, `GroupGSecurityTest.audhd_stringsXml_noBannedCopy`,
 re-runs the XML pass in-process so the XML gate fails at the JVM
