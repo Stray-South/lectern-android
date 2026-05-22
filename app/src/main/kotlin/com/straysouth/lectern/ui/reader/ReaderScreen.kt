@@ -26,9 +26,13 @@ fun ReaderScreen(
     // flag set as long as any sensitive surface is active; navigating BACK to the
     // library releases it via DisposableEffect onDispose.
     //
-    // PDF and Comics readers do NOT claim — V2.2 annotations are EPUB-only for the
-    // MVP. If/when annotation support extends to those formats, expand here.
-    if (format != "PDF" && format != "CBZ" && format != "CBR") {
+    // Allowlist (not exclusion list): only formats that actually support
+    // annotations opt into FLAG_SECURE. A future DJVU/MOBI/etc. format
+    // unknown to this check defaults to NO secure-window — which is the
+    // safer side because such a format doesn't have annotation support yet
+    // (its annotations don't exist to threaten). Expand here when a new
+    // format adds annotation support.
+    if (format == "EPUB") {
         SecureWindow()
     }
     Box(

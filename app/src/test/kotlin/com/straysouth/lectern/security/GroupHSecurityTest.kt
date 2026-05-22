@@ -346,16 +346,22 @@ class GroupHSecurityTest {
         )
     }
 
-    // ── H.6 (legacy section marker — superseded by H.6 amendment above) ──────
+    // ── H.6 (V2.2 amendment) — FLAG_SECURE write-locality ──────────────────
 
     /**
-     * [FLAG_SECURE] is intentionally absent: accessibility tools (TalkBack screenshot,
-     * screen magnifiers, Compose preview) require unobstructed screen renders. Lectern V1
-     * has no authentication screen and no private user-generated content — the risk of
-     * shoulder-surfing is equivalent to reading any other book app.
+     * V2.2 ships user-authored highlights (ADR-AND-T), which fire ADR-AND-R
+     * reconsideration trigger 1. FLAG_SECURE IS claimed in production via
+     * `SecureWindow()` in `ReaderScreen` (EPUB format only). The amendment
+     * preserves the V1 stance everywhere else (Library, Calibration, etc.)
+     * — accessibility tools still need unobstructed screen renders there.
      *
-     * If private annotation or login features ship in V2, re-evaluate and add
-     * [FLAG_SECURE] to the relevant Activity or Window before merging.
+     * This test pins **write-locality**: the literal `FLAG_SECURE` constant
+     * may appear only in `WindowSecurityController.kt`. All other code must
+     * reach the flag via `SecureWindow()` (the Composable wrapper) — no
+     * direct `window.setFlags(FLAG_SECURE, ...)` calls in feature code.
+     *
+     * Replaces V1's `platform_flagSecureAbsent_screenshotsPermitted` per
+     * v2-scope.md Convention 3 (test-gate replacement, not relaxation).
      */
     @Test
     fun platform_flagSecure_writtenOnlyViaController() {

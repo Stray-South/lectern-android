@@ -318,13 +318,39 @@ class EpubReaderFragment : Fragment() {
      * Returns null on parse failure (defensive — a malformed locatorJson row
      * would crash the decoration pipeline otherwise; better to drop one bad
      * annotation than block all others).
+     *
+     * Two failure modes are distinguished via Log.w so a future schema drift
+     * is debuggable in the field:
+     *   - JSONException: the JSON string is structurally invalid (storage bug
+     *     or external corruption).
+     *   - fromJSON returns null: the JSON parses but is semantically missing
+     *     required Locator fields (e.g. href absent). Distinct from a parse
+     *     error and indicates a write-side defect (e.g. an old client wrote
+     *     a different Locator shape).
+     *
+     * No PII is logged (Locator strings can include EPUB CFI path data but
+     * not user-authored note bodies — V2.2.1 highlights have body=null).
      */
     private fun parseLocatorJson(locatorJson: String): org.readium.r2.shared.publication.Locator? {
         return try {
-            org.readium.r2.shared.publication.Locator.fromJSON(
+            val parsed = org.readium.r2.shared.publication.Locator.fromJSON(
                 org.json.JSONObject(locatorJson),
             )
-        } catch (_: org.json.JSONException) {
+            if (parsed == null) {
+                android.util.Log.w(
+                    "EpubReaderFragment",
+                    "Locator.fromJSON returned null — annotation row has structurally valid " +
+                        "but semantically incomplete locatorJson; dropping from decoration overlay.",
+                )
+            }
+            parsed
+        } catch (e: org.json.JSONException) {
+            android.util.Log.w(
+                "EpubReaderFragment",
+                "Locator.fromJSON threw JSONException — annotation row has malformed locatorJson; " +
+                    "dropping from decoration overlay.",
+                e,
+            )
             null
         }
     }
