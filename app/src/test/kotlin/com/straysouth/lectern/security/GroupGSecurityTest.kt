@@ -234,27 +234,29 @@ class GroupGSecurityTest {
         )
     }
 
-    // ── V2.6 — A11y chapter rotor installed on the navigator ───────────────
+    // ── V2.6 — A11y chapter rotor installed on each WebView ────────────────
 
     /**
      * V2.6 — A11y chapter rotor. Asserts that [EpubReaderFragment] wires the
      * publication's [tableOfContents] into ViewCompat accessibility actions on
-     * the navigator's root view. TalkBack surfaces these in its local-context
-     * menu, letting users jump to any chapter without scrolling.
+     * each EPUB WebView (not just the navigator's parent container, which was
+     * the original v1 wiring — TalkBack focuses on the inner WebView during
+     * reading, so actions on the parent never surface).
      *
      * Pinned by source assertion (not runtime) because:
      *   - The runtime path requires an instrumented test (Fragment lifecycle +
      *     CameraX + Readium publication) which is `androidTest`-only.
      *   - The wiring is shape-pinnable here: presence of `tocEntries.collect`
-     *     bound to `installChapterRotor`, and `installChapterRotor` calling
-     *     `ViewCompat.addAccessibilityAction` with `navigator.go(link)`.
+     *     bound to `installChapterRotor`, `installChapterRotor` walking the
+     *     tracked WebViews, and a `registerWebViewForRotor` hook called from
+     *     `wrapWebViewsIn` so newly-created WebViews get the rotor too.
      *
-     * Regression target: a future contributor removes the chapter rotor by
-     * deleting either the collect block in the fragment's repeatOnLifecycle
-     * setup, or the ViewCompat.addAccessibilityAction call in the helper.
+     * Regression target: a future contributor removes the per-WebView wiring
+     * (e.g. reverts to attaching only on `navigator.view`), breaking the rotor
+     * for TalkBack users mid-reading.
      */
     @Test
-    fun audhd_chapterRotor_installedOnNavigator() {
+    fun audhd_chapterRotor_installedOnEachWebView() {
         val source = stripComments(
             File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderFragment.kt")
                 .readText(),
@@ -265,17 +267,23 @@ class GroupGSecurityTest {
             source.contains("viewModel.tocEntries.collect"),
         )
         assertTrue(
-            "EpubReaderFragment must define installChapterRotor() to wire TOC " +
-                "entries into ViewCompat accessibility actions (V2.6)",
+            "EpubReaderFragment must define installChapterRotor() to walk tracked " +
+                "WebViews and refresh their rotor actions (V2.6)",
             source.contains("fun installChapterRotor"),
         )
         assertTrue(
-            "installChapterRotor must call ViewCompat.addAccessibilityAction so " +
-                "TalkBack surfaces chapter jumps in its local-context menu (V2.6)",
-            source.contains("ViewCompat.addAccessibilityAction(view, label)"),
+            "wrapWebViewsIn must call registerWebViewForRotor so each newly-created " +
+                "WebView is added to the rotor surface (V2.6 — per-WebView wiring)",
+            source.contains("registerWebViewForRotor(root)"),
         )
         assertTrue(
-            "installChapterRotor must invoke navigator.go(link, ...) inside the " +
+            "installRotorOnWebView must call ViewCompat.addAccessibilityAction on " +
+                "the WebView itself (not the parent container) so TalkBack surfaces " +
+                "the rotor when focus is in the reading content (V2.6)",
+            source.contains("ViewCompat.addAccessibilityAction(webView, label)"),
+        )
+        assertTrue(
+            "installRotorOnWebView must invoke navigator.go(link, ...) inside the " +
                 "action callback so activating the rotor entry navigates (V2.6)",
             source.contains("navigator.go(link"),
         )

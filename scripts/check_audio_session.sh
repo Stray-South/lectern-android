@@ -21,12 +21,28 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 PATTERN='(requestAudioFocus|abandonAudioFocus|abandonAudioFocusRequest|AudioFocusRequest\.Builder)'
 FOUND=0
 
+# awk-based scan: strip inline trailing comments and skip pure-comment lines
+# before pattern-matching, so legitimate references to these APIs inside Kotlin
+# comments (e.g. "// abandonAudioFocusRequest is called below") don't FP.
+# Mirrors the filter approach used in check_release_logging.sh.
 while IFS= read -r -d '' file; do
     basename=$(basename "$file")
     if [ "$basename" = "AudioSessionCoordinator.kt" ]; then
         continue
     fi
-    if grep -nE "$PATTERN" "$file"; then
+    matches=$(awk -v pat="$PATTERN" '
+        {
+            line = $0
+            # Strip inline trailing // comments.
+            sub(/\/\/.*/, "", line)
+            # Skip pure-comment lines (leading //, /*, or block-comment-body *).
+            t = line
+            sub(/^[[:space:]]+/, "", t)
+            if (t == "" || t ~ /^(\*|\/\*)/) next
+            if (line ~ pat) print FILENAME ":" NR ": " $0
+        }' FILENAME="$file" "$file")
+    if [ -n "$matches" ]; then
+        echo "$matches"
         echo "AUDIO SESSION VIOLATION in $file"
         FOUND=1
     fi

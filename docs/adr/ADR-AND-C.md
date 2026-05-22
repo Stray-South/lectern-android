@@ -63,7 +63,8 @@ Instrumented coverage:
 - Schema bumps require: new JSON export, new identity-hash assertion,
   explicit migration class + SQL assertion, instrumented migration test.
 - Adding a Room entity does not auto-generate any of the above —
-  RULES.md §Data Architecture forbids silent schema additions.
+  this ADR (ADR-AND-C) is itself the rule against silent schema
+  additions; the migration test pins enforcement.
 - No `@Entity` may use a name matching the gaze denylist
   (`face|eye|gaze|lookAt`) — enforced by `scripts/check_gaze_data_leak.sh`
   (see ADR-AND-J).

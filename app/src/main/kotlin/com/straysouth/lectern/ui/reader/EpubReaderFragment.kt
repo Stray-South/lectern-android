@@ -59,6 +59,18 @@ class EpubReaderFragment : Fragment() {
     // anonymous object closures held by the child FragmentManager across lifecycle transitions.
     private var blockingCallbackRegistered = false
 
+    // V2.6 — chapter-rotor surface state. Two fields cooperate to handle ordering:
+    //   (a) tocEntries arrives first (publication open) → cache here; install on each
+    //       WebView as it's discovered by wrapWebViewsIn.
+    //   (b) WebViews are discovered first → track in webViewsToRotor; when tocEntries
+    //       arrives, walk the tracked WebViews and install.
+    // Without this, the previous implementation collected tocEntries and installed on
+    // navigator.view (parent container) — which (i) may be null at first emission and
+    // (ii) doesn't surface actions to TalkBack focus inside the WebView. Per Gemini
+    // round-5 finding (PR #10).
+    private var currentTocEntries: List<org.readium.r2.shared.publication.Link> = emptyList()
+    private val rotorWebViews = mutableListOf<java.lang.ref.WeakReference<WebView>>()
+
     companion object {
         // Public so ReaderScreen can build the arguments Bundle via AndroidFragment.
         // Direct instantiation is not supported — use AndroidFragment<EpubReaderFragment>
@@ -303,6 +315,14 @@ class EpubReaderFragment : Fragment() {
             // URIs to access app data (contacts, media store, etc.).
             // Applied regardless of client-wrap outcome above.
             root.settings.allowContentAccess = false
+
+            // V2.6 — register this WebView for the chapter rotor and install actions
+            // for whatever TOC entries are currently cached. If the TOC hasn't loaded
+            // yet, currentTocEntries is empty and this no-ops; the tocEntries collect
+            // block in setupNavigator will revisit each tracked WebView when entries
+            // arrive. Per Gemini PR #10 finding: actions must be on the WebView itself
+            // (TalkBack focus surface) not the parent container.
+            registerWebViewForRotor(root)
         } else if (root is ViewGroup) {
             for (i in 0 until root.childCount) {
                 wrapWebViewsIn(root.getChildAt(i))
@@ -379,14 +399,18 @@ class EpubReaderFragment : Fragment() {
     }
 
     /**
-     * V2.6 — A11y chapter rotor. Installs one [ViewCompat] custom accessibility
-     * action per TOC entry on the navigator's root view. TalkBack exposes these
-     * in its local-context menu ("Show actions"), letting users navigate
-     * directly to any chapter without scrolling.
+     * V2.6 — A11y chapter rotor. Updates the cached TOC entry list and re-installs
+     * the rotor actions on every tracked WebView. Called when `tocEntries` emits.
      *
-     * Idempotent: clears any previously-installed rotor actions before adding
-     * the new set, so re-emitting an updated TOC (e.g. after a reopen) won't
-     * accumulate duplicates.
+     * Pairs with [registerWebViewForRotor] which installs on the WebView at view-
+     * creation time. Together they handle both ordering scenarios:
+     *   - TOC arrives before WebView: cached here, registerWebViewForRotor reads it
+     *     when each WebView spins up.
+     *   - WebView created before TOC: tracked in [rotorWebViews]; this call walks
+     *     the live refs and installs the rotor retroactively.
+     *
+     * Idempotent: [installRotorOnWebView] clears any prior action IDs (stored as a
+     * View tag) before adding the new set.
      *
      * Top-level entries only (depth 0). Footnote / image / link rotors are
      * intentionally out of scope for the first V2 cut.
@@ -395,21 +419,50 @@ class EpubReaderFragment : Fragment() {
         navigator: EpubNavigatorFragment,
         entries: List<org.readium.r2.shared.publication.Link>,
     ) {
-        val view = navigator.view ?: return
-        // Clear previously-installed rotor actions (best-effort — replaceAccessibilityAction
-        // is what ViewCompat provides for replacement; on first install the IDs are absent
-        // and these calls no-op). The action IDs we use are stored on the View tag below.
+        currentTocEntries = entries
+        // Walk tracked WebViews; drop any whose WeakReference has been GC'd.
+        val live = rotorWebViews.filter { it.get() != null }
+        rotorWebViews.clear()
+        rotorWebViews.addAll(live)
+        live.forEach { ref -> ref.get()?.let { installRotorOnWebView(it, navigator, entries) } }
+    }
+
+    /**
+     * V2.6 — Called from [wrapWebViewsIn] when a WebView is discovered. Tracks the
+     * WebView in [rotorWebViews] (so a later TOC arrival can revisit it) and
+     * installs the rotor immediately if [currentTocEntries] is non-empty.
+     */
+    private fun registerWebViewForRotor(webView: WebView) {
+        // Track with WeakReference so a removed WebView (Readium recycling) is GC-safe.
+        // De-duplicate: skip if this exact WebView is already tracked.
+        if (rotorWebViews.any { it.get() === webView }) return
+        rotorWebViews.add(java.lang.ref.WeakReference(webView))
+        val navigator = navigatorFragment
+        if (currentTocEntries.isNotEmpty() && navigator != null) {
+            installRotorOnWebView(webView, navigator, currentTocEntries)
+        }
+    }
+
+    /**
+     * V2.6 — Installs the rotor actions on a single [webView]. Idempotent: clears
+     * any prior action IDs (stored as a View tag) before adding the new set.
+     */
+    private fun installRotorOnWebView(
+        webView: WebView,
+        navigator: EpubNavigatorFragment,
+        entries: List<org.readium.r2.shared.publication.Link>,
+    ) {
         @Suppress("UNCHECKED_CAST")
-        val priorIds = view.getTag(R.id.chapter_rotor_action_ids) as? List<Int>
-        priorIds?.forEach { id -> ViewCompat.removeAccessibilityAction(view, id) }
+        val priorIds = webView.getTag(R.id.chapter_rotor_action_ids) as? List<Int>
+        priorIds?.forEach { id -> ViewCompat.removeAccessibilityAction(webView, id) }
 
         val ids = entries.mapNotNull { link ->
             val label = link.title?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            ViewCompat.addAccessibilityAction(view, label) { _, _ ->
+            ViewCompat.addAccessibilityAction(webView, label) { _, _ ->
                 navigator.go(link, animated = true)
                 true
             }
         }
-        view.setTag(R.id.chapter_rotor_action_ids, ids)
+        webView.setTag(R.id.chapter_rotor_action_ids, ids)
     }
 }
