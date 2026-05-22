@@ -52,15 +52,7 @@ class WindowSecurityController(private val applyFlagSecure: (Boolean) -> Unit) {
      * `CalledFromWrongThreadException`. Production code uses this constructor;
      * tests use the primary constructor with a synchronous fake setter.
      */
-    constructor(window: Window) : this({ enabled ->
-        window.decorView.post {
-            if (enabled) {
-                window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-            } else {
-                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-            }
-        }
-    })
+    constructor(window: Window) : this(makeWindowSetter(window))
 
     // Lock object guarding the counter + flag-setter as a single atomic transition.
     // AtomicInteger alone is insufficient because the `if (newCount == 1)` check and
@@ -155,5 +147,34 @@ fun SecureWindow() {
     DisposableEffect(controller) {
         controller.acquire()
         onDispose { controller.release() }
+    }
+}
+
+/**
+ * Builds the FLAG_SECURE setter lambda used by the
+ * [WindowSecurityController.constructor(Window)] convenience constructor.
+ *
+ * Captures `decorView` at construction time — which runs on the main thread
+ * during Activity setup — so the returned lambda never has to access
+ * `window.decorView` from a background thread. Accessing `decorView` on a
+ * background thread is not guaranteed safe (it can trigger lazy view init
+ * if `decorView` hasn't been created yet). By the time this function
+ * returns, `decorView` is a stable, already-initialized View; subsequent
+ * `acquire()` / `release()` calls only need to `.post()` to its existing
+ * looper.
+ */
+private fun makeWindowSetter(window: Window): (Boolean) -> Unit {
+    val decorView = window.decorView
+    return { enabled ->
+        decorView.post {
+            if (enabled) {
+                window.setFlags(
+                    WindowManager.LayoutParams.FLAG_SECURE,
+                    WindowManager.LayoutParams.FLAG_SECURE,
+                )
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
     }
 }
