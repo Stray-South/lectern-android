@@ -24,7 +24,8 @@ The V1 Android app:
 2. Makes zero network calls from main sources. The `INTERNET`
    permission in `AndroidManifest.xml` is for future use only.
 3. Has no analytics, telemetry, or crash-reporting SDK
-   (see ADR-AND-J §Privacy and `RULES.md §Privacy (non-negotiable)`).
+   (see `RULES.md §Privacy (non-negotiable)` for the enforced banlist;
+   ADR-AND-J §Decision codifies the parallel rule for gaze data).
 4. Persists all user data locally — Room (books, reading progress)
    and DataStore (preferences, calibration weights).
 
