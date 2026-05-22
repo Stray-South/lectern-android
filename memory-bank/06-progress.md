@@ -1,6 +1,6 @@
 # 06 — Progress
 
-**Last updated:** 2026-05-17 (Sprint 25, Set 5)
+**Last updated:** 2026-05-17 (Sprint 26 — cross-branch doc cleanup)
 
 Status key: ✅ shipped & tested · 🚧 in progress · 🔲 deferred (V2+)
 
