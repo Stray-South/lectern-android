@@ -31,6 +31,7 @@
     <string name="label_gaze_overlay">Gaze line</string>
     <string name="cd_tts_dismiss">Dismiss</string>
     <string name="cd_anchor_dismiss">Dismiss reading anchor</string>
+    <string name="cd_highlight">Highlight selected text</string>
     <string name="cd_pdf_loading">Loading PDF</string>
     <string name="cd_pdf_error">PDF error</string>
     <string name="label_page_of">%1$d of %2$d</string>

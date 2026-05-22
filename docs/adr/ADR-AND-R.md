@@ -1,8 +1,8 @@
 # ADR-AND-R: FLAG_SECURE absence — accessibility over screen-capture defense
 
-**Status:** Accepted
-**Date:** 2026-05-17
-**Sprint:** 25 (post-Sprint 24 ADR backfill)
+**Status:** Amended (see §"2026-05-22 amendment" below)
+**Date:** 2026-05-17 (original) / 2026-05-22 (V2.2 amendment)
+**Sprint:** 25 (original) / V2 launch (amendment)
 
 ## Context
 
@@ -103,3 +103,43 @@ architectural lift. The ADR is intentionally easy to reverse.
 - ADR-AND-L — Focus Band scope: gaze overlay is pixel-Y only, no
   semantic text correspondence; ADR-AND-R extends the "what is
   actually captured by a screenshot" analysis
+
+## 2026-05-22 amendment — V2.2 fires trigger 1
+
+Per v2-scope.md Convention 1(c), V1 ADRs receive Status:Amended with
+appended dated sections rather than edit-in-place. This is the first
+such amendment.
+
+**Trigger fired:** reconsideration-triggers item 1 (private user
+annotation distinct from third-party EPUB body text). V2.2 ships
+user-authored highlights (ADR-AND-T); the EPUB reader is now a
+sensitive surface while annotations exist on screen.
+
+**Decision (V2.2):** FLAG_SECURE IS now claimed while the EPUB reader
+is in composition, via the reference-counted `WindowSecurityController`
+(PR #12) and its `SecureWindow()` Composable side-effect
+(`ReaderScreen.kt`). PDF and Comics readers are excluded because
+V2.2 annotations are EPUB-only for the MVP; expand the SecureWindow
+gate if/when annotation support extends to those formats.
+
+**V1 stance preserved:** the original §Decision (Accept the gap;
+no FLAG_SECURE) still applies to:
+- The Library screen
+- The Calibration overlay
+- The Typography / TTS panels in isolation (they're embedded in the
+  reader, so practically they inherit the reader's FLAG_SECURE today;
+  if a future settings screen lives outside the reader it would
+  remain screenshot-permitted)
+
+**Test-gate change:** `GroupHSecurityTest.platform_flagSecureAbsent_screenshotsPermitted`
+was a V1 fail-closed test. Per Convention 3 (test-gate replacement),
+it is REPLACED with `platform_flagSecure_writtenOnlyViaController` —
+asserts that `FLAG_SECURE` literal appears only inside
+`WindowSecurityController.kt` (the sole writer). Other test files
+may reference `FLAG_SECURE` in documentation prose; the assertion
+strips comments before matching.
+
+**Implementation references:**
+- `app/src/main/kotlin/com/straysouth/lectern/ui/window/WindowSecurityController.kt`
+- `app/src/main/kotlin/com/straysouth/lectern/MainActivity.kt` (Activity-scope binding)
+- `app/src/main/kotlin/com/straysouth/lectern/ui/reader/ReaderScreen.kt` (the `SecureWindow()` call site)
