@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="epub_reader_container" type="id" />
+    <!-- V2.6 — tag key for storing the list of chapter-rotor accessibility action IDs
+         currently installed on the navigator's root view, so we can clear them before
+         re-installing on a TOC change. -->
+    <item name="chapter_rotor_action_ids" type="id" />
 </resources>
