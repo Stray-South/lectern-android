@@ -182,6 +182,18 @@ class GazeViewModel(
                 gazeStateCollectionJob?.cancel()
                 gazeStateCollectionJob = null
                 provider = null
+            } catch (e: RuntimeException) {
+                // Thrown by MediaPipe FaceLandmarker.createFromOptions when GPU delegate
+                // initialization fails (device without GPU support), asset is missing or
+                // corrupt, or other init-time failures. ADR-AND-E §Decision documents the
+                // fail-closed-to-Paused intent; this catch realises it. Broader than
+                // IllegalStateException because MediaPipe throws several subclasses.
+                Log.e(TAG, "GazeProvider.start() failed — init error (likely GPU/MediaPipe)", e)
+                _gazeEnabled.value = false
+                _gazeState.value = GazeState.Paused
+                gazeStateCollectionJob?.cancel()
+                gazeStateCollectionJob = null
+                provider = null
             }
         }
     }
