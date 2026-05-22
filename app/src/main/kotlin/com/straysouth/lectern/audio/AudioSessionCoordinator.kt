@@ -42,6 +42,11 @@ class AudioSessionCoordinator(context: Context) {
      *               to receive from arbitrary threads.
      */
     fun acquireForTts(onLoss: () -> Unit): Boolean {
+        // Release any prior request first — each acquireForTts() builds a
+        // fresh AudioFocusRequest with its own listener, and the system
+        // AudioManager treats requests as distinct. Without an explicit
+        // abandon, a second acquireForTts() call leaks the prior listener.
+        release()
         val req = AudioFocusRequest
             .Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
