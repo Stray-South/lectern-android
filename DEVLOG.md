@@ -1290,3 +1290,53 @@ Format: see .claude/skills/devlog/SKILL.md
   Track A merges (ADR-AND-B §"Known gap" closure, ADR-AND-I citation,
   ADR-AND-N §"Known gap" closure, RULES.md §"Gaze data" label fix).
 - **Blockers:** none. 14 local branches; nothing pushed.
+
+## 2026-05-17T00:00Z — Sprint 26: Cross-branch doc cleanup (split)
+
+- **Did:** Split the deferred cross-branch doc cleanup into two
+  dependency-clean branches per cascade-risk analysis.
+
+  **Branch 1 — `docs/cleanup-trunk-side`** (off `chore/hprof-cleanup`):
+  - `RULES.md:73` — `Gaze data (ADR-AND-H equivalent)` →
+    `(ADR-AND-J equivalent)`. Pre-existing pre-Set-2 label bug
+    (ADR-AND-H is STT-deferred; ADR-AND-J is gaze ephemerality).
+  - `memory-bank/06-progress.md §Cross-branch follow-ups` — stanza
+    rewritten to reflect Sprint 26 execution (split branches + correct
+    PR-G attribution for ADR-AND-N closure; the prior "(PR-H closed it)"
+    was a labelling drift — PR-H is `tests/platform-component-inventory`,
+    not `tests/no-javascript-interface`).
+  - `memory-bank/05-activeContext.md §Open questions q2` — marked
+    closed with reference to the split branches.
+  - `DEVLOG.md` — this entry.
+
+  **Branch 2 — `docs/cleanup-track-a-side`** (off `docs/adr-and-backfill`,
+  carries Track A's 14 ADRs + 3 closure notes; ships after the Track C
+  stack lands on trunk so the cited tests/scripts are reachable):
+  - `docs/adr/ADR-AND-B.md §Known gap` — closure note pointing to
+    `aa5b203` (`ci/banned-strings-extend-kotlin`, Sprint 24 Set 2 PR-F).
+  - `docs/adr/ADR-AND-I.md §Code markers` — citation added for
+    `scripts/check_banned_deps.sh` (enforces Decision §3 no-analytics).
+  - `docs/adr/ADR-AND-N.md §Known gap (adjacent candidate)` — closure
+    note pointing to `106e8b9` (`tests/no-javascript-interface`,
+    Sprint 25 Set 3 PR-G).
+
+- **Why:** All 4 originally-flagged cross-branch followups close
+  cleanly. Cascade analysis uncovered 2 additional items (PR-G/H
+  labelling drift; three reference points needing status flip).
+  File-boundary split keeps trunk-side fixes unblocked from Track A
+  merge timing while keeping Track-A-only edits properly gated.
+- **Cascade risk verified absent:** `RED-TEAM.md` A.1/A.2 cover
+  Readium-internal `R2WebView` JS interface (different scope from our
+  `WebView.addJavascriptInterface()` ban); `MANIFEST.md` does not
+  reference "Known gap"; `ADR-AND-O` still has three legitimately-open
+  gaps (correctly untouched).
+- **Tests:** 91 / 0 failures. Preflight 9/9 green at every commit
+  boundary on both branches. Doc-only edits, zero source change.
+- **Files (Branch 1):** RULES.md, memory-bank/05-activeContext.md,
+  memory-bank/06-progress.md, DEVLOG.md.
+- **Files (Branch 2):** docs/adr/ADR-AND-B.md, docs/adr/ADR-AND-I.md,
+  docs/adr/ADR-AND-N.md.
+- **Next:** Adversarial review on both branches per Sets 1-5 pattern;
+  V2 planning research (deferred items in `06-progress.md §Deferred V2+`);
+  pre-push hygiene sweep.
+- **Blockers:** none. 16 local branches (added 2); nothing pushed.

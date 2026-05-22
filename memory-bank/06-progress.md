@@ -1,6 +1,6 @@
 # 06 — Progress
 
-**Last updated:** 2026-05-17 (Sprint 25, Set 5)
+**Last updated:** 2026-05-17 (Sprint 26 — cross-branch doc cleanup)
 
 Status key: ✅ shipped & tested · 🚧 in progress · 🔲 deferred (V2+)
 
@@ -156,10 +156,24 @@ Status key: ✅ shipped & tested · 🚧 in progress · 🔲 deferred (V2+)
 - 2026-05-17 — `ADR-AND-A.md` "shipped in PR-C2" forward-reference cleaned
   up; `ADR-AND-J` dangling cross-reference annotated in `ADR-AND-R.md`
 
-## Cross-branch follow-ups (deferred to a post-Track-A doc PR)
+## Cross-branch follow-ups (Sprint 26 — split across two branches)
 
-- `ADR-AND-B.md` §"Known gap" section closure (PR-F closed the gap)
-- `ADR-AND-I.md` citation for `scripts/check_banned_deps.sh`
-- `ADR-AND-N.md` §"Known gap" section closure (PR-H closed it)
-- `RULES.md` §"Gaze data (ADR-AND-H equivalent)" label correction
-  (should be ADR-AND-J, not H — pre-existing pre-Set-2 bug)
+Trunk-side (`docs/cleanup-trunk-side`, ships immediately):
+
+- `RULES.md` §"Gaze data" label corrected from `ADR-AND-H equivalent`
+  to `ADR-AND-J equivalent` (H is STT-deferred; J is gaze ephemerality).
+- `06-progress.md` PR-attribution corrected: ADR-AND-N closure is by
+  PR-G (`tests/no-javascript-interface`, GroupA), not PR-H.
+- `05-activeContext.md` §Open questions q2 marked closed.
+- `DEVLOG.md` Sprint 26 entry describing both halves of the cleanup.
+
+Track-A-side (`docs/cleanup-track-a-side`, built on `docs/adr-and-backfill`
+so it carries Track A's 14 ADRs; ships after the Track C stack lands on
+trunk so the cited tests/scripts are reachable):
+
+- `ADR-AND-B.md` §"Known gap" — closure note pointing to `aa5b203`
+  (`ci/banned-strings-extend-kotlin`, Sprint 24 Set 2 PR-F).
+- `ADR-AND-I.md` §"Code markers" — citation added for
+  `scripts/check_banned_deps.sh` (enforces Decision §3 no-analytics).
+- `ADR-AND-N.md` §"Known gap" — closure note pointing to `106e8b9`
+  (`tests/no-javascript-interface`, Sprint 25 Set 3 PR-G).

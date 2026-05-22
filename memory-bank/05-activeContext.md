@@ -1,6 +1,6 @@
 # 05 — Active Context
 
-**Last updated:** 2026-05-17 (Sprint 25 — Set 5 docs hygiene)
+**Last updated:** 2026-05-17 (Sprint 26 — cross-branch doc cleanup)
 
 ## Current trunk state
 
@@ -72,9 +72,12 @@ close in Set 5 PR-M.
 1. **Push order** — Track A first (docs) or Track B+C first (code)?
    Recommendation: A first, then B/C — docs land cleanly; code rebases
    trivially once ADR-AND-A/E/etc references resolve on trunk.
-2. **Cross-branch doc cleanup PR** — After Track A merges, several
-   "dangling reference" annotations in ADR-AND-R and `memory-bank/`
-   can be removed in a follow-up doc PR.
+2. ~~**Cross-branch doc cleanup PR**~~ — **CLOSED 2026-05-17 (Sprint 26):**
+   split into `docs/cleanup-trunk-side` (ships immediately) and
+   `docs/cleanup-track-a-side` (built on `docs/adr-and-backfill`,
+   carries Track A's 14 ADRs + 3 closure notes; ships after the
+   Track C stack lands on trunk so cited tests/scripts are reachable). See
+   `06-progress.md §Cross-branch follow-ups`.
 
 ## Recent ADR landings (since the last DEVLOG digest)
 
