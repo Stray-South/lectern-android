@@ -61,3 +61,12 @@ jobs:
 
       - name: Gaze data leak check
         run: bash scripts/check_gaze_data_leak.sh
+
+      - name: Audio session ownership check (ADR-AND-A)
+        run: bash scripts/check_audio_session.sh
+
+      - name: Banned dependencies check (ADR-AND-I §3)
+        run: bash scripts/check_banned_deps.sh
+
+      - name: Release-build logging check (RULES.md §Code quality)
+        run: bash scripts/check_release_logging.sh
