@@ -7,7 +7,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.platform.LocalView
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * V2 infrastructure — reference-counted FLAG_SECURE controller.
@@ -46,28 +45,43 @@ import java.util.concurrent.atomic.AtomicInteger
 class WindowSecurityController(private val applyFlagSecure: (Boolean) -> Unit) {
 
     /**
-     * Convenience constructor that binds to a real [Window]. Production code
-     * uses this; tests use the primary constructor with a fake setter.
+     * Convenience constructor that binds to a real [Window].
+     *
+     * The setter is posted to the Window's decor-view looper so background-
+     * thread `acquire()` / `release()` calls don't crash with
+     * `CalledFromWrongThreadException`. Production code uses this constructor;
+     * tests use the primary constructor with a synchronous fake setter.
      */
     constructor(window: Window) : this({ enabled ->
-        if (enabled) {
-            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        } else {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        window.decorView.post {
+            if (enabled) {
+                window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
         }
     })
 
-    private val counter = AtomicInteger(0)
+    // Lock object guarding the counter + flag-setter as a single atomic transition.
+    // AtomicInteger alone is insufficient because the `if (newCount == 1)` check and
+    // the subsequent applyFlagSecure() call are TWO operations from the JMM's view;
+    // a concurrent release that drives the counter to 0 between them could clear the
+    // flag while the acquire still expects it set, or vice versa. Synchronising the
+    // whole transition guarantees the (counter, flag) pair is consistent.
+    private val lock = Any()
+    private var counter = 0
 
     /**
      * Add one "wants FLAG_SECURE" claim. Sets the flag if this was the first
-     * active claim. Idempotent w.r.t. repeated calls within a single render
-     * pass only if paired with [release].
+     * active claim. Counter increment and flag setter run inside [lock] so the
+     * (counter, flag) transition is atomic w.r.t. concurrent acquire/release.
      */
     fun acquire() {
-        val newCount = counter.incrementAndGet()
-        if (newCount == 1) {
-            applyFlagSecure(true)
+        synchronized(lock) {
+            counter++
+            if (counter == 1) {
+                applyFlagSecure(true)
+            }
         }
     }
 
@@ -82,14 +96,16 @@ class WindowSecurityController(private val applyFlagSecure: (Boolean) -> Unit) {
      * at code-review time by the [SecureWindow] DisposableEffect pairing.
      */
     fun release() {
-        val newCount = counter.decrementAndGet()
-        when {
-            newCount == 0 -> applyFlagSecure(false)
-            newCount < 0 -> {
-                // Recover: counter should never go below 0. Force back to 0 and
-                // clear the flag.
-                counter.set(0)
-                applyFlagSecure(false)
+        synchronized(lock) {
+            counter--
+            when {
+                counter == 0 -> applyFlagSecure(false)
+                counter < 0 -> {
+                    // Recover: counter should never go below 0. Force back to 0 and
+                    // clear the flag.
+                    counter = 0
+                    applyFlagSecure(false)
+                }
             }
         }
     }
@@ -97,7 +113,7 @@ class WindowSecurityController(private val applyFlagSecure: (Boolean) -> Unit) {
     /**
      * Test/diagnostic hook. Returns the current active-claim count.
      */
-    fun activeClaimCount(): Int = counter.get()
+    fun activeClaimCount(): Int = synchronized(lock) { counter }
 
 }
 

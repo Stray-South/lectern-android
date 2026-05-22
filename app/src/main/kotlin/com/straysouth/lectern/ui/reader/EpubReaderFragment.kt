@@ -420,11 +420,11 @@ class EpubReaderFragment : Fragment() {
         entries: List<org.readium.r2.shared.publication.Link>,
     ) {
         currentTocEntries = entries
-        // Walk tracked WebViews; drop any whose WeakReference has been GC'd.
-        val live = rotorWebViews.filter { it.get() != null }
-        rotorWebViews.clear()
-        rotorWebViews.addAll(live)
-        live.forEach { ref -> ref.get()?.let { installRotorOnWebView(it, navigator, entries) } }
+        // Prune dead WeakReferences in place, then install on the surviving live ones.
+        rotorWebViews.removeAll { it.get() == null }
+        rotorWebViews.forEach { ref ->
+            ref.get()?.let { installRotorOnWebView(it, navigator, entries) }
+        }
     }
 
     /**
@@ -434,6 +434,9 @@ class EpubReaderFragment : Fragment() {
      */
     private fun registerWebViewForRotor(webView: WebView) {
         // Track with WeakReference so a removed WebView (Readium recycling) is GC-safe.
+        // Prune dead refs first so `any` stays efficient as the user navigates many
+        // chapters (each new chapter triggers wrapWebViewsIn → registerWebViewForRotor).
+        rotorWebViews.removeAll { it.get() == null }
         // De-duplicate: skip if this exact WebView is already tracked.
         if (rotorWebViews.any { it.get() === webView }) return
         rotorWebViews.add(java.lang.ref.WeakReference(webView))
