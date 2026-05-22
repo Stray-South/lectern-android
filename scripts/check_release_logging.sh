@@ -27,7 +27,7 @@ while IFS= read -r -d '' file; do
         line = $0
         sub(/\/\*.*\*\//, "", line)
         sub(/\/\/.*/, "", line)
-        if (line ~ /(^|[^A-Za-z0-9_])(Log\.[dv]\(|println\()/) {
+        if (line ~ /(^|[^A-Za-z0-9_])(Log\.[dv][[:space:]]*\(|println[[:space:]]*\()/) {
             print FILENAME ":" NR ": " $0
         }
     }' FILENAME="$file" "$file")

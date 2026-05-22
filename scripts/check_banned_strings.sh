@@ -49,11 +49,11 @@ while IFS= read -r -d '' file; do
         if (t == "" || t ~ /^(\*|\/\*)/) next
         # Skip Log.* diagnostic lines (caller logs; user-facing copy is
         # set separately via strings.xml or fixed literals).
-        if (line ~ /(^|[^A-Za-z0-9_])Log\.[dvwie]\(/) next
+        if (line ~ /(^|[^A-Za-z0-9_])Log\.[dvwie][[:space:]]*\(/) next
         # Skip Exception(...) constructor lines: exception messages are
         # diagnostic — callers either Log.e them or substitute a fixed
         # user-facing string before display. Same threat model as Log.*.
-        if (line ~ /(^|[^A-Za-z0-9_])Exception\(/) next
+        if (line ~ /(^|[^A-Za-z0-9_])Exception[[:space:]]*\(/) next
         lower = tolower(line)
         # Word-bounded token match (BSD-awk friendly)
         if (lower ~ ("(^|[^a-z0-9_])(" tokens ")([^a-z0-9_]|$)")) {
