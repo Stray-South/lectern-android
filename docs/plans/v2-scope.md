@@ -351,10 +351,10 @@ mirrors as Deferred for V1.
 possibly voice-command grammar.
 
 **V1 ADRs in play.**
-- `ADR-AND-H` (Deferred) — re-evaluated and converted to
-  Accepted/Decided with fail-closed policy: if on-device STT
-  unavailable, captions show "TTS-only" indicator, never silently
-  fall back to a server. Direct iOS-H parity.
+- `ADR-AND-H` (Deferred) — per Convention 1(a), its `Status:` field
+  flips from `Deferred` to `Accepted` when STT ships; the substantive
+  content (fail-closed policy, RECORD_AUDIO handling) lives in the
+  new `ADR-AND-U`, not in an edit to `ADR-AND-H`.
 - `RULES.md §Privacy` — RECORD_AUDIO is a permission gate that
   privacy-conscious users must consent to. Manifest declares;
   runtime request before first use; user can revoke.

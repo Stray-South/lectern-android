@@ -1466,11 +1466,15 @@ Format: see .claude/skills/devlog/SKILL.md
   **Phase A (on v2-scope) — FLAG_SECURE helper refinement:**
   - `docs/plans/v2-scope.md §Cross-cutting risk register` — corrected
     the FLAG_SECURE helper guidance from one-way
-    `enableFlagSecureOnActivity()` to bidirectional DisposableEffect-
-    based Composable side-effect. Single-Activity Compose means the
-    one-way version would leak FLAG_SECURE across non-sensitive
-    screens (Settings, Library) after the user leaves a sensitive
-    Composable.
+    `enableFlagSecureOnActivity()` toward a bidirectional helper.
+    (Note: a follow-up Gemini round flagged that a naive per-
+    Composable `DisposableEffect` is also unsafe under navigation
+    race conditions between two sensitive screens; the current
+    guidance in v2-scope.md is a **reference-counted centralized
+    state** via `CompositionLocalProvider` or hoisted `ViewModel`.
+    See v2-scope.md risk-register for the up-to-date wording.)
+    Single-Activity Compose was the root constraint that made any
+    one-way approach unsafe.
 
   **Phase B — adr-and-backfill stack:**
   - `ADR-AND-N.md` (×2) — corrected `toJson` to `toJSON` (Decision §8
