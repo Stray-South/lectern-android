@@ -24,10 +24,24 @@ an implementation plan — each feature ships behind its own ADR.
 
 1. **One new ADR per V2 feature that introduces a new constraint,
    permission, network surface, or reverses a fail-closed V1 test.**
-   V1 ADRs are immutable history; V2 work does not amend
-   `ADR-AND-{A..R}`, it adds `ADR-AND-S+`. Features that don't meet
-   the constraint/permission/surface/test-reversal bar may ship with
-   a DEVLOG entry only (per-card "ADR needed?" answers below
+   Substantive Decision-section changes to V1 ADRs are forbidden —
+   ship a new `ADR-AND-S+` instead. **Narrow amendments to V1 ADRs
+   are allowed in three cases and three only:**
+   (a) `Status:` field transitions (e.g. `Deferred` → `Accepted`
+       when a previously-stub ADR like `ADR-AND-H` is converted —
+       the new substantive content lives in the new V2 ADR; the
+       V1 file's Status flip just records the closure);
+   (b) forward-reference updates (e.g. resolving `ADR-AND-S+` once
+       the actual slot lands, per Convention #2);
+   (c) `Status: Amended` with a new dated section appended below
+       the original — never an edit-in-place of historical text.
+       `ADR-AND-L` already follows this pattern (V1→V3 deferral
+       added as an amendment section, not by editing the
+       original). The risk-register entries that mention
+       "amendment when it lands" refer specifically to this case.
+   Features that don't introduce a new constraint, permission,
+   network surface, or fail-closed reversal may ship with a
+   DEVLOG entry only (per-card "ADR needed?" answers below
    indicate which features fall in each bucket).
 2. **ADR slot reservations are reservable, not committed.** The
    letter assignments below indicate intent; if the implementation
