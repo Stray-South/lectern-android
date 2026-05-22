@@ -1340,3 +1340,185 @@ Format: see .claude/skills/devlog/SKILL.md
   V2 planning research (deferred items in `06-progress.md §Deferred V2+`);
   pre-push hygiene sweep.
 - **Blockers:** none. 16 local branches (added 2); nothing pushed.
+
+## 2026-05-17T00:00Z — Sprint 27: V2 scope plan
+
+- **Did:** Wrote `docs/plans/v2-scope.md` — scoping doc for the 9
+  deferred V2 features tracked in `memory-bank/06-progress.md
+  §Deferred (V2+)`. Followed Research → Plan → Execute → Adversarial
+  Review loop per `.claude/surgical-engineer.md`.
+
+  **Doc structure:**
+  - Conventions (4 rules establishing V2 precedent — esp. "one new
+    ADR per V2 feature, V1 ADRs are immutable history")
+  - ADR slot reservations: S=Cloud sync, T=Annotations, U=STT,
+    V=DRM/LCP, W=Foreground service
+  - 9 feature scope cards (uniform template): summary, iOS parity,
+    new surfaces, V1 ADRs in play, V1 tests affected,
+    FLAG_SECURE triggers, dependencies, ADR-needed test, T-shirt
+    size, open questions
+  - Dependency graph
+  - Cross-cutting risk register (5 risks, all with mitigation surface)
+  - Out-of-scope clarifications (Focus Band V2 = V3 per ADR-AND-L;
+    LLM stays forbidden; multi-user is V3)
+  - Maintenance notes for future contributors
+
+  **F5 envelope-consumer (V2.5):** committed to TBD stub with 4
+  explicit owner questions blocking scope. Only repo reference is
+  `06-progress.md:140-141`; no iOS-side ADR found.
+
+- **Why:** V2 work is currently uncatalogued except as a 9-bullet
+  list. Without a scoping doc, the first V2 feature to ship has to
+  re-derive: which ADR slot it claims, which V1 tests it replaces,
+  whether FLAG_SECURE triggers fire, what dependencies it has.
+- **Cascade addressed in plan:** ADR forward-ref drift (I and J both
+  point at "ADR-AND-S+"); FLAG_SECURE helper-extraction precedent
+  (4 V2 features fire the same trigger); test-gate replacement (not
+  relaxation) discipline; cross-branch readability (this branch is
+  off `chore/hprof-cleanup`, references Track A ADRs by name).
+- **Tests:** 91 / 0 failures. Preflight 9/9 green. Doc-only; zero
+  source change.
+- **Files:** docs/plans/v2-scope.md (new, ~516 lines), MANIFEST.md,
+  memory-bank/06-progress.md, DEVLOG.md.
+- **Next:** Adversarial review of the V2 scope doc per Sets 1-5
+  pattern. After DoD: Pre-push hygiene sweep (item C from earlier
+  plan).
+- **Blockers:** F5 envelope-consumer scope blocked on owner input
+  (4 questions in §V2.5). All other V2 items scoped.
+
+## 2026-05-18T00:00Z — Sprint 28: Pre-push hygiene sweep
+
+- **Did:** Ran a defensive pre-push sweep across all 17 plan-relevant
+  branches.
+
+  **Checks performed:**
+  - Working-tree cleanliness on every branch: 0 dirty files
+  - Preflight at 6 relevant tips (`docs/v2-scope`,
+    `docs/cleanup-trunk-side`, `docs/cleanup-track-a-side`,
+    `chore/hprof-cleanup`, `docs/adr-and-backfill`,
+    `sprint/14-calibration-entry-point`): all green
+  - Track A vs Track B/C file overlap analysis: zero overlap —
+    conflict-free
+  - Merge-conflict prediction via `git merge-tree`: one risk
+    surfaced (DEVLOG.md sibling-branch conflict between Sprint 26
+    and Sprint 27 entries)
+  - Build-artifact search (`.hprof`, etc.) in tree: none
+
+  **Action taken (with user authorization):**
+  Rebased `docs/v2-scope` from off `chore/hprof-cleanup` onto
+  `docs/cleanup-trunk-side`. Sprint 26 and Sprint 27 DEVLOG entries
+  are now chronological (25 → 26 → 27) instead of sibling-branch
+  appends that would collide at merge time. Conflict resolved
+  manually during rebase: kept both Sprint entries verbatim. All
+  three v2-scope commits replayed cleanly at new SHAs (`f8faaa7`,
+  `86a1522`, `010f815`).
+
+  **Post-rebase verification:**
+  - `git merge-base --is-ancestor docs/cleanup-trunk-side
+    docs/v2-scope`: YES (fast-forward ready)
+  - Sequential merge prediction (trunk ← cleanup-trunk-side,
+    then trunk ← v2-scope): both steps clean
+  - Preflight on new `docs/v2-scope` tip: 9/9 green
+
+- **Why:** Sibling-branch topology was about to force a manual
+  conflict resolution at the first push window. Rebasing put the
+  Sprint entries in the order they were authored.
+- **Tests:** 91 / 0 failures. Preflight 9/9 green.
+- **Topology snapshot post-rebase:**
+
+  ```
+   sprint/14-calibration-entry-point  (trunk)
+            │
+            ├─ docs/adr-and-e-gaze-stack       (Track A, 1 commit)
+            ├─ docs/adr-and-backfill           (Track A, 1 commit)
+            │      └─ docs/cleanup-track-a-side  (3 commits)
+            └─ refactor/audio-session-coordinator → … → chore/hprof-cleanup
+                    └─ docs/cleanup-trunk-side  (3 commits)
+                          └─ docs/v2-scope        ← NEW STACK POINT (post-rebase)
+  ```
+
+  Recommended merge order to trunk:
+  1. Track A: `docs/adr-and-e-gaze-stack`, `docs/adr-and-backfill`
+  2. Track C stack tip: `chore/hprof-cleanup`
+  3. `docs/cleanup-trunk-side`
+  4. `docs/v2-scope`
+  5. `docs/cleanup-track-a-side` (last — cites artifacts from
+     steps 1+2 per Sprint 26 cross-branch notes)
+
+- **Next:** Push when ready. All hygiene items closed.
+- **Blockers:** none. 17 local branches; nothing pushed.
+
+## 2026-05-20T00:00Z — Sprint 29: Bot-review fix wave (Gemini)
+
+- **Did:** Closed 11 real findings from Gemini code-review across 5
+  open PRs (#1, #2, #3, #5, #6). PR #4 not yet reviewed. PR #3 had
+  one FP (stripComments at GroupA:489 IS harmonized identically to
+  GroupEF:550) verified and rejected per
+  `feedback_reviewer_fp_verification`.
+
+  **Phase A — chore/hprof-cleanup stack (deepest cascade):**
+  - `AudioSessionCoordinator.kt:29` — wrapped `getSystemService` in
+    `requireNotNull` with diagnostic message. Platform-type assignment
+    to non-null val was an implicit force-unwrap; RULES.md forbids.
+  - Rebased `docs/cleanup-trunk-side` and `docs/v2-scope` onto the
+    new `chore/hprof-cleanup` tip. Both rebases clean.
+
+  **Phase A (on v2-scope) — FLAG_SECURE helper refinement:**
+  - `docs/plans/v2-scope.md §Cross-cutting risk register` — corrected
+    the FLAG_SECURE helper guidance from one-way
+    `enableFlagSecureOnActivity()` toward a bidirectional helper.
+    (Note: a follow-up Gemini round flagged that a naive per-
+    Composable `DisposableEffect` is also unsafe under navigation
+    race conditions between two sensitive screens; the current
+    guidance in v2-scope.md is a **reference-counted centralized
+    state** via `CompositionLocalProvider` or hoisted `ViewModel`.
+    See v2-scope.md risk-register for the up-to-date wording.)
+    Single-Activity Compose was the root constraint that made any
+    one-way approach unsafe.
+
+  **Phase B — adr-and-backfill stack:**
+  - `ADR-AND-N.md` (×2) — corrected `toJson` to `toJSON` (Decision §8
+    + Pinned-by table). Readium's actual API uses all-caps casing;
+    test assertions in `GroupASecurityTest:385` check
+    `contains("toJSON()")`.
+  - Rebased `docs/cleanup-track-a-side` onto new
+    `docs/adr-and-backfill`. Clean rebase.
+
+  **Phase B (on cleanup-track-a-side) — ADR-AND-B/N completeness:**
+  - `ADR-AND-B.md §Decision` — updated to describe both XML and `.kt`
+    scans (Sprint 24 Set 2 closure).
+  - `ADR-AND-B.md §Consequences` — updated; `.kt` is no longer
+    uncovered.
+  - `ADR-AND-B.md` XML path — added `app/src/main/` prefix for
+    consistency with the adjacent `.kt` path.
+  - `ADR-AND-N.md §Pinned-by` table — added
+    `epub_noJavascriptInterface_inMainSources` row.
+  - `ADR-AND-N.md §Code-markers` — added reference to the new test.
+
+  **Phase C — isolated leaf:**
+  - `ADR-AND-E.md` (4 fixes) — line refs corrected to current source
+    state (`GazeProviderImpl.kt`): config 130-148→142-158, iris
+    41-42→40-41, calibration 103-128→109-139. CalibrationResult type
+    corrected: `meanErrorPx: Double`→`Float`; "13 doubles"→"12 doubles
+    + 1 float".
+
+  **FP rejected (PR #3, GroupASecurityTest stripComments at line 424):**
+  Gemini flagged stripComments as inconsistent with the harmonized
+  helpers in GroupEF/H/IJ. Verified: GroupA:489 is byte-identical to
+  GroupEF:550. Gemini's anchor at line 424 is the call site of
+  stripComments(); the helper definition at line 489 was missed.
+  Posted threaded reply on the inline comment.
+
+- **Tests:** 91 / 0 failures across all branches. Preflight 9/9 green
+  at every tip. Considered extending
+  `GroupGSecurityTest.audhd_stringsXml_noBannedCopy` to `.kt` (per
+  Gemini's PR #6 side-suggestion); rejected as bonus refactor — the
+  shell-script gate has substantive filter logic (Log.*, Exception,
+  word-bounded match) that a naive JVM mirror can't match. Shell
+  script remains authoritative for `.kt`; XML has both gates.
+- **Force-pushes:** 6 — chore/hprof-cleanup, docs/cleanup-trunk-side,
+  docs/v2-scope, docs/adr-and-backfill, docs/cleanup-track-a-side,
+  docs/adr-and-e-gaze-stack. All `--force-with-lease`.
+- **Next:** Wait for Gemini re-review post-push; check PR #4 review
+  status. Adversarial agent pass on each branch tip optional.
+- **Blockers:** none.
