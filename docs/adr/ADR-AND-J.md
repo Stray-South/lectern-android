@@ -27,7 +27,7 @@ UV coordinates, intermediate ridge-regression feature vectors — is
 in-memory only. None of these reach `DataStore`, Room, the filesystem,
 or `Log.*` calls.
 
-Derived data — the `CalibrationResult` (13 doubles + meta) — may be
+Derived data — the `CalibrationResult` (12 doubles + 1 float + meta) — may be
 persisted to DataStore at `files/datastore/calibration_prefs.preferences_pb`.
 This file is excluded from cloud backup (`data_extraction_rules.xml`
 `<cloud-backup>` blanket exclusion) and from device-to-device transfer
