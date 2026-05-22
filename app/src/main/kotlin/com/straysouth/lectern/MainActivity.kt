@@ -35,6 +35,10 @@ import com.straysouth.lectern.ui.library.LibraryScreen
 import com.straysouth.lectern.ui.library.LibraryViewModel
 import com.straysouth.lectern.ui.reader.ReaderScreen
 import com.straysouth.lectern.ui.theme.LecternTheme
+import com.straysouth.lectern.ui.window.LocalWindowSecurityController
+import com.straysouth.lectern.ui.window.WindowSecurityController
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 
 class MainActivity : AppCompatActivity() {
 
@@ -52,6 +56,16 @@ class MainActivity : AppCompatActivity() {
         gazeViewModel.attachLifecycleOwner(this)
         enableEdgeToEdge()
         setContent {
+            // V2 infrastructure: WindowSecurityController bound at Activity scope.
+            // Sensitive Composables (annotations reader, future DRM/auth/foreground-
+            // notification surfaces per ADR-AND-R V2 reconsideration triggers) call
+            // SecureWindow() to claim FLAG_SECURE; the reference counter keeps the
+            // flag set while any sensitive screen is in composition.
+            // See docs/plans/v2-scope.md §Cross-cutting risk register.
+            val windowSecurityController = remember { WindowSecurityController(window) }
+            CompositionLocalProvider(
+                LocalWindowSecurityController provides windowSecurityController,
+            ) {
             LecternTheme {
                 val cdApp = stringResource(R.string.cd_app)
                 Surface(
@@ -65,6 +79,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     AppContent(libraryViewModel, gazeViewModel, ::hasCameraPermission)
                 }
+            }
             }
         }
     }

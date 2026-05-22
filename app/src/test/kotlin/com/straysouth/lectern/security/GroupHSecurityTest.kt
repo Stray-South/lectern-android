@@ -347,14 +347,17 @@ class GroupHSecurityTest {
         // so screenshots are still permitted at runtime per ADR-AND-R V1 stance.
         // When the first V2 feature wires SecureWindow into a sensitive Composable,
         // ADR-AND-R gets a Status:Amended section per v2-scope.md Convention 1(c).
+        // Strip comments before pattern-matching: docstrings that reference FLAG_SECURE
+        // by name (e.g. MainActivity's CompositionLocal-provider documentation) must not
+        // trigger this test. Only actual code-level use of the flag is the threat surface.
         val violations = mainSources.walkTopDown()
             .filter { it.extension == "kt" }
             .filter { it.name != "WindowSecurityController.kt" }
-            .filter { it.readText().contains("FLAG_SECURE") }
+            .filter { stripComments(it.readText()).contains("FLAG_SECURE") }
             .map { it.name }
             .toList()
         assertTrue(
-            "FLAG_SECURE must not appear in main sources outside WindowSecurityController.kt " +
+            "FLAG_SECURE must not appear in main-source code outside WindowSecurityController.kt " +
                 "— screenshots are intentionally permitted for accessibility tool compatibility " +
                 "(H.6); the controller is foundation infrastructure, not yet wired into UI:\n" +
                 violations.joinToString("\n"),
