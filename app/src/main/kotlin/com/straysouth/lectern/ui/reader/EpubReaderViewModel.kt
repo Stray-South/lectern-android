@@ -87,6 +87,14 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private val _ttsUiState = MutableStateFlow<TtsUiState>(TtsUiState.Idle)
     val ttsUiState: StateFlow<TtsUiState> = _ttsUiState
 
+    // V2.6 — chapter rotor source. Populated once on publication open from
+    // Publication.tableOfContents. Top-level entries only (depth 0); footnote /
+    // image / link rotors are explicitly out of scope for the first V2 cut.
+    // Consumed by EpubReaderFragment which installs one ViewCompat
+    // accessibility action per entry on the navigator's root view.
+    private val _tocEntries = MutableStateFlow<List<org.readium.r2.shared.publication.Link>>(emptyList())
+    val tocEntries: StateFlow<List<org.readium.r2.shared.publication.Link>> = _tocEntries
+
     private val _anchorLocator = MutableStateFlow<Locator?>(null)
     val anchorLocator: StateFlow<Locator?> = _anchorLocator
 
@@ -122,6 +130,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
             pubRepository.open(Uri.parse(filePath))
                 .onSuccess { publication ->
                     _publication = publication
+                    _tocEntries.value = publication.tableOfContents
                     bookDao.updateLastOpened(bookId, System.currentTimeMillis())
                     val app = getApplication<Application>()
                     // Android-specific companion invoke: uses AndroidTtsEngineProvider internally.

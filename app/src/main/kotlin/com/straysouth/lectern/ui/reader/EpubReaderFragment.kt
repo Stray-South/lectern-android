@@ -13,6 +13,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -172,6 +173,16 @@ class EpubReaderFragment : Fragment() {
                             // StateFlow already skips equal values; no distinctUntilChanged needed.
                             fragment.currentLocator
                                 .collect { locator -> viewModel.saveLocator(bookId, locator) }
+                        }
+
+                        // V2.6 — A11y chapter rotor. Install one custom accessibility
+                        // action per top-level TOC entry on the navigator's root view;
+                        // TalkBack surfaces these in its local-context menu so users can
+                        // jump to any chapter without scrolling through the WebView.
+                        launch {
+                            viewModel.tocEntries.collect { entries ->
+                                installChapterRotor(fragment, entries)
+                            }
                         }
                     }
             }
@@ -365,5 +376,40 @@ class EpubReaderFragment : Fragment() {
         root.addView(overlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
         return root
+    }
+
+    /**
+     * V2.6 — A11y chapter rotor. Installs one [ViewCompat] custom accessibility
+     * action per TOC entry on the navigator's root view. TalkBack exposes these
+     * in its local-context menu ("Show actions"), letting users navigate
+     * directly to any chapter without scrolling.
+     *
+     * Idempotent: clears any previously-installed rotor actions before adding
+     * the new set, so re-emitting an updated TOC (e.g. after a reopen) won't
+     * accumulate duplicates.
+     *
+     * Top-level entries only (depth 0). Footnote / image / link rotors are
+     * intentionally out of scope for the first V2 cut.
+     */
+    private fun installChapterRotor(
+        navigator: EpubNavigatorFragment,
+        entries: List<org.readium.r2.shared.publication.Link>,
+    ) {
+        val view = navigator.view ?: return
+        // Clear previously-installed rotor actions (best-effort — replaceAccessibilityAction
+        // is what ViewCompat provides for replacement; on first install the IDs are absent
+        // and these calls no-op). The action IDs we use are stored on the View tag below.
+        @Suppress("UNCHECKED_CAST")
+        val priorIds = view.getTag(R.id.chapter_rotor_action_ids) as? List<Int>
+        priorIds?.forEach { id -> ViewCompat.removeAccessibilityAction(view, id) }
+
+        val ids = entries.mapNotNull { link ->
+            val label = link.title?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            ViewCompat.addAccessibilityAction(view, label) { _, _ ->
+                navigator.go(link, animated = true)
+                true
+            }
+        }
+        view.setTag(R.id.chapter_rotor_action_ids, ids)
     }
 }

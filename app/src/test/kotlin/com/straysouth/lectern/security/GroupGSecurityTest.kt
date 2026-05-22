@@ -234,6 +234,53 @@ class GroupGSecurityTest {
         )
     }
 
+    // ── V2.6 — A11y chapter rotor installed on the navigator ───────────────
+
+    /**
+     * V2.6 — A11y chapter rotor. Asserts that [EpubReaderFragment] wires the
+     * publication's [tableOfContents] into ViewCompat accessibility actions on
+     * the navigator's root view. TalkBack surfaces these in its local-context
+     * menu, letting users jump to any chapter without scrolling.
+     *
+     * Pinned by source assertion (not runtime) because:
+     *   - The runtime path requires an instrumented test (Fragment lifecycle +
+     *     CameraX + Readium publication) which is `androidTest`-only.
+     *   - The wiring is shape-pinnable here: presence of `tocEntries.collect`
+     *     bound to `installChapterRotor`, and `installChapterRotor` calling
+     *     `ViewCompat.addAccessibilityAction` with `navigator.go(link)`.
+     *
+     * Regression target: a future contributor removes the chapter rotor by
+     * deleting either the collect block in the fragment's repeatOnLifecycle
+     * setup, or the ViewCompat.addAccessibilityAction call in the helper.
+     */
+    @Test
+    fun audhd_chapterRotor_installedOnNavigator() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderFragment.kt")
+                .readText(),
+        )
+        assertTrue(
+            "EpubReaderFragment must observe viewModel.tocEntries to refresh the " +
+                "chapter rotor when the publication's TOC becomes available (V2.6)",
+            source.contains("viewModel.tocEntries.collect"),
+        )
+        assertTrue(
+            "EpubReaderFragment must define installChapterRotor() to wire TOC " +
+                "entries into ViewCompat accessibility actions (V2.6)",
+            source.contains("fun installChapterRotor"),
+        )
+        assertTrue(
+            "installChapterRotor must call ViewCompat.addAccessibilityAction so " +
+                "TalkBack surfaces chapter jumps in its local-context menu (V2.6)",
+            source.contains("ViewCompat.addAccessibilityAction(view, label)"),
+        )
+        assertTrue(
+            "installChapterRotor must invoke navigator.go(link, ...) inside the " +
+                "action callback so activating the rotor entry navigates (V2.6)",
+            source.contains("navigator.go(link"),
+        )
+    }
+
     // ── G.3 — Import-error Snackbar is Indefinite + dismissable ─────────────
 
     /**
