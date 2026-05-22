@@ -204,27 +204,38 @@ class GroupEFSecurityTest {
         )
     }
 
-    // ── E.2 — No annotation feature in V1 ────────────────────────────────────
+    // ── E.2 — TTS does not route user-authored annotation text ──────────────
 
     /**
-     * [TtsNavigator] reads [Publication] content only. A future V2 annotation feature
-     * must not accidentally cause TTS to speak user-written text. Pinning the
-     * [AppDatabase] entity registry ensures any annotation entity added there triggers
-     * a test failure, prompting a deliberate TTS-routing review.
+     * V2.2 annotations exist (per ADR-AND-T), but TTS still reads
+     * [Publication] content only — never user-written annotation `body` text.
+     * Pinning the [AndroidTtsNav] construction site ensures TTS reads from
+     * the [Publication] passed to its factory, with no annotation-derived
+     * text path inserted between.
      *
-     * Note: [AnchorRepository] stores a navigation [Locator] (return-to position), not
-     * user-written text — it is not an annotation feature and is correctly excluded here.
+     * Replaces the V1 fail-closed test `tts_noAnnotationFeatureInV1`
+     * (removed in PR introducing V2.2 per v2-scope.md Convention 3 — test
+     * gate replacement, not relaxation). The V1 test asserted absence of
+     * annotation entities; that absence no longer holds once V2.2 ships.
      */
     @Test
-    fun tts_noAnnotationFeatureInV1() {
-        val source = sourceFile("data/db/AppDatabase.kt")
-        val annotationTerms = listOf("Annotation", "Highlight", "UserNote")
-        val violations = annotationTerms.filter { term -> source.contains(term) }
+    fun tts_doesNotReadAnnotationBodyText() {
+        val source = stripComments(sourceFile("ui/reader/EpubReaderViewModel.kt"))
+        // The TtsNavigatorFactory call site must pass `publication` (Readium content),
+        // not anything derived from annotations or user-written text.
         assertTrue(
-            "AppDatabase must not register annotation-related Room entities in V1 — " +
-                "TTS reads Publication content only; no annotation text path must exist (E.2):\n" +
-                violations.joinToString("\n"),
-            violations.isEmpty(),
+            "EpubReaderViewModel must construct TtsNavigatorFactory with the bare " +
+                "publication argument so TTS reads from Readium content only " +
+                "(post-V2.2 / ADR-AND-T) — no annotation body text path",
+            source.contains("TtsNavigatorFactory(app, publication)"),
+        )
+        // Defence in depth: no AnnotationDao reference inside EpubReaderViewModel —
+        // the annotations surface is a separate ViewModel / Composable (V2.2.1 follow-up).
+        // Were TTS to start reading annotations, it would need to import the DAO here.
+        assertTrue(
+            "EpubReaderViewModel must not import AnnotationDao — TTS is in this " +
+                "ViewModel and must not gain a path to user annotation text",
+            !source.contains("AnnotationDao"),
         )
     }
 
