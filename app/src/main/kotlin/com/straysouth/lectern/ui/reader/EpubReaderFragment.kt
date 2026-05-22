@@ -80,6 +80,7 @@ class EpubReaderFragment : Fragment() {
         private const val TTS_DECORATION_GROUP = "tts"
         private const val FOCUS_BAND_DECORATION_GROUP = "focus_band"
         private const val ANCHOR_DECORATION_GROUP = "visual_anchor"
+        private const val ANNOTATIONS_DECORATION_GROUP = "annotations"
         private val CONTAINER_ID get() = R.id.epub_reader_container
         // Amber at 40% alpha — word-level TTS highlight.
         private val TTS_HIGHLIGHT_TINT = Color.argb(102, 255, 215, 0)
@@ -87,6 +88,11 @@ class EpubReaderFragment : Fragment() {
         private val FOCUS_BAND_TINT = Color.argb(77, 255, 235, 59)
         // Warm yellow at 50% alpha — pinned Visual Anchor (more prominent than live band).
         private val ANCHOR_TINT = Color.argb(128, 255, 235, 59)
+        // V2.2 — annotation highlight tint. Distinct hue (warm peach) from the
+        // TTS / Focus Band / Anchor amber-yellow family so users can visually
+        // distinguish user-authored highlights from system-applied highlights.
+        // Alpha matches the Anchor (50%) for similar permanence visibility.
+        private val ANNOTATION_HIGHLIGHT_TINT = Color.argb(128, 255, 183, 77)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -103,6 +109,7 @@ class EpubReaderFragment : Fragment() {
         setupTypographyObserver()
         setupTtsObserver()
         setupAnchorObserver()
+        setupAnnotationDecorationsObserver()
         setupGazeTtsBridge()
     }
 
@@ -279,6 +286,69 @@ class EpubReaderFragment : Fragment() {
     }
 
     /**
+     * V2.2 — render persisted annotations as Readium decorations.
+     * Each annotation's `locatorJson` is parsed back into a [Locator] (the
+     * round-trip via `Locator.toJSON()` is symmetric per ADR-AND-N §8) and
+     * rendered as a Highlight decoration in the annotations group.
+     *
+     * Re-emits on every annotations list change (new highlight, deletion).
+     * Failed locator parses are dropped silently — the underlying schema
+     * guarantees `locatorJson` is well-formed at write time.
+     */
+    private fun setupAnnotationDecorationsObserver() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.annotationsForOpenBook.collect { annotations ->
+                    val decorations = annotations.mapNotNull { ann ->
+                        val locator = parseLocatorJson(ann.locatorJson) ?: return@mapNotNull null
+                        Decoration(
+                            id = ann.id,
+                            locator = locator,
+                            style = Decoration.Style.Highlight(tint = ANNOTATION_HIGHLIGHT_TINT),
+                        )
+                    }
+                    navigatorFragment?.applyDecorations(decorations, ANNOTATIONS_DECORATION_GROUP)
+                }
+            }
+        }
+    }
+
+    /**
+     * V2.2 — parse a stored annotation's locatorJson string back into a Locator.
+     * Returns null on parse failure (defensive — a malformed locatorJson row
+     * would crash the decoration pipeline otherwise; better to drop one bad
+     * annotation than block all others).
+     */
+    private fun parseLocatorJson(locatorJson: String): org.readium.r2.shared.publication.Locator? {
+        return try {
+            org.readium.r2.shared.publication.Locator.fromJSON(
+                org.json.JSONObject(locatorJson),
+            )
+        } catch (_: org.json.JSONException) {
+            null
+        }
+    }
+
+    /**
+     * V2.2 — capture the current text selection in the navigator and persist
+     * it as a highlight. Invoked from the reader toolbar's "Highlight" action.
+     *
+     * Suspending: navigator.currentSelection() is a suspend function (the
+     * WebView selection is fetched via JS bridge). Runs on lifecycleScope so
+     * the call is automatically cancelled if the Fragment is destroyed mid-
+     * lookup. Clears the WebView selection after persisting so the user gets
+     * visual feedback the action completed.
+     */
+    private fun createHighlightFromSelection() {
+        val fragment = navigatorFragment ?: return
+        lifecycleScope.launch {
+            val selection = fragment.currentSelection() ?: return@launch
+            viewModel.createHighlight(selection.locator)
+            fragment.clearSelection()
+        }
+    }
+
+    /**
      * Recursively walks [root] and wraps the client of every [WebView] found with
      * [EpubBlockingWebViewClient], unless already wrapped (idempotent on config change).
      *
@@ -385,6 +455,7 @@ class EpubReaderFragment : Fragment() {
                         onCalibrate = {
                             gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS)
                         },
+                        onHighlight = ::createHighlightFromSelection,
                     )
                     // TODO(ADR-AND-L): Focus Band V2 — deferred to V3.
                     // V1 pixel overlay is GazeFocusBandOverlay in ReaderOverlay.kt (Sprint 13).

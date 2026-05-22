@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.core.os.bundleOf
 import androidx.fragment.compose.AndroidFragment
 import com.straysouth.lectern.R
+import com.straysouth.lectern.ui.window.SecureWindow
 
 @Composable
 fun ReaderScreen(
@@ -18,6 +19,18 @@ fun ReaderScreen(
     modifier: Modifier = Modifier,
 ) {
     val cdReader = stringResource(R.string.cd_reader)
+    // V2.2 — claim FLAG_SECURE while an EPUB reader is in composition. Reader content
+    // includes user-authored highlights (ADR-AND-T / V2.2.1), which fire ADR-AND-R
+    // V2 reconsideration trigger 1 (private user annotation distinct from third-
+    // party EPUB body text). The reference-counted controller (PR #12) keeps the
+    // flag set as long as any sensitive surface is active; navigating BACK to the
+    // library releases it via DisposableEffect onDispose.
+    //
+    // PDF and Comics readers do NOT claim — V2.2 annotations are EPUB-only for the
+    // MVP. If/when annotation support extends to those formats, expand here.
+    if (format != "PDF" && format != "CBZ" && format != "CBR") {
+        SecureWindow()
+    }
     Box(
         modifier = modifier
             .fillMaxSize()

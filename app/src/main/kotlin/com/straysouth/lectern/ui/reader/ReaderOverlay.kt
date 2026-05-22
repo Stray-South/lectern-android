@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.TextFormat
 import androidx.compose.material.icons.outlined.RemoveRedEye
@@ -70,6 +71,10 @@ internal fun ReaderOverlay(
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
     onCalibrate: () -> Unit,
+    // V2.2 — invoked when the user taps the "Highlight" toolbar action. The
+    // Fragment resolves the WebView's current selection (suspend) and persists
+    // an Annotation; this Composable just signals the request.
+    onHighlight: () -> Unit,
 ) {
     when (state) {
         EpubReaderViewModel.State.Loading -> LoadingOverlay()
@@ -93,6 +98,7 @@ internal fun ReaderOverlay(
             onAnchorDismiss = onAnchorDismiss,
             onGazeToggle = onGazeToggle,
             onCalibrate = onCalibrate,
+            onHighlight = onHighlight,
         )
     }
 }
@@ -149,6 +155,10 @@ private fun ReadyOverlay(
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
     onCalibrate: () -> Unit,
+    // V2.2 — invoked when the user taps the "Highlight" toolbar action. The
+    // Fragment resolves the WebView's current selection (suspend) and persists
+    // an Annotation; this Composable just signals the request.
+    onHighlight: () -> Unit,
 ) {
     var showPanel by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
@@ -169,6 +179,7 @@ private fun ReadyOverlay(
             onAnchorDismiss = onAnchorDismiss,
             onGazeToggle = onGazeToggle,
             onCalibrate = onCalibrate,
+            onHighlight = onHighlight,
             modifier = Modifier.align(Alignment.TopStart),
         )
 
@@ -240,6 +251,8 @@ private fun ReaderToolbar(
     onAnchorDismiss: () -> Unit,
     onGazeToggle: () -> Unit,
     onCalibrate: () -> Unit,
+    // V2.2 — user taps to highlight the currently-selected text in the WebView.
+    onHighlight: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Semi-opaque so the reader text remains visible beneath.
@@ -293,6 +306,16 @@ private fun ReaderToolbar(
                         contentDescription = cdAnchor,
                     )
                 }
+            }
+            // V2.2 — Highlight button. Always visible (user always able to highlight).
+            // No selection-active gating: the suspend currentSelection() in the Fragment
+            // resolves to null if there's no active selection and the call no-ops.
+            val cdHighlight = stringResource(R.string.cd_highlight)
+            IconButton(onClick = onHighlight, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    imageVector = Icons.Filled.FormatColorFill,
+                    contentDescription = cdHighlight,
+                )
             }
         }
     }

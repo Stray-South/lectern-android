@@ -9,6 +9,7 @@ import com.straysouth.lectern.audio.AudioSessionCoordinator
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.ReadingProgress
 import com.straysouth.lectern.data.repository.AnchorRepository
+import com.straysouth.lectern.data.repository.AnnotationRepository
 import com.straysouth.lectern.data.repository.FocusBandPrefs
 import com.straysouth.lectern.data.repository.FocusBandRepository
 import com.straysouth.lectern.data.repository.LocatorRepository
@@ -59,6 +60,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private val anchorRepository = AnchorRepository(application)
     private val bookDao = AppDatabase.getInstance(application).bookDao()
     private val readingProgressDao = AppDatabase.getInstance(application).readingProgressDao()
+    // V2.2 — annotations. The Repository indirection keeps `AnnotationDao` out of
+    // this VM's import set so `GroupEFSecurityTest.tts_doesNotReadAnnotationBodyText`
+    // can pin "no annotation text path inside the TTS-owning ViewModel" by source
+    // assertion on the missing `AnnotationDao` import.
+    private val annotationRepository = AnnotationRepository(
+        AppDatabase.getInstance(application).annotationDao(),
+    )
 
     sealed class State {
         object Loading : State()
@@ -94,6 +102,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // accessibility action per entry on the navigator's root view.
     private val _tocEntries = MutableStateFlow<List<org.readium.r2.shared.publication.Link>>(emptyList())
     val tocEntries: StateFlow<List<org.readium.r2.shared.publication.Link>> = _tocEntries
+
+    // V2.2 — annotations stream for the open book. Re-computed whenever load(bookId)
+    // is called; subscribers (EpubReaderFragment for decoration rendering) collect on
+    // every emission. Empty until a book is loaded.
+    private val _annotationsForOpenBook = MutableStateFlow<List<com.straysouth.lectern.data.db.Annotation>>(emptyList())
+    val annotationsForOpenBook: StateFlow<List<com.straysouth.lectern.data.db.Annotation>> = _annotationsForOpenBook
+    private var annotationCollectionJob: Job? = null
 
     private val _anchorLocator = MutableStateFlow<Locator?>(null)
     val anchorLocator: StateFlow<Locator?> = _anchorLocator
@@ -131,6 +146,16 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 .onSuccess { publication ->
                     _publication = publication
                     _tocEntries.value = publication.tableOfContents
+                    // V2.2 — start collecting annotations for this book. Re-collection
+                    // on a subsequent load() is guarded by the cancel-and-replace
+                    // pattern; the suspend collect runs forever on viewModelScope
+                    // until onCleared() (or until annotationCollectionJob is cancelled).
+                    annotationCollectionJob?.cancel()
+                    annotationCollectionJob = viewModelScope.launch {
+                        annotationRepository.observeForBook(bookId).collect { list ->
+                            _annotationsForOpenBook.value = list
+                        }
+                    }
                     bookDao.updateLastOpened(bookId, System.currentTimeMillis())
                     val app = getApplication<Application>()
                     // Android-specific companion invoke: uses AndroidTtsEngineProvider internally.
@@ -304,9 +329,28 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    /**
+     * V2.2 — create a highlight at [locator] in the currently-open book.
+     *
+     * Called from the Fragment after `navigator.currentSelection()` resolves;
+     * the Fragment passes the resolved locator here so the VM doesn't need a
+     * direct navigator reference. The Repository handles JSON serialization
+     * (via `Locator.toJSON()` per ADR-AND-N §8) and UUID generation.
+     *
+     * No-op if [_bookId] is null (no book open) — guards against a stale
+     * highlight request firing after teardown.
+     */
+    fun createHighlight(locator: Locator) {
+        val bookId = _bookId ?: return
+        viewModelScope.launch {
+            annotationRepository.createHighlight(bookId, locator)
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         cleanUpTts()
+        annotationCollectionJob?.cancel()
         _publication?.close()
     }
 }

@@ -322,7 +322,31 @@ class GroupHSecurityTest {
         )
     }
 
-    // ── H.6 — FLAG_SECURE absent (intentional) ───────────────────────────────
+    // ── H.6 — FLAG_SECURE write-locality (V2.2 amendment) ──────────────────
+
+    /**
+     * V2.2.1 — `SecureWindow()` IS invoked in production code (from
+     * `ReaderScreen.kt`) when an EPUB is open. Source-pin the call site so
+     * a refactor that removes the SecureWindow claim doesn't silently
+     * regress V2.2's FLAG_SECURE coverage.
+     *
+     * Per ADR-AND-R 2026-05-22 amendment.
+     */
+    @Test
+    fun platform_secureWindow_calledFromReaderScreen() {
+        val readerScreen = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/ReaderScreen.kt").readText(),
+        )
+        assertTrue(
+            "ReaderScreen.kt must call SecureWindow() so the EPUB reader claims " +
+                "FLAG_SECURE while in composition (ADR-AND-R 2026-05-22 amendment, " +
+                "ADR-AND-T V2.2). Removing the call would silently re-open the " +
+                "screenshot surface on user-authored highlights.",
+            readerScreen.contains("SecureWindow()"),
+        )
+    }
+
+    // ── H.6 (legacy section marker — superseded by H.6 amendment above) ──────
 
     /**
      * [FLAG_SECURE] is intentionally absent: accessibility tools (TalkBack screenshot,
@@ -334,22 +358,25 @@ class GroupHSecurityTest {
      * [FLAG_SECURE] to the relevant Activity or Window before merging.
      */
     @Test
-    fun platform_flagSecureAbsent_screenshotsPermitted() {
+    fun platform_flagSecure_writtenOnlyViaController() {
         val mainSources = File("src/main/kotlin")
         assertTrue(
             "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
             mainSources.exists(),
         )
-        // V2 infrastructure exemption: WindowSecurityController.kt is the SOLE file
-        // permitted to reference FLAG_SECURE. It implements the reference-counted
-        // helper documented in docs/plans/v2-scope.md §Cross-cutting risk register;
-        // no UI surface currently calls it (no V2.2/V2.8/V2.9 feature is shipped),
-        // so screenshots are still permitted at runtime per ADR-AND-R V1 stance.
-        // When the first V2 feature wires SecureWindow into a sensitive Composable,
-        // ADR-AND-R gets a Status:Amended section per v2-scope.md Convention 1(c).
+        // Per ADR-AND-R 2026-05-22 amendment (V2.2 fires trigger 1 — annotations):
+        // FLAG_SECURE is now claimed in production via SecureWindow() in ReaderScreen,
+        // but the LITERAL flag write must still happen only inside the controller.
+        // Other files may reference SecureWindow / WindowSecurityController by name
+        // without touching the FLAG_SECURE constant directly.
+        //
         // Strip comments before pattern-matching: docstrings that reference FLAG_SECURE
-        // by name (e.g. MainActivity's CompositionLocal-provider documentation) must not
-        // trigger this test. Only actual code-level use of the flag is the threat surface.
+        // by name (e.g. MainActivity's CompositionLocal-provider documentation, or
+        // ReaderScreen's SecureWindow rationale) must not trigger this test. Only
+        // actual code-level use of the flag is the threat surface.
+        //
+        // Replaces the V1 `platform_flagSecureAbsent_screenshotsPermitted` fail-closed
+        // test per v2-scope.md Convention 3 (test-gate replacement, not relaxation).
         val violations = mainSources.walkTopDown()
             .filter { it.extension == "kt" }
             .filter { it.name != "WindowSecurityController.kt" }
@@ -357,9 +384,9 @@ class GroupHSecurityTest {
             .map { it.name }
             .toList()
         assertTrue(
-            "FLAG_SECURE must not appear in main-source code outside WindowSecurityController.kt " +
-                "— screenshots are intentionally permitted for accessibility tool compatibility " +
-                "(H.6); the controller is foundation infrastructure, not yet wired into UI:\n" +
+            "FLAG_SECURE write must be confined to WindowSecurityController.kt — " +
+                "other files invoke SecureWindow() instead of writing the flag directly. " +
+                "Per ADR-AND-R 2026-05-22 amendment.\n" +
                 violations.joinToString("\n"),
             violations.isEmpty(),
         )
