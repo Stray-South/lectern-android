@@ -57,7 +57,7 @@ Camera (`GazeProviderImpl.kt:161-182`):
 - Bound to `LifecycleOwner` — camera released automatically on Activity
   stop
 
-Manifest gate (`app/src/main/AndroidManifest.xml:8-12`):
+Manifest gate (`app/src/main/AndroidManifest.xml:7-11`):
 - `android.permission.CAMERA` — requested at runtime
 - `<uses-feature android:name="android.hardware.camera.any" required="true"/>`
 - `<uses-feature android:name="android.hardware.camera.front" required="false"/>`
