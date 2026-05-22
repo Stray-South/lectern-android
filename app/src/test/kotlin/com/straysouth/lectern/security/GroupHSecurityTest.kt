@@ -340,14 +340,23 @@ class GroupHSecurityTest {
             "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
             mainSources.exists(),
         )
+        // V2 infrastructure exemption: WindowSecurityController.kt is the SOLE file
+        // permitted to reference FLAG_SECURE. It implements the reference-counted
+        // helper documented in docs/plans/v2-scope.md §Cross-cutting risk register;
+        // no UI surface currently calls it (no V2.2/V2.8/V2.9 feature is shipped),
+        // so screenshots are still permitted at runtime per ADR-AND-R V1 stance.
+        // When the first V2 feature wires SecureWindow into a sensitive Composable,
+        // ADR-AND-R gets a Status:Amended section per v2-scope.md Convention 1(c).
         val violations = mainSources.walkTopDown()
             .filter { it.extension == "kt" }
+            .filter { it.name != "WindowSecurityController.kt" }
             .filter { it.readText().contains("FLAG_SECURE") }
             .map { it.name }
             .toList()
         assertTrue(
-            "FLAG_SECURE must not appear in main sources — screenshots are intentionally " +
-                "permitted for accessibility tool compatibility (H.6):\n" +
+            "FLAG_SECURE must not appear in main sources outside WindowSecurityController.kt " +
+                "— screenshots are intentionally permitted for accessibility tool compatibility " +
+                "(H.6); the controller is foundation infrastructure, not yet wired into UI:\n" +
                 violations.joinToString("\n"),
             violations.isEmpty(),
         )
