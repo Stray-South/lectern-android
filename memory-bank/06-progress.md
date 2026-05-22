@@ -1,6 +1,6 @@
 # 06 — Progress
 
-**Last updated:** 2026-05-17 (Sprint 26 — cross-branch doc cleanup)
+**Last updated:** 2026-05-17 (Sprint 27 — V2 scope; §Deferred stub-pointer)
 
 Status key: ✅ shipped & tested · 🚧 in progress · 🔲 deferred (V2+)
 
