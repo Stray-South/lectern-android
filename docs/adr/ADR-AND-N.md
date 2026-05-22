@@ -27,8 +27,10 @@ on every load:
 1. **Predicate-based host gate.** Only Readium's internal host
    (`https://readium/`) and the registered intercept predicate may
    resolve. All other hosts are blocked.
-2. **Strict scheme denylist.** `shouldOverrideUrlLoading` returns true
-   (consume + drop) for any scheme outside an explicit allowlist.
+2. **Strict scheme allowlist.** `shouldOverrideUrlLoading` returns true
+   (consume + drop) for any scheme outside the explicit allowlist
+   (`ALLOWED_NAVIGATION_SCHEMES = setOf("https", "http")` in
+   `EpubBlockingWebViewClient.kt`).
 3. **Registration guard.** The blocking client must be registered
    *before* any URL is loaded; tested by source assertion ordering.
 4. **`allowContentAccess = false` unconditional.** Applied to every
@@ -52,7 +54,7 @@ on every load:
 |---|---|
 | Predicate-based strict host check | `epub_blockingWebViewClient_predicate_strictHostCheck` |
 | Registration guard ordering | `epub_blockingWebViewClient_registrationGuard_setsAfterRegister` |
-| `shouldOverrideUrlLoading` scheme denylist | `epub_blockingWebViewClient_shouldOverrideUrlLoading_schemeDenylist` |
+| `shouldOverrideUrlLoading` scheme allowlist (https/http only) | `epub_blockingWebViewClient_shouldOverrideUrlLoading_schemeDenylist` |
 | `allowContentAccess = false` unconditional | `epub_wrapWebViews_allowContentAccess_false_unconditional` |
 | No direct `evaluateJavascript` in main sources | `epub_noDirectEvaluateJavascript_inMainSources` |
 | `BlockingHttpClient` wired, not default | `epub_publicationRepository_blockingHttpClient_noDefaultHttpClient` |
