@@ -8,13 +8,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Book::class, ReadingProgress::class],
-    version = 2,
+    entities = [Book::class, ReadingProgress::class, Annotation::class],
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun readingProgressDao(): ReadingProgressDao
+    abstract fun annotationDao(): AnnotationDao
 
     companion object {
 
@@ -28,6 +29,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // V2.2 — annotations table. FK on books(id) with CASCADE delete so
+                // removing a book also removes its highlights/notes. Index on bookId
+                // for the per-book observeForBook() query (Readium decoration overlay).
+                // See ADR-AND-T.
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS annotations (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        bookId TEXT NOT NULL,
+                        locatorJson TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        body TEXT,
+                        FOREIGN KEY(bookId) REFERENCES books(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_annotations_bookId ON annotations(bookId)"
+                )
+            }
+        }
+
         @Volatile private var instance: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase =
@@ -37,7 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lectern.db",
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { instance = it }
             }

@@ -122,6 +122,36 @@ class GroupCSecurityTest {
         )
     }
 
+    @Test
+    fun schemaV3_identityHash_isStable() {
+        val v3 = schemaJson(3)
+        assertTrue(
+            "schemas/3.json identity hash must be bc4fbc00e389fb0e485fb29f7ad4ce3a — " +
+                "hash change means entity changed without a migration (C.5; ADR-AND-T)",
+            v3.contains("\"identityHash\": \"bc4fbc00e389fb0e485fb29f7ad4ce3a\""),
+        )
+    }
+
+    /** v3 schema must register the `annotations` table from ADR-AND-T. */
+    @Test
+    fun schemaV3_annotationsTable_isRegistered() {
+        val v3 = schemaJson(3)
+        assertTrue(
+            "schemas/3.json must register the annotations table (ADR-AND-T)",
+            v3.contains("\"tableName\": \"annotations\""),
+        )
+        // Foreign-key on books with CASCADE delete + index on bookId.
+        assertTrue(
+            "annotations table must FK-cascade-delete on books (ADR-AND-T storage spec)",
+            v3.contains("\"onDelete\": \"CASCADE\""),
+        )
+        assertTrue(
+            "annotations table must have an index on bookId for the per-book observe() " +
+                "query (ADR-AND-T)",
+            v3.contains("index_annotations_bookId"),
+        )
+    }
+
     /** v2 schema must contain a `format TEXT NOT NULL` column in the `books` table. */
     @Test
     fun schemaV2_booksTable_hasFormatColumn_notNull() {
