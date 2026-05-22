@@ -61,6 +61,7 @@ on every load:
 | No external link listener interface declared | `epub_noExternalLinkListener_classDeclaresNoListenerInterface` |
 | Locator serialisation uses `toJSON` not interpolation | `epub_locatorSerialization_usesToJson_notStringInterpolation` |
 | Reader overlay z-order added after navigator container | `epub_overlay_addedAfterNavigatorContainer_zOrderCorrect` |
+| No `addJavascriptInterface()` call sites in main sources | `epub_noJavascriptInterface_inMainSources` |
 
 ## Code markers
 
@@ -70,14 +71,28 @@ on every load:
 - `app/src/main/kotlin/com/straysouth/lectern/ui/reader/ReaderOverlay.kt`
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/BlockingHttpClient.kt`
 - `app/src/main/kotlin/com/straysouth/lectern/data/repository/PublicationRepository.kt`
+- `app/src/test/kotlin/com/straysouth/lectern/security/GroupASecurityTest.kt`
+  (`epub_noJavascriptInterface_inMainSources` — pinned by Sprint 25
+  Set 3 PR-G, `106e8b9`; closes the prior Known-gap below)
 
-## Known gap (adjacent candidate)
+## Known gap (CLOSED — Sprint 25 Set 3 PR-G, `106e8b9`)
 
-`WebView.addJavascriptInterface` is not currently pinned by a test.
+~~`WebView.addJavascriptInterface` is not currently pinned by a test.
 Grep confirms zero usages in main sources today, but a future addition
-would not fail CI. Tracked as a separate test PR
-(`epub_noJavascriptInterface_inMainSources`, mirroring the
-`evaluateJavascript` scan).
+would not fail CI.~~
+
+**Status:** CLOSED by `tests/no-javascript-interface` (`106e8b9`).
+`GroupASecurityTest.epub_noJavascriptInterface_inMainSources` walks
+`app/src/main/kotlin` and asserts zero `addJavascriptInterface()` call
+sites with comment-stripping (mirrors the
+`epub_noDirectEvaluateJavascript_inMainSources` pattern).
+
+> **Cross-branch note:** The referenced test lives on the Track C
+> stack (`tests/no-javascript-interface` onward). This closure
+> citation becomes reachable on trunk only after the Track C stack
+> merges. Pre-merge order: Track C stack → this PR (this PR is
+> built on `docs/adr-and-backfill` and carries Track A's 14 ADRs
+> together with the 3 closure notes).
 
 ## Consequences
 
