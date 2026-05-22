@@ -182,6 +182,17 @@ class GazeViewModel(
                 gazeStateCollectionJob?.cancel()
                 gazeStateCollectionJob = null
                 provider = null
+            } catch (e: IllegalStateException) {
+                // Thrown by MediaPipe FaceLandmarker.createFromOptions when GPU delegate
+                // initialization fails (device without GPU support), asset is missing or
+                // corrupt. ADR-AND-E §Decision documents the fail-closed-to-Paused intent;
+                // this catch realises it.
+                Log.e(TAG, "GazeProvider.start() failed — init error (likely GPU/MediaPipe)", e)
+                _gazeEnabled.value = false
+                _gazeState.value = GazeState.Paused
+                gazeStateCollectionJob?.cancel()
+                gazeStateCollectionJob = null
+                provider = null
             }
         }
     }
@@ -215,11 +226,19 @@ class GazeViewModel(
                 _calibrationUiState.value = CalibrationUiState.Done(result)
             } catch (e: IllegalArgumentException) {
                 Log.e(TAG, "Calibration failed", e)
-                _calibrationUiState.value = CalibrationUiState.CalibrationError(e.message ?: "Calibration failed")
+                // Do not surface e.message — third-party exception text bypasses RULES.md
+                // §AuDHD copy review. Diagnostic detail stays in Log.e above; user sees
+                // a fixed, vetted string. (kotlin.check failures throw with message
+                // "Check failed." which would otherwise display verbatim.)
+                _calibrationUiState.value = CalibrationUiState.CalibrationError(
+                    "Couldn't complete calibration. Try again.",
+                )
             } catch (e: IllegalStateException) {
                 // Thrown by ridge() when calibration data is degenerate (not positive definite).
                 Log.e(TAG, "Calibration failed — degenerate data", e)
-                _calibrationUiState.value = CalibrationUiState.CalibrationError(e.message ?: "Calibration failed")
+                _calibrationUiState.value = CalibrationUiState.CalibrationError(
+                    "Couldn't complete calibration. Try again.",
+                )
             }
         }
     }

@@ -9,7 +9,9 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - Zero ktlint errors on merge
 - No force-unwrap `!!` — use `requireNotNull(msg)` or `?.let`
 - No catching exceptions to silence them — fail loudly
-- No `println` / `Log.d` left in shipped code (debug builds OK)
+- No `println` / `Log.d` / `Log.v` left in shipped code (debug builds OK) —
+  enforced by `scripts/check_release_logging.sh`. `Log.i` / `Log.w` / `Log.e`
+  remain allowed in main sources as legitimate diagnostic paths.
 - No `TODO` / `FIXME` / `HACK` comments in non-test code
 
 ## Threading
@@ -19,15 +21,33 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 - No `runBlocking` in production code paths
 - GazeProvider uses `Dispatchers.Default.limitedParallelism(1)`
 
+## Audio (ADR-AND-A)
+- `com.straysouth.lectern.audio.AudioSessionCoordinator` is the **sole** file
+  permitted to call `AudioManager.requestAudioFocus`,
+  `AudioManager.abandonAudioFocusRequest`, or construct `AudioFocusRequest.Builder`.
+- All other code routes audio-focus transitions through the coordinator
+  (`acquireForTts(onLoss)`, `reacquire()`, `release()`).
+- Direct `AudioManager` focus calls outside the coordinator fail
+  `scripts/check_audio_session.sh` and the JVM tests
+  `tts_audioFocus_ownedByAudioSessionCoordinator` +
+  `tts_viewModelDelegatesToAudioSessionCoordinator`.
+- Sprint 20 invariants are coordinator-internal:
+  `AUDIOFOCUS_GAIN_TRANSIENT` (not MAY_DUCK); return-value check;
+  resume re-acquires before `nav.play()`.
+
 ## Privacy (non-negotiable)
-- No telemetry SDK: no Firebase Analytics, Crashlytics (default),
-  Mixpanel, Amplitude, Segment, Bugsnag, Datadog
-- No analytics SDK in build.gradle.kts
+- No telemetry/analytics SDK: no Firebase (any module), Crashlytics,
+  Mixpanel, Amplitude, Segment, Bugsnag, Datadog, Sentry, AppsFlyer, Adjust
+- No analytics SDK in `app/build.gradle.kts` or `gradle/libs.versions.toml` —
+  enforced by `scripts/check_banned_deps.sh`
 - No raw gaze coordinates written to Room, DataStore, or any file
 - No Room entity names matching: face, eye, gaze, lookAt
 - Never annotate a `@Entity` class with `@Serializable` (KSP2 bug #1896 — use a separate DTO class)
 - Calibration weights: DataStore only, allowBackup = false
 - allowBackup = false in AndroidManifest.xml — no exceptions
+- `FLAG_SECURE` NOT applied to any Activity / Window in V1 — see ADR-AND-R
+  for the accessibility-vs-screen-capture trade-off; pinned by
+  `GroupHSecurityTest.platform_flagSecureAbsent_screenshotsPermitted`
 
 ## Accessibility
 - Every `@Composable` screen has a `semantics {}` block
@@ -38,7 +58,10 @@ CI enforces all of them. Zero exceptions without an ADR entry.
 ## AuDHD copy
 - No streak, consecutive, wrong, incorrect, failed, missed,
   great job, keep it up, daily goal, 🔥, 🏆, ⭐ in strings.xml
-- CI grep enforced (matches lectern-ios check_banned_strings.sh)
+- Same tokens forbidden in `app/src/main/kotlin/**/*.kt` user-facing string
+  literals (word-bounded; `Log.*` and `Exception(...)` diagnostic lines and
+  comment lines exempted). Both passes enforced by
+  `scripts/check_banned_strings.sh`.
 - No therapeutic claims in any user-visible string
 
 ## Phase boundary

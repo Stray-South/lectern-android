@@ -66,9 +66,8 @@ class GazeProviderImpl(
 
     override suspend fun start() {
         calibration = calibrationRepository.load()
-        if (calibration == null) {
-            Log.d(TAG, "No calibration found — gaze stays Paused until calibrated.")
-        }
+        // No-calibration state is already represented by the initial
+        // GazeState.Paused at the _state field declaration; no log needed.
         createLandmarker()
         bindCamera()
         registerThermalListener()

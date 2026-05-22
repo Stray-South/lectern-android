@@ -71,12 +71,12 @@ class GroupCSecurityTest {
             "LibraryViewModel.deleteBook() not found in source (C.4)",
             deleteBookIdx >= 0,
         )
-        // Find the next top-level fun declaration after deleteBook — everything between
-        // is the function body (including the coroutine lambda).
-        // Assumes 4-space indentation for class members (standard Kotlin style).
-        // Falls back to source.length if deleteBook is the last function in the class.
-        val nextFunIdx = source.indexOf("\n    fun ", deleteBookIdx + 1)
-            .takeIf { it > deleteBookIdx } ?: source.length
+        // Bound deleteBook's body by the next class member (any modifier — incl. private
+        // suspend fun, val, var, companion object, annotation). The naive
+        // `indexOf("\n    fun ")` falls back to source.length when the next sibling is
+        // anything other than a bare `fun`, allowing later-function tokens to pass the
+        // assertion vacuously. Use the harmonized helper that mirrors GroupIJ's pattern.
+        val nextFunIdx = nextClassMemberIndex(source, deleteBookIdx)
         val deleteBookBody = source.substring(deleteBookIdx, nextFunIdx)
         assertTrue(
             "LibraryViewModel.deleteBook() must call readingProgressDao.deleteByBookId() " +
@@ -190,4 +190,23 @@ class GroupCSecurityTest {
         )
         return file.readText()
     }
+
+    /**
+     * Mirrors `GroupIJSecurityTest.nextClassMemberIndex` — comprehensive pattern list
+     * including all `suspend fun` variants, vals, vars, and annotations so a body window
+     * doesn't silently overrun the target function when a sibling has a non-`fun`
+     * modifier (e.g. `private suspend fun`).
+     */
+    private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
+        listOf(
+            "\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ",
+            "\n    override suspend fun ", "\n    private suspend fun ", "\n    suspend fun ",
+            "\n    internal suspend fun ", "\n    protected suspend fun ",
+            "\n    val ", "\n    var ", "\n    private val ", "\n    private var ",
+            "\n    companion object", "\n    @",
+        )
+            .mapNotNull { pattern ->
+                source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }
+            }
+            .minOrNull() ?: source.length
 }

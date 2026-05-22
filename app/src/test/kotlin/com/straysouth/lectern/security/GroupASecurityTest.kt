@@ -399,6 +399,41 @@ class GroupASecurityTest {
         )
     }
 
+    // ── A.8 — No addJavascriptInterface in main sources ─────────────────────
+
+    /**
+     * Closes ADR-AND-N §"Known gap". WebView.addJavascriptInterface exposes
+     * Kotlin/Java methods to JavaScript executing inside the WebView. The
+     * EPUB WebView is locked down by EpubBlockingWebViewClient (predicate
+     * host gate, scheme denylist, allowContentAccess=false) but a stray
+     * addJavascriptInterface call would expose host code to any content
+     * Readium renders — an injection surface orthogonal to the URL gate.
+     *
+     * Currently zero occurrences in main sources. This test prevents
+     * silent reintroduction.
+     */
+    @Test
+    fun epub_noJavascriptInterface_inMainSources() {
+        val mainSources = File("src/main/kotlin")
+        assertTrue(
+            "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
+            mainSources.exists(),
+        )
+        val violations = mainSources.walkTopDown()
+            .filter { it.extension == "kt" }
+            .filter { file -> stripComments(file.readText()).contains("addJavascriptInterface(") }
+            .map { it.name }
+            .toList()
+        assertTrue(
+            "No main-source file must call WebView.addJavascriptInterface() — this method " +
+                "exposes Kotlin/Java methods to JavaScript executing in the WebView, an " +
+                "injection surface orthogonal to the EpubBlockingWebViewClient URL gate " +
+                "(ADR-AND-N §\"Known gap\"):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
     // ── B.8 — BlockingHttpClient: no DefaultHttpClient in PublicationRepository ─
 
     /**
@@ -437,9 +472,11 @@ class GroupASecurityTest {
     // still listed for completeness when the target is the last override).
     private fun nextClassMemberIndex(source: String, afterIdx: Int): Int =
         listOf(
-            "\n    fun ", "\n    private fun ", "\n    override fun ",
-            "\n    internal fun ", "\n    companion object", "\n    private val ",
-            "\n    private var ",
+            "\n    fun ", "\n    private fun ", "\n    override fun ", "\n    internal fun ",
+            "\n    override suspend fun ", "\n    private suspend fun ", "\n    suspend fun ",
+            "\n    internal suspend fun ", "\n    protected suspend fun ",
+            "\n    val ", "\n    var ", "\n    private val ", "\n    private var ",
+            "\n    companion object", "\n    @",
         )
             .mapNotNull { pattern ->
                 source.indexOf(pattern, afterIdx + 1).takeIf { it > afterIdx }

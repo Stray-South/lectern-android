@@ -13,6 +13,7 @@ build/
 .externalNativeBuild
 .cxx
 local.properties
+# JVM heap dumps — accumulate from OOM / debugger sessions; never commit
 *.hprof
 # MediaPipe model file — download via scripts/download_models.sh
 app/src/main/assets/face_landmarker.task

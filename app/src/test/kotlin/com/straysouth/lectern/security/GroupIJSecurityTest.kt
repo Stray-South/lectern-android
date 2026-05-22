@@ -541,15 +541,19 @@ class GroupIJSecurityTest {
             }
             .minOrNull() ?: source.length
 
-    // Strips single-line comments (//), KDoc body lines (*), and block-comment
-    // openers (slash-star) from [source] before string checks. Prevents false positives
-    // where a term appears only in a comment from making a security assertion pass.
+    // Strips single-line comments (//), KDoc body lines (*), block-comment
+    // openers (slash-star), and inline comment tails from [source] before
+    // string checks. Prevents false positives where a term appears only in
+    // a comment from making a security assertion pass, AND prevents false
+    // failures where a defensive code comment ("// never store irisU")
+    // contains a token the assertion forbids.
     private fun stripComments(source: String): String =
         source.lines()
             .filterNot {
                 val t = it.trimStart()
                 t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")
             }
+            .map { it.substringBefore("//") }
             .joinToString("\n")
 
     private fun sourceFile(relativePath: String): String {

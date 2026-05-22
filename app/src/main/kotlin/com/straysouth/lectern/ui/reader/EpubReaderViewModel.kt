@@ -1,13 +1,11 @@
 package com.straysouth.lectern.ui.reader
 
 import android.app.Application
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.straysouth.lectern.audio.AudioSessionCoordinator
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.ReadingProgress
 import com.straysouth.lectern.data.repository.AnchorRepository
@@ -99,15 +97,15 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // Stored on load so cleanUpTts() can persist the anchor without a bookId parameter.
     private var _bookId: String? = null
 
-    private var _ttsNavigator: AndroidTtsNav? = null
+    // @Volatile: read on the audio-focus thread via pauseTts() (invoked from
+    // AudioSessionCoordinator.onLoss); written on viewModelScope (Main).
+    // ADR-AND-A documents the cross-thread reception contract.
+    @Volatile private var _ttsNavigator: AndroidTtsNav? = null
     private var _ttsCollectionJob: Job? = null
     // Last sentence locator seen during TTS playback; persisted as anchor on stop.
     private var _lastUtteranceLocator: Locator? = null
-    // Audio focus request held while TTS is active; abandoned in cleanUpTts().
-    private var _audioFocusRequest: AudioFocusRequest? = null
-    private val audioManager: AudioManager by lazy {
-        getApplication<Application>().getSystemService(AudioManager::class.java)
-    }
+    // Sole owner of AudioManager focus state — see ADR-AND-A.
+    private val audioSession = AudioSessionCoordinator(application)
 
     fun load(bookId: String) {
         if (_publication != null || !_loading.compareAndSet(false, true)) return
@@ -201,28 +199,15 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                 initialLocator = initialLocator,
                 initialPreferences = AndroidTtsPreferences(speed = ttsPrefs.value.speed),
             ).onSuccess { nav ->
-                // GAIN_TRANSIENT (not MAY_DUCK): TTS is spoken word — competing audio must
-                // pause, not duck. Listener calls pauseTts() on AUDIOFOCUS_LOSS /
-                // LOSS_TRANSIENT so calls and navigation prompts interrupt TTS.
-                val focusReq = AudioFocusRequest
-                    .Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build(),
-                    )
-                    .setOnAudioFocusChangeListener { change ->
-                        if (change == AudioManager.AUDIOFOCUS_LOSS ||
-                            change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
-                        ) pauseTts()
-                    }
-                    .build()
-                _audioFocusRequest = focusReq
-                val granted = audioManager.requestAudioFocus(focusReq)
-                if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                // Audio focus owned by AudioSessionCoordinator (ADR-AND-A). pauseTts is
+                // invoked on AUDIOFOCUS_LOSS / LOSS_TRANSIENT so calls and navigation
+                // prompts interrupt TTS rather than overlapping spoken-word audio.
+                val granted = audioSession.acquireForTts(onLoss = ::pauseTts)
+                if (!granted) {
                     // Another app holds exclusive focus (e.g. active call) — don't start TTS.
-                    _audioFocusRequest = null
+                    // Close the just-created navigator to release its TextToSpeech binding;
+                    // without this the engine binding leaks (nav is unreachable after return).
+                    nav.close()
                     return@onSuccess
                 }
                 _ttsNavigator = nav
@@ -258,10 +243,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     private fun resumeExistingTts(): Boolean {
         val nav = _ttsNavigator ?: return false
         if (!nav.playback.value.playWhenReady) {
-            val req = _audioFocusRequest
-            val focusGranted = req == null ||
-                audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            if (focusGranted) nav.play()
+            if (audioSession.reacquire()) nav.play()
         }
         return true
     }
@@ -303,8 +285,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         _ttsNavigator = null
         _ttsUiState.value = TtsUiState.Idle
         // Release audio focus so music apps resume at full volume after TTS stops.
-        _audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-        _audioFocusRequest = null
+        audioSession.release()
         val bookId = _bookId ?: return
         val anchor = _lastUtteranceLocator ?: return
         _lastUtteranceLocator = null
