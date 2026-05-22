@@ -1,6 +1,6 @@
 # 05 — Active Context
 
-**Last updated:** 2026-05-17 (Sprint 25 — Set 5 docs hygiene)
+**Last updated:** 2026-05-17 (Sprint 26 — cross-branch doc cleanup)
 
 ## Current trunk state
 
