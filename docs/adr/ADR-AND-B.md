@@ -49,8 +49,10 @@ and string constants in `.kt` source are not currently scanned.~~
 **Status:** CLOSED by `ci/banned-strings-extend-kotlin` (`aa5b203`).
 `check_banned_strings.sh` now performs a two-pass scan: XML files in
 `app/src/main/res/values/*.xml` and Kotlin sources in
-`app/src/main/kotlin/**/*.kt` with awk-based comment stripping
-(BSD-compatible) and an allowlist for the security-test source set.
+`app/src/main/kotlin/**/*.kt` (main only — test sources are not
+scanned). The `.kt` pass skips `Log.{d,v,w,i,e}(…)` diagnostic lines,
+`Exception(…)` constructors, and pure comment lines (`//`, `/*`, `*`),
+with BSD-compatible awk filtering and word-bounded token matching.
 Two real `.kt` violations were fixed in the same commit.
 
 > **Cross-branch note:** Sprint 2 (`752f00e`) introduced a basic
@@ -69,9 +71,9 @@ Two real `.kt` violations were fixed in the same commit.
 
 ## Consequences
 
-- Reintroducing a banned token in `strings.xml` or in `.kt` user-
-  facing copy (Compose `Text("…")` literals, fallback strings) fails
-  the build.
+- Reintroducing a banned token in `strings.xml` or in `.kt`
+  user-facing copy (Compose `Text("…")` literals, fallback strings)
+  fails the build.
 - The shell-script gate is authoritative for `.kt`; the XML pass has
   a JVM-test mirror, the `.kt` pass does not (mirror would have to
   replicate the Log.* / Exception / word-bounded filter logic).
