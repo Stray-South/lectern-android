@@ -61,7 +61,7 @@ on every load:
 | No external link listener interface declared | `epub_noExternalLinkListener_classDeclaresNoListenerInterface` |
 | Locator serialisation uses `toJSON` not interpolation | `epub_locatorSerialization_usesToJson_notStringInterpolation` |
 | Reader overlay z-order added after navigator container | `epub_overlay_addedAfterNavigatorContainer_zOrderCorrect` |
-| No `addJavascriptInterface(` call sites in main sources | `epub_noJavascriptInterface_inMainSources` |
+| No `addJavascriptInterface()` call sites in main sources | `epub_noJavascriptInterface_inMainSources` |
 
 ## Code markers
 
@@ -83,7 +83,7 @@ would not fail CI.~~
 
 **Status:** CLOSED by `tests/no-javascript-interface` (`106e8b9`).
 `GroupASecurityTest.epub_noJavascriptInterface_inMainSources` walks
-`app/src/main/kotlin` and asserts zero `addJavascriptInterface(` call
+`app/src/main/kotlin` and asserts zero `addJavascriptInterface()` call
 sites with comment-stripping (mirrors the
 `epub_noDirectEvaluateJavascript_inMainSources` pattern).
 
