@@ -31,25 +31,26 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // V2.2 — annotations table. FK on books(id) with CASCADE delete so
-                // removing a book also removes its highlights/notes. Index on bookId
-                // for the per-book observeForBook() query (Readium decoration overlay).
-                // See ADR-AND-T.
+                // V2.2 — annotations table. SQL deliberately mirrors the Room-generated
+                // createSql in app/schemas/.../3.json so MigrationTestHelper's schema
+                // comparison passes byte-for-byte: backtick identifiers, table-level
+                // PRIMARY KEY (NOT inline on the id column), FK at the table tail.
+                // See ADR-AND-T for the full design.
                 db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS annotations (
-                        id TEXT NOT NULL PRIMARY KEY,
-                        bookId TEXT NOT NULL,
-                        locatorJson TEXT NOT NULL,
-                        type TEXT NOT NULL,
-                        createdAt INTEGER NOT NULL,
-                        body TEXT,
-                        FOREIGN KEY(bookId) REFERENCES books(id) ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
+                    "CREATE TABLE IF NOT EXISTS `annotations` (" +
+                        "`id` TEXT NOT NULL, " +
+                        "`bookId` TEXT NOT NULL, " +
+                        "`locatorJson` TEXT NOT NULL, " +
+                        "`type` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`body` TEXT, " +
+                        "PRIMARY KEY(`id`), " +
+                        "FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )"
                 )
                 db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_annotations_bookId ON annotations(bookId)"
+                    "CREATE INDEX IF NOT EXISTS `index_annotations_bookId` " +
+                        "ON `annotations` (`bookId`)"
                 )
             }
         }

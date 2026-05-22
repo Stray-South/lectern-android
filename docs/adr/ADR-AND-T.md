@@ -75,21 +75,27 @@ gets its own decoration group so they don't collide with TTS/Focus Band.
 
 Removed: `GroupEFSecurityTest.tts_noAnnotationFeatureInV1`.
 
-Added: `GroupCSecurityTest.annotations_schemaVersion3_includesAnnotationsTable`
-(asserts the v3 schema includes the new table; pinned via the committed
-JSON export).
+Added: `GroupCSecurityTest.schemaV3_annotationsTable_isRegistered` —
+asserts the v3 schema includes the new table, CASCADE delete, and the
+`bookId` index; pinned via the committed JSON export.
 
-Added: `GroupCSecurityTest.annotations_migration2to3_isReachable`
-(instrumented test, runs `MIGRATION_2_3` and verifies the table schema).
+Added: `GroupCSecurityTest.schemaV3_identityHash_isStable` — asserts
+the v3 schema identity hash matches the KSP-generated value.
+
+Deferred to V2.2.1: an instrumented `MigrationTestHelper` test that
+runs `MIGRATION_2_3` against a real SQLite v2 database. The JVM
+schema-export tests above guard the structure; runtime migration
+verification needs Android instrumentation and is tracked as the
+companion test PR.
 
 ## Pinned by
 
 | Guarantee | Test |
 |---|---|
-| Schema v3 includes `annotations` table | `GroupCSecurityTest.schemaV3_identityHash` |
-| Migration 2→3 applies cleanly | `GroupCMigrationTest.migration2to3` (instrumented) |
+| Schema v3 identity hash matches Room-generated value | `GroupCSecurityTest.schemaV3_identityHash_isStable` |
+| Schema v3 registers the `annotations` table with CASCADE delete and `bookId` index | `GroupCSecurityTest.schemaV3_annotationsTable_isRegistered` |
 | Locator serialised via `toJSON` not interpolation | `GroupASecurityTest.epub_locatorSerialization_usesToJson_notStringInterpolation` (ADR-AND-N pin, unchanged) |
-| Reader Activity acquires FLAG_SECURE when an annotation surface is in composition | Source assertion: `EpubReaderFragment` or wrapping Composable calls `SecureWindow()` |
+| Reader Activity acquires FLAG_SECURE when an annotation surface is in composition | Source assertion (V2.2.1 follow-up): the annotations Composable calls `SecureWindow()` |
 | `WindowSecurityController` is the sole FLAG_SECURE writer | `GroupHSecurityTest.platform_flagSecureAbsent_screenshotsPermitted` (updated to exempt the controller file in PR #12) |
 
 ## Code markers

@@ -62,24 +62,24 @@ class MainActivity : AppCompatActivity() {
             // SecureWindow() to claim FLAG_SECURE; the reference counter keeps the
             // flag set while any sensitive screen is in composition.
             // See docs/plans/v2-scope.md §Cross-cutting risk register.
-            val windowSecurityController = remember { WindowSecurityController(window) }
+            val windowSecurityController = remember(window) { WindowSecurityController(window) }
             CompositionLocalProvider(
                 LocalWindowSecurityController provides windowSecurityController,
             ) {
-            LecternTheme {
-                val cdApp = stringResource(R.string.cd_app)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .semantics { contentDescription = cdApp },
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    GazePermissionEffect(gazeViewModel) {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                LecternTheme {
+                    val cdApp = stringResource(R.string.cd_app)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .semantics { contentDescription = cdApp },
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        GazePermissionEffect(gazeViewModel) {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                        AppContent(libraryViewModel, gazeViewModel, ::hasCameraPermission)
                     }
-                    AppContent(libraryViewModel, gazeViewModel, ::hasCameraPermission)
                 }
-            }
             }
         }
     }
