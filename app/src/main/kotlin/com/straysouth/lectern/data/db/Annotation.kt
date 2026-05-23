@@ -29,7 +29,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("bookId")],
+    indices = [Index("bookId"), Index("lastReviewedAt")],
 )
 data class Annotation(
     @PrimaryKey val id: String,
