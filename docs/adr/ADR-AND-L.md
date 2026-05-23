@@ -1,7 +1,7 @@
 # ADR-AND-L: Focus Band scope boundary — WebView limitation
 
 **Status:** Amended  
-**Date:** 2026-05-08 (Sprint 11) / 2026-05-08 (Sprint 13 amendment)  
+**Date:** 2026-05-08 (Sprint 11) / 2026-05-08 (Sprint 13 amendment) / 2026-05-23 (V2.4 amendment)  
 **Sprint:** 11 (original), 13 (V1 pixel overlay added)
 
 ## Context
@@ -76,3 +76,19 @@ Locations where the V2 precise-line path would plug in are marked:
 - PDF and Comics readers (bitmap rendering) similarly cannot use the V2 path.
 - No performance cost from attempting a WebView JS bridge at 30fps.
 - V1 overlay defaults OFF (`gazeOverlayEnabled = false`); user opts in.
+
+## 2026-05-23 V2.4 amendment
+
+Per v2-scope.md Convention 1(c) — appended dated section. V2.4 (RSVP
+reader, ADR-AND-X) ships the first native Compose body text surface in
+the app. The original Decision noted that line-level Focus Band V2 is
+gated on such a surface existing — V2.4 introduces one, but it is
+**still moot** for Focus Band V2 because RSVP displays one word at a
+time (no "line" semantics).
+
+V2 line-level Focus Band remains deferred to V3 per the original
+Decision. RSVP being a Compose body surface does not unblock it.
+
+When the next Compose body text surface lands (e.g. a paginated
+plain-text reader, not in the current V2 roadmap), reassess whether
+the Focus Band V2 substrate is finally available.

@@ -73,4 +73,18 @@
     <string name="gaze_calibration_recalibrate">Recalibrate</string>
     <string name="gaze_calibration_confirm_point">Confirm</string>
     <string name="gaze_permission_rationale">Camera access is needed for gaze-assisted reading</string>
+    <string name="cd_rsvp_screen">RSVP reader</string>
+    <string name="cd_rsvp_play">Play</string>
+    <string name="cd_rsvp_pause">Pause</string>
+    <string name="cd_rsvp_switch">Switch to RSVP</string>
+    <string name="rsvp_position">%1$d / %2$d</string>
+    <string name="rsvp_wpm_label">%1$d words per minute</string>
+    <string name="rsvp_pause_on_punctuation_label">Pause on punctuation</string>
+    <string name="rsvp_done_label">End of text</string>
+    <string name="rsvp_library_action">Open in RSVP</string>
+    <string name="rsvp_clipboard_action">Read clipboard with RSVP</string>
+    <string name="rsvp_txt_action">Open .txt file with RSVP</string>
+    <string name="rsvp_clipboard_empty">Clipboard is empty</string>
+    <string name="rsvp_error_no_text">No readable text</string>
+    <string name="rsvp_error_open">Unable to read source</string>
 </resources>

@@ -481,6 +481,77 @@ class GroupGSecurityTest {
         return file.readText()
     }
 
+    // ── V2.4 RSVP — ADR-AND-X privacy invariants ───────────────────────────
+
+    /**
+     * ADR-AND-X §Privacy: clipboard content snapshotted into [RsvpSource.Clipboard]
+     * MUST NEVER reach Log.*. The clipboard is user-private (passwords, payment
+     * data, intimate messages); a single Log call leaks it to logcat.
+     */
+    @Test
+    fun rsvp_clipboardNeverLogged() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/rsvp/RsvpViewModel.kt").readText(),
+        )
+        source.lineSequence().forEach { line ->
+            if (line.contains("Log.")) {
+                assertFalse(
+                    "RsvpViewModel must never log clipboard content (ADR-AND-X §Privacy): $line",
+                    line.contains("clipboard", ignoreCase = true) ||
+                        line.contains("source.text") ||
+                        line.contains("words"),
+                )
+            }
+        }
+    }
+
+    /**
+     * ADR-AND-X §Privacy: `.txt` source URI MUST NEVER reach Log.*. The URI can
+     * encode device-private path tokens; logging it leaks the user's file
+     * picker selection to logcat.
+     */
+    @Test
+    fun rsvp_txtUriNeverLogged() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/rsvp/RsvpViewModel.kt").readText(),
+        )
+        source.lineSequence().forEach { line ->
+            if (line.contains("Log.")) {
+                assertFalse(
+                    "RsvpViewModel must never log .txt URI (ADR-AND-X §Privacy): $line",
+                    line.contains("uri.path") ||
+                        line.contains("uri.toString") ||
+                        line.contains("source.uri") ||
+                        line.contains("\$uri"),
+                )
+            }
+        }
+    }
+
+    /**
+     * ADR-AND-X §Privacy: the RSVP nav state in MainActivity holds clipboard
+     * content (when source is RsvpSource.Clipboard). It MUST be plain
+     * `remember { ... }`, never `rememberSaveable`. On process death the
+     * RSVP session resets to library — the correct privacy-preserving
+     * behavior.
+     */
+    @Test
+    fun rsvp_navStateNotSaveable() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/MainActivity.kt").readText(),
+        )
+        val rsvpStateLine = source.lineSequence()
+            .firstOrNull { it.contains("currentRsvpSource") && it.contains("by") }
+        assertTrue(
+            "currentRsvpSource declaration not found in MainActivity",
+            rsvpStateLine != null,
+        )
+        assertFalse(
+            "currentRsvpSource MUST use plain remember{} not rememberSaveable (ADR-AND-X §Privacy): $rsvpStateLine",
+            rsvpStateLine!!.contains("rememberSaveable"),
+        )
+    }
+
     companion object {
         private const val MAX_ANIMATION_MS = 200
 
