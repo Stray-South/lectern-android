@@ -325,6 +325,74 @@ class GroupGSecurityTest {
         )
     }
 
+    /**
+     * V2.2.3 — annotation delete must offer Undo via Snackbar (AuDHD G.3).
+     *
+     * Pinned by source assertion:
+     *   - `EpubReaderFragment` invokes `UndoDeleteAnnotationEffect` and includes
+     *     a `SnackbarHost` in the Compose overlay.
+     *   - `EpubReaderViewModel` exposes `deletedAnnotations` and `restoreAnnotation`.
+     *   - `AnnotationRepository.upsert(annotation)` exists for the re-insert path.
+     */
+    @Test
+    fun audhd_annotationUndo_existsInReader() {
+        val fragmentSrc = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderFragment.kt").readText(),
+        )
+        val vmSrc = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        val repoSrc = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/data/repository/AnnotationRepository.kt").readText(),
+        )
+        assertTrue(
+            "EpubReaderFragment must invoke UndoDeleteAnnotationEffect (V2.2.3)",
+            fragmentSrc.contains("UndoDeleteAnnotationEffect("),
+        )
+        assertTrue(
+            "EpubReaderFragment must include a SnackbarHost overlay (V2.2.3)",
+            fragmentSrc.contains("SnackbarHost("),
+        )
+        assertTrue(
+            "EpubReaderViewModel must expose deletedAnnotations SharedFlow (V2.2.3)",
+            vmSrc.contains("deletedAnnotations"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must expose restoreAnnotation for Undo (V2.2.3)",
+            vmSrc.contains("fun restoreAnnotation("),
+        )
+        assertTrue(
+            "AnnotationRepository must expose upsert(annotation) for V2.2.3 undo path",
+            repoSrc.contains("fun upsert(annotation: Annotation)"),
+        )
+    }
+
+    /**
+     * V2.2.3 — note and highlight decorations must use distinct tints.
+     *
+     * Source assertion: `EpubReaderFragment` defines both `ANNOTATION_HIGHLIGHT_TINT`
+     * and `ANNOTATION_NOTE_TINT` and selects between them by `ann.type`.
+     */
+    @Test
+    fun audhd_annotationTints_areDistinct() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderFragment.kt").readText(),
+        )
+        assertTrue(
+            "EpubReaderFragment must define ANNOTATION_HIGHLIGHT_TINT (V2.2)",
+            source.contains("ANNOTATION_HIGHLIGHT_TINT"),
+        )
+        assertTrue(
+            "EpubReaderFragment must define ANNOTATION_NOTE_TINT (V2.2.3 — distinct from highlight)",
+            source.contains("ANNOTATION_NOTE_TINT"),
+        )
+        assertTrue(
+            "Decoration observer must branch tint selection on ann.type (V2.2.3)",
+            source.contains("ann.type == AnnotationRepository.TYPE_NOTE") ||
+                source.contains("annotation.type == AnnotationRepository.TYPE_NOTE"),
+        )
+    }
+
     // ── G.3 — Import-error Snackbar is Indefinite + dismissable ─────────────
 
     /**

@@ -1,7 +1,7 @@
 # ADR-AND-T: V2.2 Annotations — single-device first; FLAG_SECURE on reader
 
-**Status:** Amended (see §"2026-05-23 V2.2.2 amendment" below)
-**Date:** 2026-05-22 (original) / 2026-05-23 (V2.2.2 amendment)
+**Status:** Amended (see §"2026-05-23 V2.2.3 amendment" below)
+**Date:** 2026-05-22 (original) / 2026-05-23 (V2.2.2 + V2.2.3 amendments)
 **Sprint:** V2 launch (post-Phase-1)
 
 ## Context
@@ -206,3 +206,57 @@ contradicting the original Decision.
   sync per v2-scope.md §V2.2 open questions.
 - Distinct decoration tint for notes vs highlights (currently both render
   with `ANNOTATION_HIGHLIGHT_TINT`).
+
+## 2026-05-23 V2.2.3 amendment
+
+Per v2-scope.md Convention 1(c) — appended dated section. V2.2.3 extends
+the V2.2 surface without contradicting §Decision.
+
+**What changed:**
+
+- **Delete-undo Snackbar** — V2.2.2's delete-on-tap was AuDHD G.3-incomplete
+  (no recovery affordance). `EpubReaderViewModel.deleteAnnotation()` now
+  takes the full `Annotation` (not just `id`) and emits it on
+  `_deletedAnnotations` `SharedFlow<Annotation>` (replay=0,
+  extraBufferCapacity=1 — non-suspending emit when no collector).
+  `restoreAnnotation()` re-inserts via `AnnotationRepository.upsert(annotation)`;
+  the DAO `@Upsert` preserves the id, locator, body, and createdAt.
+  Snackbar is `Indefinite` with `withDismissAction`. Rapid multi-deletes
+  dismiss the prior Snackbar before showing the next so undo prompts
+  never stack.
+- **Distinct note vs highlight tint** — `ANNOTATION_NOTE_TINT =
+  Color.argb(128, 179, 157, 219)` (soft lavender). The decoration observer
+  branches on `ann.type == TYPE_NOTE` to pick lavender vs warm peach;
+  both share 50% alpha for permanence-weight parity.
+
+**What stayed the same:**
+
+- §Decision unchanged.
+- `tts_doesNotReadAnnotationBodyText` still holds — Snackbar copy is the
+  static string `R.string.annotation_deleted_undo` (already in
+  `strings.xml`); annotation body text is never surfaced through the TTS
+  or Snackbar paths.
+- Schema unchanged (V2.2.3 uses existing columns; no migration).
+
+**Test additions:**
+
+- `GroupGSecurityTest.audhd_annotationUndo_existsInReader` — source
+  assertion pinning `UndoDeleteAnnotationEffect` invocation +
+  `SnackbarHost` presence + `restoreAnnotation` VM call site.
+- `GroupGSecurityTest.audhd_annotationTints_areDistinct` — source
+  assertion that both `ANNOTATION_HIGHLIGHT_TINT` and
+  `ANNOTATION_NOTE_TINT` are defined and branch is by `ann.type`.
+
+**Known gap (V2.2.4 candidate):**
+
+- Notes currently render as a `Decoration.Style.Highlight` not
+  `Decoration.Style.Underline`. Both styles are valid but `Underline`
+  may communicate "note attached" better than a translucent tint
+  swatch. Owner decision deferred; raw decoration style swap is a
+  ~10-line change if/when chosen.
+
+**Open / V2.2.4 candidates:**
+
+- Decoration.Style swap (Highlight → Underline) for notes.
+- Cross-book annotation panel (Library-level "all my notes").
+- Annotation export — co-ships with V2.1 cloud sync.
