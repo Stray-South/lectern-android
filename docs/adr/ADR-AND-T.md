@@ -1,7 +1,7 @@
 # ADR-AND-T: V2.2 Annotations — single-device first; FLAG_SECURE on reader
 
-**Status:** Accepted
-**Date:** 2026-05-22
+**Status:** Amended (see §"2026-05-23 V2.2.2 amendment" below)
+**Date:** 2026-05-22 (original) / 2026-05-23 (V2.2.2 amendment)
 **Sprint:** V2 launch (post-Phase-1)
 
 ## Context
@@ -150,3 +150,59 @@ The UI surface follow-up brings:
 - Annotation list panel
 - `ADR-AND-R` Status:Amended section (per Convention 1(c)) once
   `SecureWindow()` is actually invoked in production code
+
+## 2026-05-23 V2.2.2 amendment
+
+Per v2-scope.md Convention 1(c) — appended dated section, not edit-in-place
+of the §Decision above. V2.2.2 extends the V2.2 annotation surface without
+contradicting the original Decision.
+
+**What changed:**
+
+- **Notes** (text body on annotations). `Annotation.body` was always nullable
+  in the v3 schema; V2.2.1 wrote `body = null` (highlights only). V2.2.2
+  writes `body = <user text>` for the new `TYPE_NOTE` type. No migration —
+  the column already exists.
+- **`AnnotationRepository.TYPE_NOTE`** constant added alongside `TYPE_HIGHLIGHT`.
+  `createNote(bookId, locator, body)` is the new write path; `createHighlight`
+  is unchanged.
+- **Annotation list panel** (Compose `ModalBottomSheet` in
+  `AnnotationListPanel.kt`). Lists all annotations for the open book; tap row
+  → navigate via `viewModel.requestNavigation(locator)`; delete via `IconButton`
+  with parent-surfaced Snackbar undo (AuDHD G.3, deferred to V2.2.3 actual
+  Snackbar wiring).
+- **Note-entry dialog** (`NoteEntryDialog.kt`). Opened when the user taps the
+  toolbar "Note" button with active selection. VM holds `pendingNoteLocator`
+  StateFlow so the dialog survives configuration changes.
+- **Two new toolbar IconButtons**: `Icons.AutoMirrored.Filled.NoteAdd` and
+  `FormatListBulleted`.
+
+**What stayed the same:**
+
+- §Decision (storage, FLAG_SECURE wiring, schema migration) unchanged.
+- `tts_doesNotReadAnnotationBodyText` source assertion still holds — the
+  Repository indirection means `AnnotationDao` still doesn't reach the VM's
+  import set; the new `createNote` / `pendingNoteLocator` / `requestNavigation`
+  methods route through `AnnotationRepository`, not the DAO.
+- `body` column is opaque user content. The AuDHD banned-token CI gate scans
+  app strings (`res/values/*.xml`) and main `.kt` sources, not Room rows;
+  user-authored text is out of scope of that lint.
+
+**Test additions:**
+
+- `GroupGSecurityTest.audhd_annotationPanel_existsInReader` — pins the
+  `AnnotationListPanel` Composable is invoked from `ReaderOverlay`.
+- `GroupEFSecurityTest.tts_doesNotReadAnnotationBodyText` — re-verified;
+  source-asserts the VM still does NOT import `AnnotationDao` after V2.2.2.
+- Source assertion on the toolbar wiring: both "Note" and "Annotations list"
+  IconButtons are present in `ReaderOverlay.kt`.
+
+**Open / V2.2.3 candidates:**
+
+- Per-row delete confirmation Snackbar with Undo affordance (currently
+  delete-on-tap; partner Snackbar pending).
+- Cross-book annotation panel (Library-level "all my notes").
+- Annotation export (JSON / CFI / custom) — likely co-ships with V2.1 cloud
+  sync per v2-scope.md §V2.2 open questions.
+- Distinct decoration tint for notes vs highlights (currently both render
+  with `ANNOTATION_HIGHLIGHT_TINT`).

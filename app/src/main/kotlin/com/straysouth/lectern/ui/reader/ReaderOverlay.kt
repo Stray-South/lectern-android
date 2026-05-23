@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CenterFocusStrong
@@ -75,6 +77,16 @@ internal fun ReaderOverlay(
     // Fragment resolves the WebView's current selection (suspend) and persists
     // an Annotation; this Composable just signals the request.
     onHighlight: () -> Unit,
+    // V2.2.2 — annotations list + note-entry callbacks. The Composable owns
+    // the panel-visibility state internally; the dialog visibility is driven
+    // by `pendingNoteLocator != null` from the VM (survives config change).
+    annotations: List<com.straysouth.lectern.data.db.Annotation>,
+    pendingNoteLocator: org.readium.r2.shared.publication.Locator?,
+    onNoteButtonTapped: () -> Unit,
+    onNoteSave: (String) -> Unit,
+    onNoteCancel: () -> Unit,
+    onAnnotationNavigate: (com.straysouth.lectern.data.db.Annotation) -> Unit,
+    onAnnotationDelete: (com.straysouth.lectern.data.db.Annotation) -> Unit,
 ) {
     when (state) {
         EpubReaderViewModel.State.Loading -> LoadingOverlay()
@@ -99,6 +111,13 @@ internal fun ReaderOverlay(
             onGazeToggle = onGazeToggle,
             onCalibrate = onCalibrate,
             onHighlight = onHighlight,
+            annotations = annotations,
+            pendingNoteLocator = pendingNoteLocator,
+            onNoteButtonTapped = onNoteButtonTapped,
+            onNoteSave = onNoteSave,
+            onNoteCancel = onNoteCancel,
+            onAnnotationNavigate = onAnnotationNavigate,
+            onAnnotationDelete = onAnnotationDelete,
         )
     }
 }
@@ -159,8 +178,19 @@ private fun ReadyOverlay(
     // Fragment resolves the WebView's current selection (suspend) and persists
     // an Annotation; this Composable just signals the request.
     onHighlight: () -> Unit,
+    // V2.2.2 — annotations data + note/list callbacks. The dialog visibility
+    // is driven by `pendingNoteLocator != null` from the VM (survives config
+    // change). The list panel visibility is local Compose state.
+    annotations: List<com.straysouth.lectern.data.db.Annotation>,
+    pendingNoteLocator: org.readium.r2.shared.publication.Locator?,
+    onNoteButtonTapped: () -> Unit,
+    onNoteSave: (String) -> Unit,
+    onNoteCancel: () -> Unit,
+    onAnnotationNavigate: (com.straysouth.lectern.data.db.Annotation) -> Unit,
+    onAnnotationDelete: (com.straysouth.lectern.data.db.Annotation) -> Unit,
 ) {
     var showPanel by remember { mutableStateOf(false) }
+    var showAnnotationList by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
         // V1 pixel overlay — drawn first so toolbar/TtsBar render above it.
         // ADR-AND-L Sprint 13 amendment: semi-transparent band at gazePoint.y.
@@ -180,6 +210,8 @@ private fun ReadyOverlay(
             onGazeToggle = onGazeToggle,
             onCalibrate = onCalibrate,
             onHighlight = onHighlight,
+            onNote = onNoteButtonTapped,
+            onAnnotationList = { showAnnotationList = true },
             modifier = Modifier.align(Alignment.TopStart),
         )
 
@@ -203,6 +235,30 @@ private fun ReadyOverlay(
                 prefs = typographyPrefs,
                 onPrefsChange = onTypographyChange,
                 onDismiss = { showPanel = false },
+            )
+        }
+
+        // V2.2.2 — annotations panel (ModalBottomSheet)
+        if (showAnnotationList) {
+            AnnotationListPanel(
+                annotations = annotations,
+                onNavigateTo = { ann ->
+                    onAnnotationNavigate(ann)
+                    showAnnotationList = false
+                },
+                onDelete = { ann ->
+                    onAnnotationDelete(ann)
+                },
+                onDismiss = { showAnnotationList = false },
+            )
+        }
+
+        // V2.2.2 — note-entry dialog (visibility driven by VM state, so
+        // it survives config changes).
+        if (pendingNoteLocator != null) {
+            NoteEntryDialog(
+                onSave = onNoteSave,
+                onDismiss = onNoteCancel,
             )
         }
     }
@@ -253,6 +309,10 @@ private fun ReaderToolbar(
     onCalibrate: () -> Unit,
     // V2.2 — user taps to highlight the currently-selected text in the WebView.
     onHighlight: () -> Unit,
+    // V2.2.2 — user taps to add a note on the currently-selected text.
+    onNote: () -> Unit,
+    // V2.2.2 — user taps to open the annotations list panel.
+    onAnnotationList: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Semi-opaque so the reader text remains visible beneath.
@@ -315,6 +375,24 @@ private fun ReaderToolbar(
                 Icon(
                     imageVector = Icons.Filled.FormatColorFill,
                     contentDescription = cdHighlight,
+                )
+            }
+            // V2.2.2 — Note button. Same selection semantics as Highlight; on tap,
+            // Fragment resolves the selection and the VM exposes pendingNoteLocator
+            // which drives the note-entry dialog.
+            val cdNote = stringResource(R.string.cd_note)
+            IconButton(onClick = onNote, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.NoteAdd,
+                    contentDescription = cdNote,
+                )
+            }
+            // V2.2.2 — Annotations list button. Opens the ModalBottomSheet panel.
+            val cdAnnotationList = stringResource(R.string.cd_annotation_list)
+            IconButton(onClick = onAnnotationList, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
+                    contentDescription = cdAnnotationList,
                 )
             }
         }

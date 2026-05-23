@@ -347,6 +347,71 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    /**
+     * V2.2.2 — create a note at [locator] with the user-typed [body].
+     *
+     * The dialog-side validation already rejected blank/empty body, so this
+     * function trusts the input. body verbatim — user-content opaque to the
+     * banned-token AuDHD lint (which targets app strings, not user data).
+     *
+     * No-op if no book is open.
+     */
+    fun createNote(locator: Locator, body: String) {
+        val bookId = _bookId ?: return
+        viewModelScope.launch {
+            annotationRepository.createNote(bookId, locator, body)
+        }
+    }
+
+    /**
+     * V2.2.2 — delete an annotation by id. Used by the annotation list panel
+     * with an undo Snackbar (AuDHD G.3 — Indefinite + withDismissAction).
+     */
+    fun deleteAnnotation(id: String) {
+        viewModelScope.launch {
+            annotationRepository.delete(id)
+        }
+    }
+
+    /**
+     * V2.2.2 — request the Fragment navigate the reader to [locator].
+     *
+     * SharedFlow with replay=0 — emits are one-shot events, not state.
+     * Fragment-side collector calls `navigatorFragment.go(locator)`.
+     * Used by the annotation list panel (tap row → navigate).
+     */
+    private val _navigationRequests = kotlinx.coroutines.flow.MutableSharedFlow<Locator>(replay = 0)
+    val navigationRequests: kotlinx.coroutines.flow.SharedFlow<Locator> = _navigationRequests
+
+    fun requestNavigation(locator: Locator) {
+        viewModelScope.launch {
+            _navigationRequests.emit(locator)
+        }
+    }
+
+    /**
+     * V2.2.2 — pending locator for the note-entry dialog. Non-null while
+     * the user has selected text and tapped "Note"; the Composable observes
+     * this state to show/hide the dialog. Owned by the VM so the dialog
+     * survives configuration changes.
+     */
+    private val _pendingNoteLocator = MutableStateFlow<Locator?>(null)
+    val pendingNoteLocator: StateFlow<Locator?> = _pendingNoteLocator
+
+    fun startNoteEntry(locator: Locator) {
+        _pendingNoteLocator.value = locator
+    }
+
+    fun cancelNoteEntry() {
+        _pendingNoteLocator.value = null
+    }
+
+    fun confirmNoteEntry(body: String) {
+        val locator = _pendingNoteLocator.value ?: return
+        createNote(locator, body)
+        _pendingNoteLocator.value = null
+    }
+
     override fun onCleared() {
         super.onCleared()
         cleanUpTts()

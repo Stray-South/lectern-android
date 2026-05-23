@@ -29,6 +29,9 @@ class AnnotationRepository(private val dao: AnnotationDao) {
     /** Annotation type for a plain highlight (no body text). */
     val typeHighlight: String get() = TYPE_HIGHLIGHT
 
+    /** Annotation type for a user note (has body text). */
+    val typeNote: String get() = TYPE_NOTE
+
     /**
      * Observe all annotations for a single book, ordered by creation time.
      * Used by the reader to render Readium decorations.
@@ -56,6 +59,31 @@ class AnnotationRepository(private val dao: AnnotationDao) {
         )
     }
 
+    /**
+     * V2.2.2 — create a note at [locator] in [bookId] with [body] text.
+     *
+     * Distinct from [createHighlight] by `type = TYPE_NOTE` (callers can
+     * filter on type) and the presence of [body]. The body is opaque user
+     * content — banned-token checks (AuDHD copy lint) apply to app strings
+     * only, not user data. TTS does not read this field (ADR-AND-T pin via
+     * `GroupEFSecurityTest.tts_doesNotReadAnnotationBodyText`).
+     *
+     * Empty / blank [body] is rejected at the call site (UI dialog) — this
+     * function accepts any non-null string and persists it verbatim.
+     */
+    suspend fun createNote(bookId: String, locator: Locator, body: String) {
+        dao.upsert(
+            Annotation(
+                id = UUID.randomUUID().toString(),
+                bookId = bookId,
+                locatorJson = locator.toJSON().toString(),
+                type = TYPE_NOTE,
+                createdAt = System.currentTimeMillis(),
+                body = body,
+            ),
+        )
+    }
+
     /** Delete one annotation by id. */
     suspend fun delete(id: String) {
         dao.deleteById(id)
@@ -63,5 +91,6 @@ class AnnotationRepository(private val dao: AnnotationDao) {
 
     companion object {
         const val TYPE_HIGHLIGHT = "highlight"
+        const val TYPE_NOTE = "note"
     }
 }
