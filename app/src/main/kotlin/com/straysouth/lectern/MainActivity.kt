@@ -144,7 +144,13 @@ private fun AppContent(
         rsvpSource != null -> RsvpScreen(
             source = rsvpSource,
             viewModel = rsvpViewModel,
-            onBack = { currentRsvpSource = null },
+            onBack = {
+                // V2.4 fix: eagerly pause cadenceJob on Back so the
+                // delay() doesn't run one extra tick after the user
+                // already exited (resource hygiene, adversarial review).
+                rsvpViewModel.pause()
+                currentRsvpSource = null
+            },
         )
         bookId == null -> LibraryScreen(
             viewModel = libraryViewModel,

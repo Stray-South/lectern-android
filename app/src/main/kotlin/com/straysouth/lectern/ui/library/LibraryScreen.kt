@@ -112,7 +112,13 @@ fun LibraryScreen(
     val txtLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        uri?.let { onRsvpRequested(com.straysouth.lectern.ui.rsvp.RsvpSource.TxtUri(it)) }
+        // V2.4 fix: SAF's OpenDocument is supposed to return content:// only,
+        // but malicious document providers and pre-API-26 quirks can leak a
+        // file:// URI through this callback. Hard-gate the scheme before
+        // constructing RsvpSource.TxtUri (ADR-AND-X §Storage).
+        uri?.takeIf { it.scheme == "content" }?.let {
+            onRsvpRequested(com.straysouth.lectern.ui.rsvp.RsvpSource.TxtUri(it))
+        }
     }
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     val emptyClipboardMsg = stringResource(R.string.rsvp_clipboard_empty)
