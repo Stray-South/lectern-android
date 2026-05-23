@@ -34,6 +34,8 @@ import com.straysouth.lectern.ui.gaze.GazeViewModelFactory
 import com.straysouth.lectern.ui.library.LibraryScreen
 import com.straysouth.lectern.ui.library.LibraryViewModel
 import com.straysouth.lectern.ui.reader.ReaderScreen
+import com.straysouth.lectern.ui.review.ReviewScreen
+import com.straysouth.lectern.ui.review.ReviewViewModel
 import com.straysouth.lectern.ui.rsvp.RsvpScreen
 import com.straysouth.lectern.ui.rsvp.RsvpSource
 import com.straysouth.lectern.ui.theme.LecternTheme
@@ -46,6 +48,7 @@ class MainActivity : AppCompatActivity() {
 
     private val libraryViewModel: LibraryViewModel by viewModels()
     private val rsvpViewModel: com.straysouth.lectern.ui.rsvp.RsvpViewModel by viewModels()
+    private val reviewViewModel: ReviewViewModel by viewModels()
     private val gazeViewModel: GazeViewModel by viewModels {
         GazeViewModelFactory(application, CalibrationRepository(applicationContext))
     }
@@ -80,7 +83,13 @@ class MainActivity : AppCompatActivity() {
                         GazePermissionEffect(gazeViewModel) {
                             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                         }
-                        AppContent(libraryViewModel, gazeViewModel, rsvpViewModel, ::hasCameraPermission)
+                        AppContent(
+                            libraryViewModel,
+                            gazeViewModel,
+                            rsvpViewModel,
+                            reviewViewModel,
+                            ::hasCameraPermission,
+                        )
                     }
                 }
             }
@@ -100,11 +109,13 @@ private fun GazePermissionEffect(vm: GazeViewModel, launchRequest: () -> Unit) {
     }
 }
 
+@Suppress("CyclomaticComplexMethod")
 @Composable
 private fun AppContent(
     libraryViewModel: LibraryViewModel,
     gazeViewModel: GazeViewModel,
     rsvpViewModel: com.straysouth.lectern.ui.rsvp.RsvpViewModel,
+    reviewViewModel: ReviewViewModel,
     hasCameraPermission: () -> Boolean,
 ) {
     var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -113,6 +124,8 @@ private fun AppContent(
     // per ADR-AND-X §Privacy; do NOT rememberSaveable). On process death the RSVP
     // session resets to library, which is the correct privacy-preserving behavior.
     var currentRsvpSource by remember { mutableStateOf<RsvpSource?>(null) }
+    // V2.3 — review nav state. Plain boolean; queue + index live in ReviewViewModel.
+    var showReview by rememberSaveable { mutableStateOf(false) }
     val calibrationUiState by gazeViewModel.calibrationUiState.collectAsState()
     val gazeState by gazeViewModel.gazeState.collectAsState()
 
@@ -129,12 +142,14 @@ private fun AppContent(
         }
     }
 
-    BackHandler(enabled = currentBookId != null || currentRsvpSource != null) {
-        if (currentRsvpSource != null) {
-            currentRsvpSource = null
-        } else {
-            currentBookId = null
-            currentBookFormat = null
+    BackHandler(enabled = currentBookId != null || currentRsvpSource != null || showReview) {
+        when {
+            currentRsvpSource != null -> currentRsvpSource = null
+            showReview -> showReview = false
+            else -> {
+                currentBookId = null
+                currentBookFormat = null
+            }
         }
     }
 
@@ -152,6 +167,10 @@ private fun AppContent(
                 currentRsvpSource = null
             },
         )
+        showReview -> ReviewScreen(
+            viewModel = reviewViewModel,
+            onBack = { showReview = false },
+        )
         bookId == null -> LibraryScreen(
             viewModel = libraryViewModel,
             onBookSelected = { book: Book ->
@@ -160,6 +179,7 @@ private fun AppContent(
                 libraryViewModel.recordOpened(book.id)
             },
             onRsvpRequested = { source -> currentRsvpSource = source },
+            onReviewRequested = { showReview = true },
         )
         else -> {
             ReaderScreen(bookId = bookId, format = currentBookFormat ?: "EPUB")

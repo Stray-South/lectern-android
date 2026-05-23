@@ -87,4 +87,12 @@
     <string name="rsvp_clipboard_empty">Clipboard is empty</string>
     <string name="rsvp_error_no_text">No readable text</string>
     <string name="rsvp_error_open">Unable to read source</string>
+    <string name="cd_review_screen">Review annotations</string>
+    <string name="review_library_action">Review annotations</string>
+    <string name="review_empty_label">No annotations to review right now. Highlight or note some passages first.</string>
+    <string name="review_done_label">All done for now</string>
+    <string name="review_remaining">%1$d to go</string>
+    <string name="review_got_it_action">Got it</string>
+    <string name="review_later_action">Review later</string>
+    <string name="review_highlight_placeholder">A highlight you saved</string>
 </resources>

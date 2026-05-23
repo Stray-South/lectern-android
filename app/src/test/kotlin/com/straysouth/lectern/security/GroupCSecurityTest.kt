@@ -132,6 +132,32 @@ class GroupCSecurityTest {
         )
     }
 
+    @Test
+    fun schemaV4_identityHash_isStable() {
+        val v4 = schemaJson(4)
+        assertTrue(
+            "schemas/4.json identity hash must be cccc4aec1c09b4f2f149583c5e381830 — " +
+                "hash change means annotation entity changed without a migration (V2.3)",
+            v4.contains("\"identityHash\": \"cccc4aec1c09b4f2f149583c5e381830\""),
+        )
+    }
+
+    /** V2.3 — v4 schema must have the review columns on annotations. */
+    @Test
+    fun schemaV4_annotationsTable_hasReviewColumns() {
+        val v4 = schemaJson(4)
+        assertTrue(
+            "annotations table createSql must include lastReviewedAt INTEGER (nullable)",
+            v4.contains("`lastReviewedAt` INTEGER"),
+        )
+        assertTrue(
+            "annotations table createSql must include reviewCount INTEGER NOT NULL " +
+                "(Room normalizes the DEFAULT 0 out of the createSql; the migration path " +
+                "carries the DEFAULT for existing rows, fresh installs get it from the data class)",
+            v4.contains("`reviewCount` INTEGER NOT NULL"),
+        )
+    }
+
     /** v3 schema must register the `annotations` table from ADR-AND-T. */
     @Test
     fun schemaV3_annotationsTable_isRegistered() {

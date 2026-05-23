@@ -552,6 +552,28 @@ class GroupGSecurityTest {
         )
     }
 
+    /**
+     * V2.3 — review screen exists and is wired from LibraryScreen.
+     * Source assertion: ReviewScreen.kt is invoked from MainActivity.kt.
+     */
+    @Test
+    fun review_screenIsWiredFromMainActivity() {
+        val main = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/MainActivity.kt").readText(),
+        )
+        assertTrue(
+            "MainActivity must compose ReviewScreen (V2.3)",
+            main.contains("ReviewScreen("),
+        )
+        val library = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/library/LibraryScreen.kt").readText(),
+        )
+        assertTrue(
+            "LibraryScreen must expose onReviewRequested (V2.3 entry point)",
+            library.contains("onReviewRequested"),
+        )
+    }
+
     companion object {
         private const val MAX_ANIMATION_MS = 200
 

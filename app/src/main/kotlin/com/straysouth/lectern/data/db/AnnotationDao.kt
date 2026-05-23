@@ -35,4 +35,26 @@ interface AnnotationDao {
 
     @Query("SELECT COUNT(*) FROM annotations WHERE bookId = :bookId")
     suspend fun countForBook(bookId: String): Int
+
+    /**
+     * V2.3 — recency-jitter review queue.
+     *
+     * Pulls annotations whose `lastReviewedAt` is older than [cutoffMillis]
+     * OR has never been reviewed (NULL). RANDOM() ordering is the "jitter"
+     * so the same set doesn't reappear in the same sequence (no clumping +
+     * variety across re-opens). [limit] caps session size.
+     */
+    @Query(
+        "SELECT * FROM annotations " +
+            "WHERE lastReviewedAt IS NULL OR lastReviewedAt < :cutoffMillis " +
+            "ORDER BY RANDOM() LIMIT :limit"
+    )
+    suspend fun reviewQueue(cutoffMillis: Long, limit: Int): List<Annotation>
+
+    /** V2.3 — mark an annotation as reviewed now; increments reviewCount. */
+    @Query(
+        "UPDATE annotations SET lastReviewedAt = :now, reviewCount = reviewCount + 1 " +
+            "WHERE id = :id"
+    )
+    suspend fun markReviewed(id: String, now: Long)
 }

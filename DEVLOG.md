@@ -1621,3 +1621,75 @@ Format: see .claude/skills/devlog/SKILL.md
   + RSVP-exit-writes-Locator-back) deferred.
 
 - **Blockers:** none.
+
+## Sprint 30 — V2.3 retrieval (in-app, recency-jitter), schema v4
+
+- **What:** Ships V2.3 in-app retrieval per the locked V2.3 scope decisions:
+  Option A (in-app only, no notifications, no PendingIntent surface) with
+  recency-jitter algorithm baseline.
+
+  Schema v3 → v4: adds two columns to the `annotations` table:
+  - `lastReviewedAt INTEGER NULL` — wall-clock millis of the last "Got it"
+    tap; NULL means never reviewed (eligible immediately).
+  - `reviewCount INTEGER NOT NULL DEFAULT 0` — incremented on each
+    "Got it"; reserved for future affordances (V2.3.1 candidate).
+
+  `AppDatabase.MIGRATION_3_4` uses ALTER TABLE + DEFAULT 0 on reviewCount
+  so existing rows pick up the column without backfill code. Room
+  normalizes the DEFAULT out of the v4 createSql (only present in the
+  migration ALTER), so the GroupC v4 schema-export assertion checks for
+  `reviewCount INTEGER NOT NULL` without the DEFAULT clause.
+
+  `AnnotationDao.reviewQueue(cutoffMillis, limit)` — recency-jitter
+  query: `WHERE lastReviewedAt IS NULL OR lastReviewedAt < :cutoff
+  ORDER BY RANDOM() LIMIT :limit`. The `RANDOM()` is the jitter so the
+  same eligible set doesn't appear in the same order. 24-hour recency
+  window default; calibratable in V2.3.1.
+
+  `ReviewRepository` wraps the DAO with sensible defaults (`limit=10`,
+  `window=24h`, `now=System.currentTimeMillis()` injectable for tests).
+
+  `ReviewScreen` — single-card display, two actions: "Got it" (calls
+  `markReviewed` + advance) and "Review later" (skip, stays in pool).
+  No streak / daily-goal / urgency copy; banned-token gate passes on
+  the 8 new strings.
+
+  Entry point: `Library top-bar "Review annotations" TextButton`
+  (one click from library). Per the locked decision this is the
+  primary entry point; FSRS / SM-2 algorithm upgrades can swap in
+  without schema migration (the columns are forward-compatible).
+
+  Three GroupC + 1 GroupG source assertions pin the V2.3 invariants:
+  - `schemaV4_identityHash_isStable` (hash cccc4aec1c09b4f2f149583c5e381830)
+  - `schemaV4_annotationsTable_hasReviewColumns`
+  - `review_screenIsWiredFromMainActivity`
+
+  Plus existing `audhd_stringsXml_noBannedCopy` (GroupG) catches any
+  banned-token regression on the 8 new strings.
+
+  No new ADR per v2-scope.md §V2.3 (no new permissions, no fail-closed
+  reversal; DEVLOG entry suffices). `platform_noPendingIntent_inMainSources`
+  stays armed — V2.3 introduces zero PendingIntents.
+
+  All 9 preflight gates pass.
+
+- **Why:** Owner-locked Option A (in-app, no notifications). Saves the
+  notification-surface ADR work for a future V2.3.B fork when there's
+  user signal that in-app review isn't surfacing often enough.
+  Recency-jitter is the simplest non-locked-in baseline; FSRS or SM-2
+  can swap in later by replacing the query.
+
+- **Files:**
+  - New: `data/repository/ReviewRepository.kt`, `ui/review/ReviewScreen.kt`,
+    `ui/review/ReviewViewModel.kt`, `ui/review/ReviewUiState.kt`,
+    `app/schemas/com.straysouth.lectern.data.db.AppDatabase/4.json`
+  - Modified: `data/db/Annotation.kt` (+2 cols), `data/db/AnnotationDao.kt`
+    (+reviewQueue +markReviewed), `data/db/AppDatabase.kt` (+MIGRATION_3_4
+    + version=4), `MainActivity.kt` (review nav state + VM wiring),
+    `ui/library/LibraryScreen.kt` (Review entry button), `res/values/strings.xml`
+    (+8 strings, banned-token-safe), GroupCSecurityTest.kt + GroupGSecurityTest.kt.
+
+- **Next:** Cross-feature adversarial review (V2.2 series + V2.4 + V2.3
+  cumulative). After that, address findings to DoD per item.
+
+- **Blockers:** none.
