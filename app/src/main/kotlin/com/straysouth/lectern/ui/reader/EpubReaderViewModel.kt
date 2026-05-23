@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.readium.navigator.media.tts.TtsNavigator
@@ -372,7 +373,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     fun deleteAnnotation(annotation: com.straysouth.lectern.data.db.Annotation) {
         viewModelScope.launch {
             annotationRepository.delete(annotation.id)
-            _deletedAnnotations.emit(annotation)
+            _deletedAnnotationsChannel.trySend(annotation)
         }
     }
 
@@ -389,21 +390,27 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * V2.2.3 — one-shot events for the delete-undo Snackbar. Replay=0
-     * because a missed Snackbar (host not composed) should not pop up
-     * later out of context. The Fragment-side observer launches a
-     * Snackbar with an Undo action on each emission.
+     * V2.2.3 — undo events for the delete Snackbar. V2.2.3 fix: replaced
+     * the prior SharedFlow(replay=0, extraBufferCapacity=1) with a
+     * Channel-backed flow so rapid multi-delete and the (delete →
+     * Fragment-destroy-before-collector-resumes) race no longer drop
+     * undo affordances.
      *
-     * extraBufferCapacity=1: emit() must not suspend indefinitely when the
-     * Compose collector is absent (e.g. Fragment destroyed before emit fires).
+     * Semantics:
+     *   - Channel.UNLIMITED: emits never suspend or drop on burst delete.
+     *   - consumeAsFlow(): single-consumer; the next Snackbar collector
+     *     re-subscribes after configuration change and picks up any
+     *     events that arrived while no Composable was active.
+     *   - Delete is already committed to DB when the event is sent;
+     *     undo is the user's only recovery, so the event must not be
+     *     lost.
      */
-    private val _deletedAnnotations =
-        kotlinx.coroutines.flow.MutableSharedFlow<com.straysouth.lectern.data.db.Annotation>(
-            replay = 0,
-            extraBufferCapacity = 1,
+    private val _deletedAnnotationsChannel =
+        kotlinx.coroutines.channels.Channel<com.straysouth.lectern.data.db.Annotation>(
+            capacity = kotlinx.coroutines.channels.Channel.UNLIMITED,
         )
-    val deletedAnnotations: kotlinx.coroutines.flow.SharedFlow<com.straysouth.lectern.data.db.Annotation> =
-        _deletedAnnotations
+    val deletedAnnotations: kotlinx.coroutines.flow.Flow<com.straysouth.lectern.data.db.Annotation> =
+        _deletedAnnotationsChannel.receiveAsFlow()
 
     /**
      * V2.2.2 — request the Fragment navigate the reader to [locator].
@@ -448,6 +455,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         super.onCleared()
         cleanUpTts()
         annotationCollectionJob?.cancel()
+        _deletedAnnotationsChannel.close()
         _publication?.close()
     }
 }

@@ -661,12 +661,14 @@ class EpubReaderFragment : Fragment() {
  * Extracted from [EpubReaderFragment.onCreateView] to keep that function
  * under the detekt LongMethod threshold (extracted: ~13 lines → 3-line call site).
  * replay=0 on the SharedFlow means a missed Snackbar (composition not active)
- * is silently dropped — correct, since the delete is already committed.
+ * V2.2.3 fix: backing store is now a Channel(UNLIMITED) on the VM, so
+ * Fragment-destroy-before-collect-resumes no longer drops the event;
+ * the next Composable that subscribes via receiveAsFlow drains it.
  */
 @androidx.compose.runtime.Composable
 private fun UndoDeleteAnnotationEffect(
     snackbarHostState: SnackbarHostState,
-    deletedAnnotations: kotlinx.coroutines.flow.SharedFlow<com.straysouth.lectern.data.db.Annotation>,
+    deletedAnnotations: kotlinx.coroutines.flow.Flow<com.straysouth.lectern.data.db.Annotation>,
     onRestore: (com.straysouth.lectern.data.db.Annotation) -> Unit,
 ) {
     val deletedMsg = stringResource(R.string.annotation_deleted_undo)
