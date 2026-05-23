@@ -1522,3 +1522,40 @@ Format: see .claude/skills/devlog/SKILL.md
 - **Next:** Wait for Gemini re-review post-push; check PR #4 review
   status. Adversarial agent pass on each branch tip optional.
 - **Blockers:** none.
+
+## 2026-05-10T00:00Z — Sprint 28: v2.2.3 undo-delete annotation + distinct note/highlight tints
+
+- **Did:** Implemented undo-delete for annotation list panel.
+  `EpubReaderViewModel.deleteAnnotation(annotation)` now takes the full
+  `Annotation` (changed from id-only) and emits it on `_deletedAnnotations`
+  SharedFlow (`replay=0, extraBufferCapacity=1` — `extraBufferCapacity=1` added
+  from adversarial review finding #2 to prevent indefinite coroutine suspend when
+  the Compose collector is absent on Fragment destroy).
+  `restoreAnnotation(annotation)` re-inserts via `AnnotationRepository.upsert()`
+  (DAO `@Insert(REPLACE)`, no migration cost). `AnnotationRepository.upsert()` added
+  as a new method wrapping the existing DAO call.
+  `UndoDeleteAnnotationEffect` composable (file-level `private`) observes
+  `deletedAnnotations`, shows Indefinite + `withDismissAction` Snackbar (G.3); calls
+  `snackbarHostState.currentSnackbarData?.dismiss()` before each `showSnackbar` so
+  rapid multi-deletes replace rather than stack Indefinite prompts (adversarial
+  review finding #4 — stacked Indefinite Snackbars violate AuDHD G.3 spirit).
+  Extracted from `onCreateView` to keep it under the detekt LongMethod threshold (80).
+  Added `SnackbarHost` inside a `Box` overlay in `onCreateView`'s Compose tree.
+  Distinct tints: `ANNOTATION_NOTE_TINT = Color.argb(128, 179, 157, 219)` (soft
+  lavender) added; `setupAnnotationDecorationsObserver()` selects tint by `ann.type`
+  (`TYPE_NOTE` → lavender, else → warm peach). Both use `Decoration.Style.Highlight`;
+  Underline-vs-Highlight for notes documented as a known semantic gap (adversarial
+  review finding #5 — future product decision, tracked in comment).
+  Fixed 3 stale `🔴` status headers in RED-TEAM.md (A.2, C.1, C.3 — all implemented
+  in earlier sprints; coverage matrix already correct; headers were inconsistent).
+- **Why:** Delete-without-undo is a high-friction, irreversible action that disproportionately
+  affects AuDHD users (impulsivity, accidental taps). The undo Snackbar is the
+  minimal-footprint recovery path consistent with G.3. Distinct tints let users
+  distinguish user-authored notes from plain highlights without opening the annotation
+  panel — reduces interaction cost for low-working-memory reads.
+- **Files:** EpubReaderFragment.kt, EpubReaderViewModel.kt,
+  AnnotationRepository.kt, docs/security/RED-TEAM.md, DEVLOG.md
+- **Next:** F.6 `gradleDependencyVerification_checksums` (pre-V2 beta; blocked on
+  deciding which deps to cover and verifying current artifact hashes); physical-device
+  runtime checks (E.1 audio ducking, F.3/H.2 Network Profiler, J.4/J.5/J.6).
+- **Blockers:** none.

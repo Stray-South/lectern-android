@@ -9,9 +9,21 @@ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
+import com.straysouth.lectern.data.repository.AnnotationRepository
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -93,6 +105,10 @@ class EpubReaderFragment : Fragment() {
         // distinguish user-authored highlights from system-applied highlights.
         // Alpha matches the Anchor (50%) for similar permanence visibility.
         private val ANNOTATION_HIGHLIGHT_TINT = Color.argb(128, 255, 183, 77)
+        // V2.2.3 — note tint. Soft lavender — visually distinct from both the
+        // warm amber/peach highlight family and the background (#FAF8F4).
+        // Same 50% alpha as ANNOTATION_HIGHLIGHT_TINT so permanence-weight matches.
+        private val ANNOTATION_NOTE_TINT = Color.argb(128, 179, 157, 219)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -302,10 +318,19 @@ class EpubReaderFragment : Fragment() {
                 viewModel.annotationsForOpenBook.collect { annotations ->
                     val decorations = annotations.mapNotNull { ann ->
                         val locator = parseLocatorJson(ann.locatorJson) ?: return@mapNotNull null
+                        // V2.2.3 — notes get a distinct lavender tint; highlights keep warm peach.
+                        // Both use Decoration.Style.Highlight (filled region). Known semantic gap:
+                        // Underline would better signal "note here" vs "text highlighted" but is a
+                        // separate product decision — tracked as V2.2.3 review finding #5.
+                        val tint = if (ann.type == AnnotationRepository.TYPE_NOTE) {
+                            ANNOTATION_NOTE_TINT
+                        } else {
+                            ANNOTATION_HIGHLIGHT_TINT
+                        }
                         Decoration(
                             id = ann.id,
                             locator = locator,
-                            style = Decoration.Style.Highlight(tint = ANNOTATION_HIGHLIGHT_TINT),
+                            style = Decoration.Style.Highlight(tint = tint),
                         )
                     }
                     navigatorFragment?.applyDecorations(decorations, ANNOTATIONS_DECORATION_GROUP)
@@ -486,50 +511,63 @@ class EpubReaderFragment : Fragment() {
                     val gazeEnabled by gazeViewModel.gazeEnabled.collectAsState()
                     val annotations by viewModel.annotationsForOpenBook.collectAsState()
                     val pendingNoteLocator by viewModel.pendingNoteLocator.collectAsState()
-                    ReaderOverlay(
-                        state = state,
-                        typographyPrefs = typographyPrefs,
-                        ttsUiState = ttsUiState,
-                        ttsPrefs = ttsPrefs,
-                        focusBandPrefs = focusBandPrefs,
-                        anchorActive = anchorLocator != null,
-                        gazeState = gazeState,
-                        gazeEnabled = gazeEnabled,
-                        onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
-                        onTypographyChange = viewModel::updateTypography,
-                        // Pass current navigator position so TTS starts where the user is reading,
-                        // not at the beginning of the book. Null if navigator not yet attached.
-                        onTtsPlay = { viewModel.startTts(navigatorFragment?.currentLocator?.value) },
-                        onTtsPause = viewModel::pauseTts,
-                        onTtsStop = viewModel::stopTts,
-                        onTtsSpeedChange = viewModel::updateTtsSpeed,
-                        onFocusBandChange = viewModel::updateFocusBand,
-                        onDismissTtsUnavailable = viewModel::dismissTtsUnavailable,
-                        onAnchorDismiss = viewModel::clearAnchor,
-                        // onGazeToggle is wired from MainActivity via ReaderScreen args;
-                        // the Fragment accesses it through the ViewModel toggle path.
-                        onGazeToggle = {
-                            val hasPermission = ContextCompat.checkSelfPermission(
-                                requireContext(), Manifest.permission.CAMERA,
-                            ) == PackageManager.PERMISSION_GRANTED
-                            gazeViewModel.toggleGaze(hasPermission = hasPermission)
-                        },
-                        onCalibrate = {
-                            gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS)
-                        },
-                        onHighlight = ::createHighlightFromSelection,
-                        annotations = annotations,
-                        pendingNoteLocator = pendingNoteLocator,
-                        onNoteButtonTapped = ::beginNoteEntryFromSelection,
-                        onNoteSave = viewModel::confirmNoteEntry,
-                        onNoteCancel = viewModel::cancelNoteEntry,
-                        onAnnotationNavigate = { ann ->
-                            parseLocatorJson(ann.locatorJson)?.let(viewModel::requestNavigation)
-                        },
-                        onAnnotationDelete = { ann ->
-                            viewModel.deleteAnnotation(ann.id)
-                        },
+
+                    // V2.2.3 — undo-delete Snackbar (G.3: Indefinite + withDismissAction).
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    UndoDeleteAnnotationEffect(
+                        snackbarHostState = snackbarHostState,
+                        deletedAnnotations = viewModel.deletedAnnotations,
+                        onRestore = viewModel::restoreAnnotation,
                     )
+
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        ReaderOverlay(
+                            state = state,
+                            typographyPrefs = typographyPrefs,
+                            ttsUiState = ttsUiState,
+                            ttsPrefs = ttsPrefs,
+                            focusBandPrefs = focusBandPrefs,
+                            anchorActive = anchorLocator != null,
+                            gazeState = gazeState,
+                            gazeEnabled = gazeEnabled,
+                            onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
+                            onTypographyChange = viewModel::updateTypography,
+                            // Pass current navigator position so TTS starts where the user is reading,
+                            // not at the beginning of the book. Null if navigator not yet attached.
+                            onTtsPlay = { viewModel.startTts(navigatorFragment?.currentLocator?.value) },
+                            onTtsPause = viewModel::pauseTts,
+                            onTtsStop = viewModel::stopTts,
+                            onTtsSpeedChange = viewModel::updateTtsSpeed,
+                            onFocusBandChange = viewModel::updateFocusBand,
+                            onDismissTtsUnavailable = viewModel::dismissTtsUnavailable,
+                            onAnchorDismiss = viewModel::clearAnchor,
+                            // onGazeToggle is wired from MainActivity via ReaderScreen args;
+                            // the Fragment accesses it through the ViewModel toggle path.
+                            onGazeToggle = {
+                                val hasPermission = ContextCompat.checkSelfPermission(
+                                    requireContext(), Manifest.permission.CAMERA,
+                                ) == PackageManager.PERMISSION_GRANTED
+                                gazeViewModel.toggleGaze(hasPermission = hasPermission)
+                            },
+                            onCalibrate = {
+                                gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS)
+                            },
+                            onHighlight = ::createHighlightFromSelection,
+                            annotations = annotations,
+                            pendingNoteLocator = pendingNoteLocator,
+                            onNoteButtonTapped = ::beginNoteEntryFromSelection,
+                            onNoteSave = viewModel::confirmNoteEntry,
+                            onNoteCancel = viewModel::cancelNoteEntry,
+                            onAnnotationNavigate = { ann ->
+                                parseLocatorJson(ann.locatorJson)?.let(viewModel::requestNavigation)
+                            },
+                            onAnnotationDelete = viewModel::deleteAnnotation,
+                        )
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    }
                     // TODO(ADR-AND-L): Focus Band V2 — deferred to V3.
                     // V1 pixel overlay is GazeFocusBandOverlay in ReaderOverlay.kt (Sprint 13).
                     // V2: when a native BasicText surface exists, replace with:
@@ -611,5 +649,42 @@ class EpubReaderFragment : Fragment() {
             }
         }
         webView.setTag(R.id.chapter_rotor_action_ids, ids)
+    }
+}
+
+/**
+ * V2.2.3 — side-effect that observes [deletedAnnotations] and shows an
+ * Indefinite Snackbar with an Undo action (AuDHD G.3: never auto-dismiss
+ * error/action messages). If the user taps Undo, [onRestore] is called with
+ * the original [Annotation] so the row is re-inserted intact.
+ *
+ * Extracted from [EpubReaderFragment.onCreateView] to keep that function
+ * under the detekt LongMethod threshold (extracted: ~13 lines → 3-line call site).
+ * replay=0 on the SharedFlow means a missed Snackbar (composition not active)
+ * is silently dropped — correct, since the delete is already committed.
+ */
+@androidx.compose.runtime.Composable
+private fun UndoDeleteAnnotationEffect(
+    snackbarHostState: SnackbarHostState,
+    deletedAnnotations: kotlinx.coroutines.flow.SharedFlow<com.straysouth.lectern.data.db.Annotation>,
+    onRestore: (com.straysouth.lectern.data.db.Annotation) -> Unit,
+) {
+    val deletedMsg = stringResource(R.string.annotation_deleted_undo)
+    val undoLabel = stringResource(R.string.annotation_undo_action)
+    LaunchedEffect(Unit) {
+        deletedAnnotations.collect { annotation ->
+            // Dismiss any in-flight Snackbar so rapid multi-delete doesn't
+            // stack multiple Indefinite prompts (AuDHD: avoid accumulated blocking UI).
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = deletedMsg,
+                actionLabel = undoLabel,
+                duration = SnackbarDuration.Indefinite,
+                withDismissAction = true,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                onRestore(annotation)
+            }
+        }
     }
 }

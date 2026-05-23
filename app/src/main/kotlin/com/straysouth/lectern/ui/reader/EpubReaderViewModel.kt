@@ -364,14 +364,46 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * V2.2.2 — delete an annotation by id. Used by the annotation list panel
-     * with an undo Snackbar (AuDHD G.3 — Indefinite + withDismissAction).
+     * V2.2.2 — delete an annotation. V2.2.3 expanded to take the full
+     * Annotation (not just id) so the undo Snackbar can restore the
+     * exact row. Emits the deleted Annotation on [deletedAnnotations]
+     * for the Snackbar host to consume.
      */
-    fun deleteAnnotation(id: String) {
+    fun deleteAnnotation(annotation: com.straysouth.lectern.data.db.Annotation) {
         viewModelScope.launch {
-            annotationRepository.delete(id)
+            annotationRepository.delete(annotation.id)
+            _deletedAnnotations.emit(annotation)
         }
     }
+
+    /**
+     * V2.2.3 — re-insert a deleted annotation. Bound to the Snackbar's
+     * Undo action. The row is identical to the pre-delete row (id, body,
+     * locatorJson, createdAt all preserved); the user observes the
+     * decoration reappear in the same position.
+     */
+    fun restoreAnnotation(annotation: com.straysouth.lectern.data.db.Annotation) {
+        viewModelScope.launch {
+            annotationRepository.upsert(annotation)
+        }
+    }
+
+    /**
+     * V2.2.3 — one-shot events for the delete-undo Snackbar. Replay=0
+     * because a missed Snackbar (host not composed) should not pop up
+     * later out of context. The Fragment-side observer launches a
+     * Snackbar with an Undo action on each emission.
+     *
+     * extraBufferCapacity=1: emit() must not suspend indefinitely when the
+     * Compose collector is absent (e.g. Fragment destroyed before emit fires).
+     */
+    private val _deletedAnnotations =
+        kotlinx.coroutines.flow.MutableSharedFlow<com.straysouth.lectern.data.db.Annotation>(
+            replay = 0,
+            extraBufferCapacity = 1,
+        )
+    val deletedAnnotations: kotlinx.coroutines.flow.SharedFlow<com.straysouth.lectern.data.db.Annotation> =
+        _deletedAnnotations
 
     /**
      * V2.2.2 — request the Fragment navigate the reader to [locator].
