@@ -34,6 +34,8 @@ import com.straysouth.lectern.ui.gaze.GazeViewModelFactory
 import com.straysouth.lectern.ui.library.LibraryScreen
 import com.straysouth.lectern.ui.library.LibraryViewModel
 import com.straysouth.lectern.ui.reader.ReaderScreen
+import com.straysouth.lectern.ui.rsvp.RsvpScreen
+import com.straysouth.lectern.ui.rsvp.RsvpSource
 import com.straysouth.lectern.ui.theme.LecternTheme
 import com.straysouth.lectern.ui.window.LocalWindowSecurityController
 import com.straysouth.lectern.ui.window.WindowSecurityController
@@ -43,6 +45,7 @@ import androidx.compose.runtime.remember
 class MainActivity : AppCompatActivity() {
 
     private val libraryViewModel: LibraryViewModel by viewModels()
+    private val rsvpViewModel: com.straysouth.lectern.ui.rsvp.RsvpViewModel by viewModels()
     private val gazeViewModel: GazeViewModel by viewModels {
         GazeViewModelFactory(application, CalibrationRepository(applicationContext))
     }
@@ -77,7 +80,7 @@ class MainActivity : AppCompatActivity() {
                         GazePermissionEffect(gazeViewModel) {
                             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                         }
-                        AppContent(libraryViewModel, gazeViewModel, ::hasCameraPermission)
+                        AppContent(libraryViewModel, gazeViewModel, rsvpViewModel, ::hasCameraPermission)
                     }
                 }
             }
@@ -101,10 +104,15 @@ private fun GazePermissionEffect(vm: GazeViewModel, launchRequest: () -> Unit) {
 private fun AppContent(
     libraryViewModel: LibraryViewModel,
     gazeViewModel: GazeViewModel,
+    rsvpViewModel: com.straysouth.lectern.ui.rsvp.RsvpViewModel,
     hasCameraPermission: () -> Boolean,
 ) {
     var currentBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var currentBookFormat by rememberSaveable { mutableStateOf<String?>(null) }
+    // V2.4 — RSVP nav state. RsvpSource is in-memory only (clipboard text is sensitive
+    // per ADR-AND-X §Privacy; do NOT rememberSaveable). On process death the RSVP
+    // session resets to library, which is the correct privacy-preserving behavior.
+    var currentRsvpSource by remember { mutableStateOf<RsvpSource?>(null) }
     val calibrationUiState by gazeViewModel.calibrationUiState.collectAsState()
     val gazeState by gazeViewModel.gazeState.collectAsState()
 
@@ -121,29 +129,41 @@ private fun AppContent(
         }
     }
 
-    BackHandler(enabled = currentBookId != null) {
-        currentBookId = null
-        currentBookFormat = null
+    BackHandler(enabled = currentBookId != null || currentRsvpSource != null) {
+        if (currentRsvpSource != null) {
+            currentRsvpSource = null
+        } else {
+            currentBookId = null
+            currentBookFormat = null
+        }
     }
 
+    val rsvpSource = currentRsvpSource
     val bookId = currentBookId
-    if (bookId == null) {
-        LibraryScreen(
+    when {
+        rsvpSource != null -> RsvpScreen(
+            source = rsvpSource,
+            viewModel = rsvpViewModel,
+            onBack = { currentRsvpSource = null },
+        )
+        bookId == null -> LibraryScreen(
             viewModel = libraryViewModel,
             onBookSelected = { book: Book ->
                 currentBookId = book.id
                 currentBookFormat = book.format
                 libraryViewModel.recordOpened(book.id)
             },
+            onRsvpRequested = { source -> currentRsvpSource = source },
         )
-    } else {
-        ReaderScreen(bookId = bookId, format = currentBookFormat ?: "EPUB")
-        // Wire gaze toggle permission check — Fragment calls toggleGaze(hasPermission)
-        // directly; needsPermission StateFlow triggers the launcher above.
-        LaunchedEffect(Unit) {
-            gazeViewModel.needsPermission.collect { needs ->
-                if (needs && hasCameraPermission()) {
-                    gazeViewModel.onPermissionResult(true)
+        else -> {
+            ReaderScreen(bookId = bookId, format = currentBookFormat ?: "EPUB")
+            // Wire gaze toggle permission check — Fragment calls toggleGaze(hasPermission)
+            // directly; needsPermission StateFlow triggers the launcher above.
+            LaunchedEffect(Unit) {
+                gazeViewModel.needsPermission.collect { needs ->
+                    if (needs && hasCameraPermission()) {
+                        gazeViewModel.onPermissionResult(true)
+                    }
                 }
             }
         }

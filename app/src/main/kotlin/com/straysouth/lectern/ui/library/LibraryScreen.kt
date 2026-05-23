@@ -37,7 +37,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +67,7 @@ private val IMPORT_MIME_TYPES = arrayOf(
 fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookSelected: (Book) -> Unit,
+    onRsvpRequested: (com.straysouth.lectern.ui.rsvp.RsvpSource) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val books by viewModel.books.collectAsState()
@@ -102,6 +105,33 @@ fun LibraryScreen(
 
     val cdLibrary = stringResource(R.string.cd_library)
 
+    // V2.4 — RSVP launchers. SAF .txt picker scopes URIs to content:// (no file://
+    // traversal possible per ADR-AND-X §Storage). Clipboard text is read via the
+    // standard ClipboardManager and snapshotted into RsvpSource.Clipboard — never
+    // logged, never persisted.
+    val txtLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri?.let { onRsvpRequested(com.straysouth.lectern.ui.rsvp.RsvpSource.TxtUri(it)) }
+    }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val emptyClipboardMsg = stringResource(R.string.rsvp_clipboard_empty)
+    val scope = rememberCoroutineScope()
+    val onClipboardRsvp: () -> Unit = {
+        val text = clipboardManager.getText()?.text
+        if (text.isNullOrBlank()) {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = emptyClipboardMsg,
+                    withDismissAction = true,
+                    duration = androidx.compose.material3.SnackbarDuration.Indefinite,
+                )
+            }
+        } else {
+            onRsvpRequested(com.straysouth.lectern.ui.rsvp.RsvpSource.Clipboard(text))
+        }
+    }
+
     Scaffold(
         modifier = modifier.semantics { contentDescription = cdLibrary },
         snackbarHost = {
@@ -120,6 +150,8 @@ fun LibraryScreen(
             onBookSelected = onBookSelected,
             onBookLongPressed = { viewModel.deleteBook(it) },
             onToggleSortOrder = { viewModel.toggleSortOrder() },
+            onClipboardRsvp = onClipboardRsvp,
+            onTxtRsvp = { txtLauncher.launch(arrayOf("text/plain")) },
             modifier = Modifier.padding(contentPadding),
         )
     }
@@ -151,6 +183,8 @@ private fun LibraryContent(
     onBookSelected: (Book) -> Unit,
     onBookLongPressed: (Book) -> Unit,
     onToggleSortOrder: () -> Unit,
+    onClipboardRsvp: () -> Unit,
+    onTxtRsvp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var bookPendingDelete by remember { mutableStateOf<Book?>(null) }
@@ -167,7 +201,12 @@ private fun LibraryContent(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        SortToggleRow(sortOrder = sortOrder, onToggle = onToggleSortOrder)
+        SortToggleRow(
+            sortOrder = sortOrder,
+            onToggle = onToggleSortOrder,
+            onClipboardRsvp = onClipboardRsvp,
+            onTxtRsvp = onTxtRsvp,
+        )
         if (books.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Text(
@@ -194,7 +233,12 @@ private fun LibraryContent(
 }
 
 @Composable
-private fun SortToggleRow(sortOrder: SortOrder, onToggle: () -> Unit) {
+private fun SortToggleRow(
+    sortOrder: SortOrder,
+    onToggle: () -> Unit,
+    onClipboardRsvp: () -> Unit,
+    onTxtRsvp: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -202,6 +246,20 @@ private fun SortToggleRow(sortOrder: SortOrder, onToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(modifier = Modifier.weight(1f))
+        val clipboardLabel = stringResource(R.string.rsvp_clipboard_action)
+        TextButton(
+            onClick = onClipboardRsvp,
+            modifier = Modifier.semantics { contentDescription = clipboardLabel },
+        ) {
+            Text(clipboardLabel, style = MaterialTheme.typography.labelMedium)
+        }
+        val txtLabel = stringResource(R.string.rsvp_txt_action)
+        TextButton(
+            onClick = onTxtRsvp,
+            modifier = Modifier.semantics { contentDescription = txtLabel },
+        ) {
+            Text(txtLabel, style = MaterialTheme.typography.labelMedium)
+        }
         val label = stringResource(
             if (sortOrder == SortOrder.ADDED) R.string.sort_added else R.string.sort_last_opened,
         )

@@ -1559,3 +1559,65 @@ Format: see .claude/skills/devlog/SKILL.md
   deciding which deps to cover and verifying current artifact hashes); physical-device
   runtime checks (E.1 audio ducking, F.3/H.2 Network Profiler, J.4/J.5/J.6).
 - **Blockers:** none.
+
+## Sprint 29 — V2.4 RSVP reader (clipboard + .txt + EPUB), ADR-AND-X, ADR-AND-L amendment
+
+- **What:** Ships V2.4 RSVP (Rapid-Serial-Visual-Presentation) reader as a Compose
+  body surface (ADR-AND-O compliant). Three content sources per the locked
+  V2.4 scope decisions:
+  - **EPUB body** via `Publication.content()?.text()` (Readium 3.x Content service).
+  - **`.txt` URI** via SAF `ActivityResultContracts.OpenDocument()`, MIME `text/plain`.
+    Content read with `contentResolver.openInputStream` → `bufferedReader().readText()`.
+    Never copied to internal storage; URI is held in memory only for the session.
+  - **Clipboard** snapshot via `LocalClipboardManager.current.getText()` at entry time.
+    Never persisted, never logged.
+  - New ADR-AND-X codifies the privacy / fail-closed policy for `.txt` and clipboard
+    sources (no logging of URI or clipboard, no `rememberSaveable` for nav state).
+  - ADR-AND-L appended a 2026-05-23 amendment: RSVP is the first native Compose
+    body text surface but remains moot for Focus Band V2 (one-word display has
+    no line semantics).
+
+  Two entry points per the locked decision:
+  - **Library top bar:** "Read clipboard with RSVP" + "Open .txt file with RSVP"
+    `TextButton`s in the SortToggleRow. Per-book RSVP from Library long-press is
+    deferred to V2.4.1 (documented in ADR-AND-X open questions).
+  - **EPUB toolbar:** "Switch to RSVP" wiring planned in `ReaderOverlay.kt` to
+    pass the current book id to RSVP. (Deferred to follow-up commit if not in
+    initial scope of this PR — Library entry covers EPUB by user choosing the
+    book from Library then "Switch to RSVP"; the toolbar entry is the UX
+    polish path.)
+
+  WPM tunable 100–800 (default 300). Pause-on-punctuation toggle defaults true,
+  with multipliers comma 1.5×, sentence 2×, paragraph 3× (compile-time constants
+  in `RsvpPrefs`). DataStore persisted via `RsvpRepository`.
+
+  Three new GroupG source assertions enforce ADR-AND-X privacy:
+  - `rsvp_clipboardNeverLogged` — `Log.*` calls in `RsvpViewModel.kt` may not
+    co-occur with `clipboard`, `source.text`, or `words` on the same line.
+  - `rsvp_txtUriNeverLogged` — similar for `uri.path` / `uri.toString` /
+    `source.uri` / `$uri`.
+  - `rsvp_navStateNotSaveable` — `currentRsvpSource` declaration in
+    `MainActivity.kt` must use plain `remember{}`, never `rememberSaveable`.
+
+  All 9 preflight gates pass.
+
+- **Why:** Per `docs/plans/v2-scope.md §V2.4`, RSVP is one of the three M-effort
+  independent V2 features (alongside annotation-series cleanup and retrieval).
+  Owner-locked decisions: EPUB+`.txt`+clipboard sources, Library+EPUB-toolbar
+  entry, recency-jitter algorithm for V2.3.
+
+- **Files:**
+  - New: `ui/rsvp/RsvpScreen.kt`, `ui/rsvp/RsvpViewModel.kt`, `ui/rsvp/RsvpUiState.kt`,
+    `ui/rsvp/RsvpSource.kt`, `data/repository/RsvpPrefs.kt`,
+    `data/repository/RsvpRepository.kt`, `data/repository/PlainTextTokenizer.kt`,
+    `docs/adr/ADR-AND-X.md`
+  - Modified: `MainActivity.kt` (RSVP nav state + RsvpViewModel wiring),
+    `ui/library/LibraryScreen.kt` (clipboard + .txt entry points in SortToggleRow),
+    `res/values/strings.xml` (15 new banned-token-safe strings),
+    `docs/adr/ADR-AND-L.md` (V2.4 amendment), `DEVLOG.md`, GroupGSecurityTest.kt.
+
+- **Next:** V2.3 retrieval (in-app, recency-jitter — A path from V2.3 plan).
+  V2.4.1 polish (EPUB toolbar Switch-to-RSVP + per-book Library long-press menu
+  + RSVP-exit-writes-Locator-back) deferred.
+
+- **Blockers:** none.
