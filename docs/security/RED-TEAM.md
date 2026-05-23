@@ -102,7 +102,7 @@
 - ⚠️ REMAINING: `logError` unbounded string payload — accepted risk on release builds (`debuggable=false`). Test: verify `android:debuggable` absent from release manifest.
 - Pass criteria (remaining): confirm `logError` string length is bounded or sanitised in a future Readium patch.
 
-**A.2** `epub_externalResourceLoadingBlocked` 🔴
+**A.2** `epub_externalResourceLoadingBlocked` ✅ IMPLEMENTED (EpubBlockingWebViewClient)
 - MASVS: MASVS-PLATFORM-1 · MASVS-NETWORK-1
 - Attack: EPUB3 content contains `<img src="https://tracker.evil.com/pixel.png">` or `<script src="https://evil.com/payload.js">`.
 - ✓ CONFIRMED RISK: `WebViewServer.shouldInterceptRequest()` checks `request.url.host == "readium"`. For ANY other host, it returns `null` — the WebView uses its default network stack and the request GOES OUT.
@@ -275,7 +275,7 @@
 > No cloud sync in V1 — Room is the authoritative source of truth.
 > `exportSchema = true` — schema JSON is committed.
 
-**C.1** `room_migration_v1v2_noDataLoss` 🔴
+**C.1** `room_migration_v1v2_noDataLoss` ✅ REGRESSION TESTS (Sprint 16 — androidTest)
 - MASVS: MASVS-STORAGE-1
 - Attack: Install v1 (schema without `format` column). Migrate to v2. Verify all existing books, reading progress records survive. Verify `format` defaults to `'EPUB'` for pre-migration rows.
 - Pass: All pre-v2 `books` rows accessible post-migration with `format = 'EPUB'`. Zero dropped records. `schemas/2.json` matches the live schema.
@@ -291,7 +291,7 @@
 - ✅ REGRESSION TEST: `GroupCSecurityTest.appDatabase_builderDoesNotCallFallbackToDestructiveMigration` — source text assertion guards against future re-introduction.
 - ✅ RUNTIME TEST (Sprint 19 — androidTest): `SchemaVersionMismatchTest.appDatabase_unmigratableSchemaVersion_throwsRatherThanWipingData` — writes a raw SQLite file at version 99, opens via `Room.databaseBuilder`, asserts `IllegalStateException` (or `RuntimeException` wrapping it) is thrown rather than silent data wipe.
 
-**C.3** `room_concurrentWrite_noConflict` 🔴
+**C.3** `room_concurrentWrite_noConflict` ✅ REGRESSION TESTS (Sprint 16 — androidTest)
 - MASVS: MASVS-CODE-3
 - Attack: Trigger simultaneous Room writes from two coroutines: `BookDao.upsert(book)` and `ReadingProgressDao.upsertProgress(progress)` with a shared `bookId`. Verify no `SQLiteConstraintException` or `IllegalStateException`.
 - Pass: Room DAO operations use `suspend` on correct dispatchers (main-safe, Room internally dispatches to IO). No conflict. All operations complete.
