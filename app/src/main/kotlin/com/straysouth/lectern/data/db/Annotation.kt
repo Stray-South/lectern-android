@@ -38,4 +38,6 @@ data class Annotation(
     val type: String,                // "highlight" only in V2.2 MVP; reserved for "note" etc.
     val createdAt: Long,
     val body: String? = null,        // user note text — null for plain highlights
+    val lastReviewedAt: Long? = null,    // V2.3 — null until first review tick
+    val reviewCount: Int = 0,            // V2.3 — incremented on each "Got it"
 )

@@ -68,6 +68,7 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookSelected: (Book) -> Unit,
     onRsvpRequested: (com.straysouth.lectern.ui.rsvp.RsvpSource) -> Unit = {},
+    onReviewRequested: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val books by viewModel.books.collectAsState()
@@ -158,6 +159,7 @@ fun LibraryScreen(
             onToggleSortOrder = { viewModel.toggleSortOrder() },
             onClipboardRsvp = onClipboardRsvp,
             onTxtRsvp = { txtLauncher.launch(arrayOf("text/plain")) },
+            onReviewRequested = onReviewRequested,
             modifier = Modifier.padding(contentPadding),
         )
     }
@@ -191,6 +193,7 @@ private fun LibraryContent(
     onToggleSortOrder: () -> Unit,
     onClipboardRsvp: () -> Unit,
     onTxtRsvp: () -> Unit,
+    onReviewRequested: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var bookPendingDelete by remember { mutableStateOf<Book?>(null) }
@@ -212,6 +215,7 @@ private fun LibraryContent(
             onToggle = onToggleSortOrder,
             onClipboardRsvp = onClipboardRsvp,
             onTxtRsvp = onTxtRsvp,
+            onReviewRequested = onReviewRequested,
         )
         if (books.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -244,6 +248,7 @@ private fun SortToggleRow(
     onToggle: () -> Unit,
     onClipboardRsvp: () -> Unit,
     onTxtRsvp: () -> Unit,
+    onReviewRequested: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -252,6 +257,13 @@ private fun SortToggleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(modifier = Modifier.weight(1f))
+        val reviewLabel = stringResource(R.string.review_library_action)
+        TextButton(
+            onClick = onReviewRequested,
+            modifier = Modifier.semantics { contentDescription = reviewLabel },
+        ) {
+            Text(reviewLabel, style = MaterialTheme.typography.labelMedium)
+        }
         val clipboardLabel = stringResource(R.string.rsvp_clipboard_action)
         TextButton(
             onClick = onClipboardRsvp,

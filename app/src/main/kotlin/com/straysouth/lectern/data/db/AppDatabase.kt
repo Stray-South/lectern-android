@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Book::class, ReadingProgress::class, Annotation::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -55,6 +55,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // V2.3 — retrieval/spaced-repetition columns on annotations.
+                // SQLite constraint: NOT NULL columns added via ALTER TABLE
+                // require a DEFAULT. `lastReviewedAt` is nullable (Long?).
+                // `reviewCount` is non-null with DEFAULT 0.
+                db.execSQL(
+                    "ALTER TABLE annotations ADD COLUMN lastReviewedAt INTEGER"
+                )
+                db.execSQL(
+                    "ALTER TABLE annotations ADD COLUMN reviewCount INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         @Volatile private var instance: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase =
@@ -64,7 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lectern.db",
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 .also { instance = it }
             }
