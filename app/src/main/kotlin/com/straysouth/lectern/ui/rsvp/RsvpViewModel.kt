@@ -12,6 +12,7 @@ import com.straysouth.lectern.data.repository.RsvpPrefs
 import com.straysouth.lectern.data.repository.RsvpRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,10 +43,22 @@ class RsvpViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<RsvpUiState> = _state
 
     private var cadenceJob: Job? = null
+    private var loadJob: Job? = null
     private var publication: Publication? = null
+    // V2.4 fix: serializes play/pause state transitions so cadenceJob writes
+    // are not lost on rapid toggles (adversarial review finding).
+    private val cadenceMutex = kotlinx.coroutines.sync.Mutex()
 
     fun load(source: RsvpSource) {
-        viewModelScope.launch {
+        // V2.4 fix: cancel any in-flight load + close the prior publication
+        // before starting a new load, otherwise the prior publication leaks
+        // and the two coroutines race to write _state.value.
+        loadJob?.cancel()
+        cadenceJob?.cancel()
+        cadenceJob = null
+        publication?.close()
+        publication = null
+        loadJob = viewModelScope.launch {
             val text = when (source) {
                 is RsvpSource.Clipboard -> source.text
                 is RsvpSource.TxtUri -> readTxtUri(source.uri)
@@ -70,18 +83,26 @@ class RsvpViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun play() {
-        val current = _state.value as? RsvpUiState.Ready ?: return
-        if (current.isPlaying) return
-        _state.value = current.copy(isPlaying = true)
-        cadenceJob?.cancel()
-        cadenceJob = viewModelScope.launch { runCadence() }
+        viewModelScope.launch {
+            cadenceMutex.withLock {
+                val current = _state.value as? RsvpUiState.Ready ?: return@withLock
+                if (current.isPlaying) return@withLock
+                _state.value = current.copy(isPlaying = true)
+                cadenceJob?.cancel()
+                cadenceJob = viewModelScope.launch { runCadence() }
+            }
+        }
     }
 
     fun pause() {
-        cadenceJob?.cancel()
-        cadenceJob = null
-        val current = _state.value as? RsvpUiState.Ready ?: return
-        _state.value = current.copy(isPlaying = false)
+        viewModelScope.launch {
+            cadenceMutex.withLock {
+                cadenceJob?.cancel()
+                cadenceJob = null
+                val current = _state.value as? RsvpUiState.Ready ?: return@withLock
+                _state.value = current.copy(isPlaying = false)
+            }
+        }
     }
 
     fun seek(index: Int) {
@@ -114,6 +135,7 @@ class RsvpViewModel(application: Application) : AndroidViewModel(application) {
      * Returns true if the cadence loop should continue, false if it should stop
      * (paused, ended, or state transitioned out of Ready).
      */
+    @Suppress("ReturnCount")
     private suspend fun advanceOnce(current: RsvpUiState.Ready): Boolean {
         val word = current.currentWord ?: run {
             _state.value = RsvpUiState.Done
@@ -122,9 +144,15 @@ class RsvpViewModel(application: Application) : AndroidViewModel(application) {
         val baseMs = (MS_PER_MINUTE / prefs.value.wpm).coerceAtLeast(MIN_MS_PER_WORD.toLong())
         val multiplier = if (prefs.value.pauseOnPunctuation) wordMultiplier(word) else 1.0
         delay((baseMs * multiplier).toLong())
-        val next = current.currentIndex + 1
-        val keepGoing = next < current.totalWords
-        _state.value = if (keepGoing) current.copy(currentIndex = next) else RsvpUiState.Done
+        // V2.4 fix: re-read state after delay. If the user called seek() during
+        // the delay, the state's currentIndex no longer matches `current` —
+        // honor the seek by advancing from the now-current index, not from
+        // the stale pre-delay snapshot.
+        val latest = _state.value as? RsvpUiState.Ready ?: return false
+        if (!latest.isPlaying) return false
+        val next = latest.currentIndex + 1
+        val keepGoing = next < latest.totalWords
+        _state.value = if (keepGoing) latest.copy(currentIndex = next) else RsvpUiState.Done
         return keepGoing
     }
 
@@ -146,7 +174,10 @@ class RsvpViewModel(application: Application) : AndroidViewModel(application) {
                 pub.content()?.text() ?: ""
             }
             .getOrElse {
-                Log.w(TAG, "Could not open publication for RSVP: ${it.message}")
+                // ADR-AND-X: log only the exception class, NEVER the message —
+                // PublicationRepository embeds the source URI in its error
+                // strings, which would leak content:// paths to logcat.
+                Log.w(TAG, "Could not open publication for RSVP: ${it.javaClass.simpleName}")
                 null
             }
     }
