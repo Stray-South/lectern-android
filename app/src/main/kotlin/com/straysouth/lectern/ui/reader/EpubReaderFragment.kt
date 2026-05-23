@@ -110,6 +110,7 @@ class EpubReaderFragment : Fragment() {
         setupTtsObserver()
         setupAnchorObserver()
         setupAnnotationDecorationsObserver()
+        setupAnnotationNavigationObserver()
         setupGazeTtsBridge()
     }
 
@@ -375,6 +376,39 @@ class EpubReaderFragment : Fragment() {
     }
 
     /**
+     * V2.2.2 — capture the current text selection and open the note-entry
+     * dialog via the VM. The VM holds the pending-note locator state; the
+     * Composable observes it and shows the dialog when non-null.
+     *
+     * No-op if there's no active selection (typical when the user taps
+     * "Note" without having selected anything first).
+     */
+    private fun beginNoteEntryFromSelection() {
+        val fragment = navigatorFragment ?: return
+        lifecycleScope.launch {
+            val selection = fragment.currentSelection() ?: return@launch
+            viewModel.startNoteEntry(selection.locator)
+            fragment.clearSelection()
+        }
+    }
+
+    /**
+     * V2.2.2 — observe annotation-list-panel "navigate to row" events from
+     * the ViewModel and call `navigator.go(locator)`. SharedFlow with
+     * replay=0 means only emissions while STARTED reach the collector;
+     * stale taps from a previous foreground cycle are dropped.
+     */
+    private fun setupAnnotationNavigationObserver() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.navigationRequests.collect { locator ->
+                    navigatorFragment?.go(locator, animated = true)
+                }
+            }
+        }
+    }
+
+    /**
      * Recursively walks [root] and wraps the client of every [WebView] found with
      * [EpubBlockingWebViewClient], unless already wrapped (idempotent on config change).
      *
@@ -450,6 +484,8 @@ class EpubReaderFragment : Fragment() {
                     val anchorLocator by viewModel.anchorLocator.collectAsState()
                     val gazeState by gazeViewModel.gazeState.collectAsState()
                     val gazeEnabled by gazeViewModel.gazeEnabled.collectAsState()
+                    val annotations by viewModel.annotationsForOpenBook.collectAsState()
+                    val pendingNoteLocator by viewModel.pendingNoteLocator.collectAsState()
                     ReaderOverlay(
                         state = state,
                         typographyPrefs = typographyPrefs,
@@ -482,6 +518,17 @@ class EpubReaderFragment : Fragment() {
                             gazeViewModel.startCalibration(CALIBRATION_TOTAL_POINTS)
                         },
                         onHighlight = ::createHighlightFromSelection,
+                        annotations = annotations,
+                        pendingNoteLocator = pendingNoteLocator,
+                        onNoteButtonTapped = ::beginNoteEntryFromSelection,
+                        onNoteSave = viewModel::confirmNoteEntry,
+                        onNoteCancel = viewModel::cancelNoteEntry,
+                        onAnnotationNavigate = { ann ->
+                            parseLocatorJson(ann.locatorJson)?.let(viewModel::requestNavigation)
+                        },
+                        onAnnotationDelete = { ann ->
+                            viewModel.deleteAnnotation(ann.id)
+                        },
                     )
                     // TODO(ADR-AND-L): Focus Band V2 — deferred to V3.
                     // V1 pixel overlay is GazeFocusBandOverlay in ReaderOverlay.kt (Sprint 13).

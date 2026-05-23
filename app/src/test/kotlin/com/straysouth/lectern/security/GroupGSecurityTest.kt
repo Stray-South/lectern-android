@@ -289,6 +289,42 @@ class GroupGSecurityTest {
         )
     }
 
+    // ── V2.2.2 — Annotation list panel + note entry wired in reader ────────
+
+    /**
+     * V2.2.2 — `AnnotationListPanel` Composable is invoked from
+     * `ReaderOverlay`'s ReadyOverlay block, gated on `showAnnotationList`.
+     * Toolbar exposes both the "Note" action and the "Annotations list"
+     * action so users can reach the panel without leaving the reader.
+     *
+     * Pinned by source assertion. Per ADR-AND-T 2026-05-23 amendment.
+     */
+    @Test
+    fun audhd_annotationPanel_existsInReader() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/ReaderOverlay.kt").readText(),
+        )
+        assertTrue(
+            "ReaderOverlay must invoke AnnotationListPanel (V2.2.2)",
+            source.contains("AnnotationListPanel("),
+        )
+        assertTrue(
+            "ReaderOverlay must invoke NoteEntryDialog when pendingNoteLocator is " +
+                "non-null (V2.2.2 — dialog state survives config change via VM)",
+            source.contains("NoteEntryDialog("),
+        )
+        assertTrue(
+            "ReaderToolbar must expose the Note action button (Icons.AutoMirrored.Filled.NoteAdd) " +
+                "for V2.2.2 note creation",
+            source.contains("Icons.AutoMirrored.Filled.NoteAdd"),
+        )
+        assertTrue(
+            "ReaderToolbar must expose the Annotations list action button " +
+                "(Icons.AutoMirrored.Filled.FormatListBulleted) for V2.2.2",
+            source.contains("Icons.AutoMirrored.Filled.FormatListBulleted"),
+        )
+    }
+
     // ── G.3 — Import-error Snackbar is Indefinite + dismissable ─────────────
 
     /**
