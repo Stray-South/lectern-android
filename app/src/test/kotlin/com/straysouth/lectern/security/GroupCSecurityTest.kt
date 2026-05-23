@@ -133,6 +133,27 @@ class GroupCSecurityTest {
     }
 
     @Test
+    fun schemaV5_identityHash_isStable() {
+        val v5 = schemaJson(5)
+        assertTrue(
+            "schemas/5.json identity hash must be 2893f2562f6b53fe0e7f4e3b7ed5abbe — " +
+                "V2.3 perf fix added index_annotations_lastReviewedAt",
+            v5.contains("\"identityHash\": \"2893f2562f6b53fe0e7f4e3b7ed5abbe\""),
+        )
+    }
+
+    /** V2.3 perf — index on lastReviewedAt enables filtered RANDOM() to skip full scan. */
+    @Test
+    fun schemaV5_annotationsTable_hasLastReviewedAtIndex() {
+        val v5 = schemaJson(5)
+        assertTrue(
+            "annotations table must have index_annotations_lastReviewedAt " +
+                "(V2.3 adversarial fix #1 — recency-jitter query needs index)",
+            v5.contains("index_annotations_lastReviewedAt"),
+        )
+    }
+
+    @Test
     fun schemaV4_identityHash_isStable() {
         val v4 = schemaJson(4)
         assertTrue(

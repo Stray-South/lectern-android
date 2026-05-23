@@ -31,9 +31,20 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     private val _state = MutableStateFlow<ReviewUiState>(ReviewUiState.Loading)
     val state: StateFlow<ReviewUiState> = _state
 
-    /** Loads a fresh queue. Called on screen entry. */
+    private var loadJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * V2.3 — load a fresh queue. Called on screen entry.
+     *
+     * V2.3 fix (adversarial finding #2): re-entering the screen re-fires
+     * LaunchedEffect(Unit) and calls load() again. Cancel-and-replace the
+     * in-flight job so the later call wins deterministically, and snap
+     * state back to Loading so the user sees the refresh.
+     */
     fun load() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            _state.value = ReviewUiState.Loading
             val queue = reviewRepository.nextQueue()
             _state.value = if (queue.isEmpty()) {
                 ReviewUiState.Empty
@@ -43,13 +54,22 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Mark the current annotation as reviewed and advance the queue. */
+    /**
+     * V2.3 — mark current as reviewed and advance.
+     *
+     * V2.3 fix (adversarial finding #3): a rapid second tap before the DB
+     * write returns would advance twice + write twice. Advance state
+     * synchronously here so the second tap's `as? Ready` cast either fires
+     * on the post-advance state (Ready with currentIndex+1, fine — that's
+     * just advancing the new card) or on Done (no-op). Then launch the
+     * DB write asynchronously.
+     */
     fun markReviewedAndAdvance() {
         val current = _state.value as? ReviewUiState.Ready ?: return
         val ann = current.currentAnnotation ?: return
+        advance(current)
         viewModelScope.launch {
             reviewRepository.markReviewed(ann.id)
-            advance(current)
         }
     }
 

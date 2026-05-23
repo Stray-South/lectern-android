@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Book::class, ReadingProgress::class, Annotation::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -70,6 +70,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // V2.3 perf fix (adversarial review finding #1): the
+                // recency-jitter `ORDER BY RANDOM() LIMIT N` query without an
+                // index on `lastReviewedAt` did a full table scan. Add an
+                // index so the WHERE clause filters before RANDOM() sorts.
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_annotations_lastReviewedAt` " +
+                        "ON `annotations` (`lastReviewedAt`)"
+                )
+            }
+        }
+
         @Volatile private var instance: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase =
@@ -79,7 +92,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lectern.db",
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 .also { instance = it }
             }

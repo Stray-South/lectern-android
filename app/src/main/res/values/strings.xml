@@ -91,7 +91,7 @@
     <string name="review_library_action">Review annotations</string>
     <string name="review_empty_label">No annotations to review right now. Highlight or note some passages first.</string>
     <string name="review_done_label">All done for now</string>
-    <string name="review_remaining">%1$d to go</string>
+    <string name="review_remaining">%1$d remaining</string>
     <string name="review_got_it_action">Got it</string>
     <string name="review_later_action">Review later</string>
     <string name="review_highlight_placeholder">A highlight you saved</string>

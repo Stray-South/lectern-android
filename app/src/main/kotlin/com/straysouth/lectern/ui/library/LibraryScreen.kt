@@ -3,10 +3,13 @@ package com.straysouth.lectern.ui.library
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -250,13 +253,18 @@ private fun SortToggleRow(
     onTxtRsvp: () -> Unit,
     onReviewRequested: () -> Unit,
 ) {
+    // V2.3 fix (adversarial finding #7): four TextButtons + sort can overflow
+    // on 360dp screens. Wrap in horizontalScroll so the Review button stays
+    // reachable instead of being silently clipped. Spacer is removed because
+    // weight(1f) inside a horizontally-scrolling Row would be infinite-width.
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End,
     ) {
-        Spacer(modifier = Modifier.weight(1f))
         val reviewLabel = stringResource(R.string.review_library_action)
         TextButton(
             onClick = onReviewRequested,
