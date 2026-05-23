@@ -89,6 +89,17 @@ class AnnotationRepository(private val dao: AnnotationDao) {
         dao.deleteById(id)
     }
 
+    /**
+     * V2.2.3 — re-insert a previously-deleted annotation. Used by the
+     * delete-undo Snackbar in the annotation list panel: the row's
+     * Annotation is captured before delete, then upsert here restores
+     * the same row (id preserved). The DAO's @Upsert handles the
+     * insert-or-replace semantics; no migration cost.
+     */
+    suspend fun upsert(annotation: Annotation) {
+        dao.upsert(annotation)
+    }
+
     companion object {
         const val TYPE_HIGHLIGHT = "highlight"
         const val TYPE_NOTE = "note"
