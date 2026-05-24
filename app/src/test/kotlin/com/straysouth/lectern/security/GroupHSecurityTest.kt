@@ -346,6 +346,25 @@ class GroupHSecurityTest {
         )
     }
 
+    /**
+     * V2.3 (cross-feature audit sev-1): `ReviewScreen` renders user-authored
+     * annotation body text via `ann.body` in a Compose Text. Same ADR-AND-R
+     * trigger 1 rationale as the EPUB reader — private user content on a
+     * non-EPUB surface must claim FLAG_SECURE.
+     */
+    @Test
+    fun platform_secureWindow_calledFromReviewScreen() {
+        val reviewScreen = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/review/ReviewScreen.kt").readText(),
+        )
+        assertTrue(
+            "ReviewScreen.kt must call SecureWindow() so the review queue " +
+                "claims FLAG_SECURE while annotation body text is on screen " +
+                "(ADR-AND-R V2 trigger 1; cross-feature audit 2026-05-23).",
+            reviewScreen.contains("SecureWindow()"),
+        )
+    }
+
     // ── H.6 (V2.2 amendment) — FLAG_SECURE write-locality ──────────────────
 
     /**

@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.straysouth.lectern.R
+import com.straysouth.lectern.ui.window.SecureWindow
 
 /**
  * V2.3 — annotation review screen.
@@ -44,6 +45,12 @@ fun ReviewScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // V2.3 fix (cross-feature audit sev-1): review screen renders user-authored
+    // annotation body text — ADR-AND-R V2 reconsideration trigger 1 fires for
+    // this surface, same as the EPUB reader for the same reason. The
+    // reference-counted WindowSecurityController keeps FLAG_SECURE set as long
+    // as any sensitive screen is composed; clears on dispose.
+    SecureWindow()
     val state by viewModel.state.collectAsState()
     val cdScreen = stringResource(R.string.cd_review_screen)
 

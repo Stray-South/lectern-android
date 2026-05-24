@@ -129,3 +129,43 @@ ingest policy because:
 - Pause-on-punctuation calibration UI (currently a binary toggle;
   could expose per-multiplier sliders).
 - `.txt` size cap with a warning Snackbar above N MB.
+
+## 2026-05-23 V2.4 amendment — cross-feature publication-sharing hazard
+
+Per Convention 1(c) — appended dated section. Cross-feature design audit
+2026-05-23 flagged a sev-1 concurrent-publication hazard that surfaces
+**only when the deferred "Switch to RSVP" toolbar action lands**
+(V2.4.1 candidate, not in V2.4).
+
+**Hazard:** `EpubReaderViewModel` and `RsvpViewModel` both open the same
+EPUB file via `PublicationRepository.open()`. Each `Publication`
+instance holds a file handle to the EPUB ZIP. If both VMs hold the
+same publication concurrently (which can only happen if the user
+launches RSVP from inside the EPUB reader and the EPUB VM has not yet
+been cleared), Readium's asset-retrieval contract does not guarantee
+concurrent-handle safety. Worse, `EpubReaderViewModel.onCleared()`
+runs asynchronously after the Fragment is destroyed; if it fires
+after `RsvpViewModel.load()` has already opened a sibling publication
+on the same file, the EPUB VM's `_publication?.close()` could close a
+shared underlying resource that RSVP is mid-read.
+
+**Today's exposure:** zero. The "Switch to RSVP" toolbar entry from
+the EPUB reader is deferred to V2.4.1. The Library entry path
+(top-bar buttons + book pickers) never holds an EPUB reader open at
+the same time as RSVP on the same book.
+
+**V2.4.1 contract (pre-shipping):** when "Switch to RSVP" lands, it
+MUST NOT open a second `Publication` on the same file. Two options:
+
+1. Synchronously extract the text from the still-open EPUB VM
+   publication, then navigate to RSVP with `RsvpSource.ExtractedText(text)`
+   (a new variant of `RsvpSource`). The EPUB VM closes its publication
+   when the user navigates back to Library.
+2. Tear down the EPUB Fragment / VM (await `onCleared`) before
+   navigating to RSVP — race-free but adds latency.
+
+Option 1 is preferred; codify in the V2.4.1 PR.
+
+**Pinned by:** no source assertion yet (V2.4.1 hasn't shipped). Add
+`platform_rsvpDoesNotOpenSecondPublication_whenEpubReaderActive` to
+GroupG when V2.4.1 lands.

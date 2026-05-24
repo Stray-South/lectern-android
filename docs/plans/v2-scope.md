@@ -64,17 +64,42 @@ an implementation plan — each feature ships behind its own ADR.
 
 ## ADR slot reservations
 
-| Slot | Intended scope | Forward-ref source |
-|---|---|---|
-| `ADR-AND-S` | Cloud sync architecture (Supabase) | `ADR-AND-I` §Consequences, `ADR-AND-J` §Consequences |
-| `ADR-AND-T` | Annotations (highlights / notes) | (no existing forward-ref) |
-| `ADR-AND-U` | STT captions | (no existing forward-ref) |
-| `ADR-AND-V` | Readium LCP / DRM adapter | (no existing forward-ref) |
-| `ADR-AND-W` | Foreground service | `ADR-AND-R` §V2 reconsideration triggers (item 5) |
+| Slot | Intended scope | Status | Forward-ref source |
+|---|---|---|---|
+| `ADR-AND-S` | Cloud sync architecture (Supabase) | reserved | `ADR-AND-I` §Consequences, `ADR-AND-J` §Consequences |
+| ~~`ADR-AND-T`~~ | Annotations (highlights / notes) | **Filed (V2.2 / V2.2.1 / V2.2.2 / V2.2.3)** — `docs/adr/ADR-AND-T.md` | — |
+| `ADR-AND-U` | STT captions | reserved | (no existing forward-ref) |
+| `ADR-AND-V` | Readium LCP / DRM adapter | reserved | (no existing forward-ref) |
+| `ADR-AND-W` | Foreground service | reserved | `ADR-AND-R` §V2 reconsideration triggers (item 5) |
+| ~~`ADR-AND-X`~~ | V2.4 RSVP — `.txt` + clipboard ingest privacy | **Filed (V2.4)** — `docs/adr/ADR-AND-X.md` | — |
+
+V2.3 retrieval shipped (Sprint 30) without a new ADR — in-app only, no
+notifications, no PendingIntent, no new permissions. `platform_noPendingIntent_inMainSources`
+fail-closed gate stays armed. DEVLOG Sprint 30 is the design record.
 
 Three V2 features — RSVP reader, retrieval/spaced-repetition, A11y V2 —
 may not need standalone ADRs; the scope cards below state the test for
-"does this need an ADR?" for each.
+"does this need an ADR?" for each. RSVP needed one (ADR-AND-X) due to
+clipboard / .txt privacy invariants; retrieval did not.
+
+**Shipped status (2026-05-23):**
+
+- V2.2 storage (PR #13) → V2.2.1 UI (PR #17/#18) → V2.2.2 notes + list
+  panel (PR #19) → V2.2.3 undo Snackbar + distinct tints (PR #20) →
+  V2.2.3 buffer fix (PR #21) — all merged.
+- V2.4 RSVP (PR #22 + PR #23 adversarial fixes) — merged.
+- V2.3 retrieval (PR #24 + PR #25 adversarial fixes) — merged.
+- V2.6 chapter rotor (PR #10 / #11) — merged.
+
+**Open follow-ups (2026-05-23):**
+
+- V2.2.4: decoration style swap (Highlight → Underline) for notes,
+  cross-book annotation panel, export.
+- V2.3.1: scheduling-algorithm upgrade (FSRS/SM-2), recency-window
+  calibration UI, queue-empty diagnostics.
+- V2.4.1: per-book RSVP from Library long-press, EPUB toolbar
+  "Switch to RSVP" + the publication-sharing contract per
+  ADR-AND-X 2026-05-23 amendment, RSVP-exit-writes-Locator-back.
 
 ## Feature scope cards
 
