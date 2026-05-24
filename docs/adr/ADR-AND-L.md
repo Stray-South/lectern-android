@@ -80,11 +80,18 @@ Locations where the V2 precise-line path would plug in are marked:
 ## 2026-05-23 V2.4 amendment
 
 Per v2-scope.md Convention 1(c) — appended dated section. V2.4 (RSVP
-reader, ADR-AND-X) ships the first native Compose body text surface in
-the app. The original Decision noted that line-level Focus Band V2 is
-gated on such a surface existing — V2.4 introduces one, but it is
-**still moot** for Focus Band V2 because RSVP displays one word at a
-time (no "line" semantics).
+reader, ADR-AND-X) ships the first native Compose body text surface
+**with paginated/timed text flow**. Other Compose `Text` surfaces shipped
+before V2.4 (annotation panel `AnnotationListPanel` V2.2.2, note dialog
+V2.2.2, review screen `ReviewScreen` V2.3) render single-segment user
+content, not body text that needs line-level reading optics. The
+original Decision noted that line-level Focus Band V2 is gated on a
+multi-line reflowable Compose text surface — V2.4 introduces a Compose
+body surface but it is **still moot** for Focus Band V2 because RSVP
+displays one word at a time (no "line" semantics). Subsequent Compose
+text surfaces (annotation panel, review queue) similarly do not need
+the line-level path — they are short user-authored fragments where the
+existing pixel-band overlay is sufficient.
 
 V2 line-level Focus Band remains deferred to V3 per the original
 Decision. RSVP being a Compose body surface does not unblock it.
