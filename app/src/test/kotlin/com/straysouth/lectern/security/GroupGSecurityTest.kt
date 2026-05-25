@@ -574,6 +574,153 @@ class GroupGSecurityTest {
         )
     }
 
+    // ── V2.9 — TTS foreground service (ADR-AND-W) ───────────────────────────
+
+    /**
+     * V2.9 — synchronous-default-then-async-rich notification build.
+     *
+     * `TtsForegroundService.onCreate` must call `startForeground` with
+     * `TtsNotificationBuilder.buildDefault(...)` immediately (ANR-safe; meets
+     * the foreground-service-start deadline regardless of how long book
+     * metadata lookups take). The rich notification (book title + chapter)
+     * is populated later via `updateNowPlaying` → `NotificationManagerCompat.
+     * notify(NOTIFICATION_ID, buildRich(...))`. Pinned by source assertion
+     * per ADR-AND-W §Decision.
+     */
+    @Test
+    fun audhd_serviceNotification_richContent_atomicUpdate() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsForegroundService.kt").readText(),
+        )
+        val onCreateIdx = source.indexOf("override fun onCreate()")
+        assertTrue(
+            "TtsForegroundService.onCreate() must exist (ADR-AND-W §Decision)",
+            onCreateIdx >= 0,
+        )
+        val onCreateBody = source.substring(
+            onCreateIdx,
+            (onCreateIdx + 600).coerceAtMost(source.length),
+        )
+        assertTrue(
+            "TtsForegroundService.onCreate must call startForeground with the default " +
+                "notification builder result — ANR-safe synchronous start (ADR-AND-W)",
+            onCreateBody.contains("startForeground(") &&
+                onCreateBody.contains("TtsNotificationBuilder.buildDefault("),
+        )
+        val updateIdx = source.indexOf("private fun updateNowPlaying(")
+        assertTrue(
+            "TtsForegroundService.updateNowPlaying must exist as the rich-update path " +
+                "(ADR-AND-W §Decision)",
+            updateIdx >= 0,
+        )
+        val updateBody = source.substring(
+            updateIdx,
+            (updateIdx + 2200).coerceAtMost(source.length),
+        )
+        assertTrue(
+            "updateNowPlaying must atomically replace the default notification — call " +
+                "TtsNotificationBuilder.buildRich(...) and post it via " +
+                "NotificationManagerCompat.notify(NOTIFICATION_ID, ...) (ADR-AND-W)",
+            updateBody.contains("TtsNotificationBuilder.buildRich("),
+        )
+        assertTrue(
+            "TtsForegroundService must post the rich notification through " +
+                "NotificationManagerCompat.notify(NOTIFICATION_ID, ...) so the system " +
+                "replaces the default notification in place (ADR-AND-W)",
+            source.contains("NotificationManagerCompat.from(this).notify(") &&
+                source.contains("NOTIFICATION_ID"),
+        )
+    }
+
+    /**
+     * V2.9 — POST_NOTIFICATIONS gate on the service-start path.
+     *
+     * `EpubReaderViewModel` must check `POST_NOTIFICATIONS` before binding the
+     * foreground service. API 33+ users who deny the permission get V1
+     * foreground-only TTS, not a crash (ADR-AND-W §Decision).
+     */
+    @Test
+    fun platform_serviceStart_requiresPostNotificationsPermission() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        assertTrue(
+            "EpubReaderViewModel must reference Manifest.permission.POST_NOTIFICATIONS " +
+                "to gate the foreground-service start path (ADR-AND-W)",
+            source.contains("Manifest.permission.POST_NOTIFICATIONS"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must invoke ContextCompat.checkSelfPermission on the " +
+                "service-start path to detect denied POST_NOTIFICATIONS at API 33+ " +
+                "(ADR-AND-W graceful-fallback rule)",
+            source.contains("ContextCompat.checkSelfPermission("),
+        )
+        assertTrue(
+            "EpubReaderViewModel must gate the service bind on Build.VERSION.SDK_INT " +
+                ">= Build.VERSION_CODES.TIRAMISU — POST_NOTIFICATIONS is install-time on " +
+                "older API levels (ADR-AND-W)",
+            source.contains("Build.VERSION_CODES.TIRAMISU"),
+        )
+    }
+
+    /**
+     * V2.9 — single cleanup path through the ViewModel.
+     *
+     * Per ADR-AND-W §Decision: every stop trigger — including a recents-swipe
+     * delivered to `onTaskRemoved` — routes through `viewModel.stopTts()`.
+     * The service does not call its own `stopSelf()` in response to user
+     * input; the VM decides. Pinned by source assertion on the service's
+     * onTaskRemoved + the binder's callback contract.
+     */
+    @Test
+    fun platform_serviceCleanup_singlePathThroughViewModel() {
+        val serviceSource = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsForegroundService.kt").readText(),
+        )
+        val taskRemovedIdx = serviceSource.indexOf("override fun onTaskRemoved(")
+        assertTrue(
+            "TtsForegroundService.onTaskRemoved must exist so recents-swipe routes " +
+                "back to the VM (ADR-AND-W single-cleanup-path)",
+            taskRemovedIdx >= 0,
+        )
+        val taskRemovedBody = serviceSource.substring(
+            taskRemovedIdx,
+            (taskRemovedIdx + 400).coerceAtMost(serviceSource.length),
+        )
+        assertTrue(
+            "TtsForegroundService.onTaskRemoved must invoke callbacks?.onTaskRemoved() " +
+                "— the service must not call stopSelf() directly, the VM owns cleanup " +
+                "(ADR-AND-W)",
+            taskRemovedBody.contains("callbacks?.onTaskRemoved()"),
+        )
+        val callbacksSource = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsServiceCallbacks.kt").readText(),
+        )
+        assertTrue(
+            "TtsServiceCallbacks must declare onTaskRemoved() as part of the binder " +
+                "contract (ADR-AND-W)",
+            callbacksSource.contains("fun onTaskRemoved()"),
+        )
+        val vmSource = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        val callbacksImplIdx = vmSource.indexOf("object : TtsServiceCallbacks")
+        assertTrue(
+            "EpubReaderViewModel must implement TtsServiceCallbacks (ADR-AND-W)",
+            callbacksImplIdx >= 0,
+        )
+        val implWindow = vmSource.substring(
+            callbacksImplIdx,
+            (callbacksImplIdx + 800).coerceAtMost(vmSource.length),
+        )
+        assertTrue(
+            "EpubReaderViewModel.TtsServiceCallbacks.onTaskRemoved must route to " +
+                "stopTts() — the VM is the single cleanup path (ADR-AND-W)",
+            implWindow.contains("override fun onTaskRemoved()") &&
+                implWindow.contains("stopTts()"),
+        )
+    }
+
     companion object {
         private const val MAX_ANIMATION_MS = 200
 
