@@ -525,6 +525,15 @@ class EpubReaderFragment : Fragment() {
                         onRestore = viewModel::restoreAnnotation,
                     )
 
+                    // V2.9-A — POST_NOTIFICATIONS denied banner. Mirrors the
+                    // tts_engine_unavailable UX (informational, no Settings deeplink);
+                    // VM continues in V1 foreground-only TTS mode.
+                    NotificationPermissionDeniedEffect(
+                        snackbarHostState = snackbarHostState,
+                        deniedFlow = viewModel.notificationPermissionDenied,
+                        onDismiss = viewModel::dismissNotificationPermissionBanner,
+                    )
+
                     Box(modifier = Modifier.fillMaxSize()) {
                         ReaderOverlay(
                             state = state,
@@ -692,6 +701,33 @@ private fun UndoDeleteAnnotationEffect(
             if (result == SnackbarResult.ActionPerformed) {
                 onRestore(annotation)
             }
+        }
+    }
+}
+
+/**
+ * V2.9-A — observes [deniedFlow] (persistent state, set true when the user
+ * declines POST_NOTIFICATIONS on API 33+) and surfaces a Short Snackbar.
+ * No action button — matches the [R.string.tts_engine_unavailable] inline
+ * banner UX (informational only, no Settings deeplink). When the Snackbar
+ * dismisses (auto-timeout or user dismiss), [onDismiss] flips the VM flag
+ * back to false so re-denial in the same session re-emits the banner.
+ */
+@androidx.compose.runtime.Composable
+private fun NotificationPermissionDeniedEffect(
+    snackbarHostState: SnackbarHostState,
+    deniedFlow: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    onDismiss: () -> Unit,
+) {
+    val msg = stringResource(R.string.tts_permission_denied_snackbar)
+    LaunchedEffect(Unit) {
+        deniedFlow.collect { denied ->
+            if (!denied) return@collect
+            snackbarHostState.showSnackbar(
+                message = msg,
+                duration = SnackbarDuration.Short,
+            )
+            onDismiss()
         }
     }
 }
