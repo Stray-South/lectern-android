@@ -1,11 +1,23 @@
 package com.straysouth.lectern.ui.reader
 
+import android.Manifest
 import android.app.Application
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.IBinder
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.audio.AudioSessionCoordinator
+import com.straysouth.lectern.service.TtsForegroundService
+import com.straysouth.lectern.service.TtsForegroundService.LocalBinder
+import com.straysouth.lectern.service.TtsServiceCallbacks
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.ReadingProgress
 import com.straysouth.lectern.data.repository.AnchorRepository
@@ -51,6 +63,7 @@ private typealias AndroidTtsNav = TtsNavigator<
     AndroidTtsEngine.Error,
     AndroidTtsEngine.Voice>
 
+@Suppress("TooManyFunctions")
 class EpubReaderViewModel(application: Application) : AndroidViewModel(application) {
 
     private val pubRepository = PublicationRepository(application)
@@ -131,16 +144,99 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // Sole owner of AudioManager focus state — see ADR-AND-A.
     private val audioSession = AudioSessionCoordinator(application)
 
+    // V2.9 — foreground-service binding. The service is a sentinel + notification
+    // owner per ADR-AND-W; this VM remains the sole owner of _ttsNavigator and
+    // the AudioSessionCoordinator binding. Null while no TTS session is active
+    // or when POST_NOTIFICATIONS is denied (graceful fallback to V1 behaviour).
+    @Volatile private var _ttsServiceBinder: LocalBinder? = null
+    private var _bookTitleForNotification: String? = null
+
+    // V2.9-A adversarial fix: one-shot events, not persistent state.
+    // The previous StateFlow<Boolean> only fired the Snackbar on the false→true
+    // transition; a user who declined POST_NOTIFICATIONS once and re-attempted
+    // TTS would see nothing. Channel-backed events fire on every attempt.
+    //
+    // BufferOverflow.DROP_OLDEST + capacity=1: rapid repeat attempts collapse
+    // to a single "latest" notification rather than queueing N Snackbars.
+    private val _permissionDeniedEvents =
+        kotlinx.coroutines.channels.Channel<Unit>(
+            capacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    val permissionDeniedEvents: kotlinx.coroutines.flow.Flow<Unit> =
+        _permissionDeniedEvents.receiveAsFlow()
+
+    // V2.9-A adversarial fix: lazy permission prompt. The launcher lives in the
+    // Fragment (must be registered before STARTED); the VM signals "ask now"
+    // via this channel when startTts() needs the permission and we haven't
+    // asked yet in this VM lifetime. Avoids prompting on Fragment.onCreate
+    // for users who never open the TTS panel.
+    private val _permissionRequestEvents =
+        kotlinx.coroutines.channels.Channel<Unit>(
+            capacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    val permissionRequestEvents: kotlinx.coroutines.flow.Flow<Unit> =
+        _permissionRequestEvents.receiveAsFlow()
+
+    // V2.9-A adversarial fix: surfaces ForegroundServiceStartNotAllowedException
+    // (API 31+) when the OS rejects the FGS start. Distinct from the
+    // permission-denied event so the Snackbar copy can name the failure mode
+    // ("background playback unavailable" vs "notifications denied"). Per
+    // ADR-AND-W §FGS start exception policy.
+    private val _backgroundPlaybackUnavailableEvents =
+        kotlinx.coroutines.channels.Channel<Unit>(
+            capacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    val backgroundPlaybackUnavailableEvents: kotlinx.coroutines.flow.Flow<Unit> =
+        _backgroundPlaybackUnavailableEvents.receiveAsFlow()
+
+    // Guards "ask only once per VM lifetime" so a user who is mid-decision
+    // doesn't get a second system dialog stacked on top. Reset only on
+    // explicit grant or when the VM is cleared.
+    @Volatile private var _permissionRequestInFlight = false
+
+    // Guards "ask only once total per VM lifetime". After the first prompt
+    // (regardless of grant/deny), subsequent missing-permission attempts go
+    // straight to the Snackbar — re-prompting on every startTts() is
+    // user-hostile (Android shows the dialog up to 2x before silent denial,
+    // but UX expectation is one prompt then in-app feedback).
+    @Volatile private var _postNotificationsAskedOnce = false
+
+    private val ttsServiceCallbacks = object : TtsServiceCallbacks {
+        override fun onPlayPause() {
+            val active = _ttsUiState.value as? TtsUiState.Active
+            if (active?.isPlaying == true) pauseTts() else startTts()
+        }
+        override fun onStop() { stopTts() }
+        override fun onTaskRemoved() { stopTts() }
+    }
+
+    private val ttsServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val local = service as? LocalBinder ?: return
+            _ttsServiceBinder = local
+            local.setCallbacks(ttsServiceCallbacks)
+            pushNowPlaying()
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            _ttsServiceBinder = null
+        }
+    }
+
     fun load(bookId: String) {
         if (_publication != null || !_loading.compareAndSet(false, true)) return
         _bookId = bookId
         viewModelScope.launch {
-            val filePath = bookDao.getById(bookId)?.filePath
+            val book = bookDao.getById(bookId)
+            val filePath = book?.filePath
             if (filePath == null) {
                 _loading.set(false)
                 _state.value = State.Error("Book not found")
                 return@launch
             }
+            _bookTitleForNotification = book.title
             val savedLocator = locatorRepository.get(bookId)
             _anchorLocator.value = anchorRepository.get(bookId)
             pubRepository.open(Uri.parse(filePath))
@@ -246,6 +342,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                     return@onSuccess
                 }
                 _ttsNavigator = nav
+                bindForegroundServiceIfPermitted()
                 nav.play()
                 _ttsCollectionJob = launch {
                     combine(nav.playback, nav.location) { pb, loc ->
@@ -259,7 +356,10 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                             )
                         }
                     }.collect { state ->
-                        if (state is TtsUiState.Active) _lastUtteranceLocator = state.utteranceLocator
+                        if (state is TtsUiState.Active) {
+                            _lastUtteranceLocator = state.utteranceLocator
+                            pushNowPlaying(state)
+                        }
                         _ttsUiState.value = state
                         if (state == TtsUiState.Idle) cleanUpTts()
                     }
@@ -321,6 +421,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         _ttsUiState.value = TtsUiState.Idle
         // Release audio focus so music apps resume at full volume after TTS stops.
         audioSession.release()
+        unbindAndStopForegroundService()
         val bookId = _bookId ?: return
         val anchor = _lastUtteranceLocator ?: return
         _lastUtteranceLocator = null
@@ -449,6 +550,118 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         val locator = _pendingNoteLocator.value ?: return
         createNote(locator, body)
         _pendingNoteLocator.value = null
+    }
+
+    // ── V2.9 foreground service plumbing ────────────────────────────────────
+
+    /**
+     * V2.9-A adversarial fix #2: the POST_NOTIFICATIONS runtime grant is now
+     * requested lazily on the first [startTts] attempt, not from
+     * [EpubReaderFragment.onCreate]. Users who never open the TTS panel never
+     * see the permission dialog. Called via [permissionRequestEvents] —
+     * Fragment owns the launcher (activity-result contracts must register
+     * before STARTED) and triggers it on event.
+     */
+    fun onPostNotificationsResult(granted: Boolean) {
+        _permissionRequestInFlight = false
+        _postNotificationsAskedOnce = true
+        if (granted) {
+            if (_ttsNavigator != null && _ttsServiceBinder == null) {
+                bindForegroundServiceIfPermitted()
+            }
+        } else {
+            // Denial path: fire the Snackbar even on first deny. Subsequent
+            // startTts() attempts also fire (per-attempt, not first-only) via
+            // the gate inside bindForegroundServiceIfPermitted.
+            _permissionDeniedEvents.trySend(Unit)
+        }
+    }
+
+    private fun needsPostNotificationsRequest(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        return !hasPostNotificationsPermission()
+    }
+
+    private fun hasPostNotificationsPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        val ctx: Context = getApplication()
+        return ContextCompat.checkSelfPermission(
+            ctx,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun bindForegroundServiceIfPermitted() {
+        // V2.9-A adversarial fix #2+#4: lazy prompt + one-shot Snackbar.
+        // First missing-permission attempt → trigger the system dialog.
+        // Subsequent attempts (or denial) → fire Snackbar per-attempt.
+        // We do NOT request the prompt again if one is already in flight
+        // (the system would queue a second dialog above the first).
+        if (!hasPostNotificationsPermission()) {
+            val canAsk = needsPostNotificationsRequest() &&
+                !_postNotificationsAskedOnce &&
+                !_permissionRequestInFlight
+            if (canAsk) {
+                _permissionRequestInFlight = true
+                _permissionRequestEvents.trySend(Unit)
+            } else {
+                _permissionDeniedEvents.trySend(Unit)
+            }
+            return
+        }
+        if (_ttsServiceBinder != null) return
+        startAndBindForegroundService()
+    }
+
+    private fun startAndBindForegroundService() {
+        val ctx: Context = getApplication()
+        val intent = Intent(ctx, TtsForegroundService::class.java)
+        // V2.9-A adversarial fix #3: ForegroundServiceStartNotAllowedException
+        // (API 31+) fires if the OS decides the app isn't allowed to start a
+        // FGS at this moment (no qualifying allowlist condition: not in
+        // foreground, no recent user interaction, no exempt source). On catch
+        // we fall back to V1 foreground-only TTS and surface a Snackbar so
+        // the user knows background playback won't survive backgrounding.
+        // Per ADR-AND-W §FGS start exception policy.
+        //
+        // Catch the specific exception class on API 31+; on older API levels
+        // the exception type doesn't exist, so a generic IllegalStateException
+        // catch covers the (unreachable on 26-30) defensive path.
+        try {
+            ContextCompat.startForegroundService(ctx, intent)
+        } catch (e: IllegalStateException) {
+            // FgServiceStartNotAllowedException extends IllegalStateException
+            // and is the only IllegalStateException this call documents on
+            // API 31+; on API 26-30 we should never reach this catch, but
+            // the broader type keeps the API floor clean.
+            Log.w("EpubReaderViewModel", "startForegroundService rejected; falling back to V1 TTS path", e)
+            _backgroundPlaybackUnavailableEvents.trySend(Unit)
+            return
+        }
+        ctx.bindService(intent, ttsServiceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun unbindAndStopForegroundService() {
+        val ctx: Context = getApplication()
+        val binder = _ttsServiceBinder
+        if (binder != null) {
+            binder.setCallbacks(null)
+            try {
+                ctx.unbindService(ttsServiceConnection)
+            } catch (_: IllegalArgumentException) {
+                // Connection already released by the system; idempotent stop.
+            }
+            _ttsServiceBinder = null
+        }
+        ctx.stopService(Intent(ctx, TtsForegroundService::class.java))
+    }
+
+    private fun pushNowPlaying(state: TtsUiState.Active? = _ttsUiState.value as? TtsUiState.Active) {
+        val binder = _ttsServiceBinder ?: return
+        val title = _bookTitleForNotification
+            ?: getApplication<Application>().getString(com.straysouth.lectern.R.string.app_name)
+        val chapter = state?.utteranceLocator?.title
+        binder.updateNowPlaying(title, chapter, state?.isPlaying ?: true)
     }
 
     override fun onCleared() {

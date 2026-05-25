@@ -273,25 +273,28 @@ class GroupHSecurityTest {
         )
     }
 
-    // ── H.7 — No PendingIntent in main sources ───────────────────────────────
+    // ── H.7 — PendingIntent: always FLAG_IMMUTABLE, only in service module ──
 
     /**
-     * Fail-closed: V1 has no notifications, widgets, or alarms. Zero
-     * PendingIntent construction is the simplest enforceable posture.
+     * V2.9 replaces the V1 fail-closed `platform_noPendingIntent_inMainSources`
+     * gate per v2-scope.md Convention 3. The foreground-service module
+     * (ADR-AND-W) legitimately constructs PendingIntents for its
+     * notification's content tap and action buttons. Two invariants pin the
+     * surface:
      *
-     * When a future feature legitimately requires PendingIntent (notification,
-     * AlarmManager, etc.), this test must be updated to assert
-     * PendingIntent.FLAG_IMMUTABLE co-presence in the same file. API 31+
-     * requires the mutability flag; without IMMUTABLE, a third-party app
-     * can hijack the intent by intercepting it before delivery.
+     *   (a) Every PendingIntent factory call in main sources co-locates
+     *       `FLAG_IMMUTABLE` in the same file. API 31+ requires the
+     *       mutability flag; without IMMUTABLE a third-party app can
+     *       hijack the intent.
+     *   (b) PendingIntent construction appears ONLY inside
+     *       `com/straysouth/lectern/service/` — no PendingIntents leak
+     *       into ViewModel / Compose / Fragment surfaces.
      *
      * Pattern targets the five factory methods: getActivity, getActivities,
-     * getBroadcast, getService, getForegroundService. Imports like
-     * "import android.app.PendingIntent.FLAG_IMMUTABLE" do not match
-     * because they lack the "(" suffix.
+     * getBroadcast, getService, getForegroundService.
      */
     @Test
-    fun platform_noPendingIntent_inMainSources() {
+    fun platform_pendingIntent_alwaysImmutable_andOnlyInServiceModule() {
         val mainSources = File("src/main/kotlin")
         assertTrue(
             "src/main/kotlin not found (working dir: ${System.getProperty("user.dir")})",
@@ -304,21 +307,32 @@ class GroupHSecurityTest {
             "PendingIntent.getService(",
             "PendingIntent.getForegroundService(",
         )
-        val violations = mainSources.walkTopDown()
+        val constructors = mainSources.walkTopDown()
             .filter { it.extension == "kt" }
             .filter { file ->
                 val stripped = stripComments(file.readText())
                 factoryCalls.any { stripped.contains(it) }
             }
-            .map { it.name }
             .toList()
+        val nonServiceCallers = constructors
+            .filterNot { it.path.replace('\\', '/').contains("/service/") }
+            .map { it.name }
         assertTrue(
-            "No main-source file must construct a PendingIntent — V1 fail-closed " +
-                "posture (no notifications, widgets, or alarms). When PendingIntent " +
-                "is legitimately introduced, relax this test to assert FLAG_IMMUTABLE " +
-                "co-presence and document the entrypoint with an ADR (H.7):\n" +
-                violations.joinToString("\n"),
-            violations.isEmpty(),
+            "PendingIntent construction must be confined to the service module " +
+                "(com/straysouth/lectern/service/). ADR-AND-W limits the V2.9 " +
+                "foreground-service notification to the sole PendingIntent surface " +
+                "in V2:\n${nonServiceCallers.joinToString("\n")}",
+            nonServiceCallers.isEmpty(),
+        )
+        val missingImmutable = constructors
+            .filterNot { stripComments(it.readText()).contains("FLAG_IMMUTABLE") }
+            .map { it.name }
+        assertTrue(
+            "Every file constructing a PendingIntent must co-locate " +
+                "PendingIntent.FLAG_IMMUTABLE — API 31+ requirement, prevents " +
+                "third-party intent hijack (ADR-AND-W §Security):\n" +
+                missingImmutable.joinToString("\n"),
+            missingImmutable.isEmpty(),
         )
     }
 

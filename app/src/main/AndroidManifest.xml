@@ -17,7 +17,13 @@
         </intent>
     </queries>
 
+    <!-- V2.9 — TTS foreground service (background read-aloud). See ADR-AND-W. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
+        android:name=".LecternApplication"
         android:label="Lectern"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Lectern"
@@ -36,5 +42,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.TtsForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 </manifest>

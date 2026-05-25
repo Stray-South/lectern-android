@@ -95,4 +95,12 @@
     <string name="review_got_it_action">Got it</string>
     <string name="review_later_action">Review later</string>
     <string name="review_highlight_placeholder">A highlight you saved</string>
+    <string name="tts_channel_name">Read aloud</string>
+    <string name="tts_channel_description">Keeps text-to-speech playing while the app is in the background.</string>
+    <string name="tts_notification_default_title">Reading</string>
+    <string name="tts_notification_action_play">Play</string>
+    <string name="tts_notification_action_pause">Pause</string>
+    <string name="tts_notification_action_stop">Stop</string>
+    <string name="tts_permission_denied_snackbar">Notifications are off, so read-aloud will stop if you leave the app.</string>
+    <string name="tts_background_playback_unavailable_snackbar">Background playback unavailable. Read-aloud will continue while the reader is open.</string>
 </resources>

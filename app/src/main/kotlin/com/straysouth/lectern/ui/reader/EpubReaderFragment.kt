@@ -111,6 +111,10 @@ class EpubReaderFragment : Fragment() {
         private val ANNOTATION_NOTE_TINT = Color.argb(128, 179, 157, 219)
     }
 
+    private val postNotificationsLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted -> viewModel.onPostNotificationsResult(granted) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val bookId = arguments?.getString(ARG_BOOK_ID)
         // Dummy factory must be set before super.onCreate() so FragmentManager can
@@ -118,6 +122,10 @@ class EpubReaderFragment : Fragment() {
         childFragmentManager.fragmentFactory = EpubNavigatorFragment.createDummyFactory()
         super.onCreate(savedInstanceState)
         if (bookId == null) return
+        // V2.9-A adversarial fix #2: POST_NOTIFICATIONS prompt is LAZY. We do
+        // not call requestPostNotificationsIfNeeded here; instead the VM
+        // emits permissionRequestEvents on the first startTts() attempt that
+        // needs the permission and we trigger the launcher then.
         // True only on config change: ViewModel survived, existing navigator is functional.
         val isConfigChange = viewModel.state.value is EpubReaderViewModel.State.Ready
         viewModel.load(bookId)
@@ -128,6 +136,24 @@ class EpubReaderFragment : Fragment() {
         setupAnnotationDecorationsObserver()
         setupAnnotationNavigationObserver()
         setupGazeTtsBridge()
+        setupPermissionRequestObserver()
+    }
+
+    /**
+     * V2.9-A adversarial fix #2: observes the VM's permissionRequestEvents
+     * and triggers the activity-result launcher for POST_NOTIFICATIONS. The
+     * launcher must be registered before STARTED (registerForActivityResult
+     * contract), so it lives on the Fragment; the VM emits events when it
+     * needs the prompt and we forward to the system dialog here.
+     */
+    private fun setupPermissionRequestObserver() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.permissionRequestEvents.collect {
+                    postNotificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
     }
 
     // E.1 fix: pause TTS when the Fragment stops (app backgrounded, call screen, etc.)
@@ -512,14 +538,8 @@ class EpubReaderFragment : Fragment() {
                     val annotations by viewModel.annotationsForOpenBook.collectAsState()
                     val pendingNoteLocator by viewModel.pendingNoteLocator.collectAsState()
 
-                    // V2.2.3 — undo-delete Snackbar (G.3: Indefinite + withDismissAction).
                     val snackbarHostState = remember { SnackbarHostState() }
-                    UndoDeleteAnnotationEffect(
-                        snackbarHostState = snackbarHostState,
-                        deletedAnnotations = viewModel.deletedAnnotations,
-                        onRestore = viewModel::restoreAnnotation,
-                    )
-
+                    ReaderSnackbarEffects(snackbarHostState, viewModel)
                     Box(modifier = Modifier.fillMaxSize()) {
                         ReaderOverlay(
                             state = state,
@@ -689,4 +709,74 @@ private fun UndoDeleteAnnotationEffect(
             }
         }
     }
+}
+
+/**
+ * V2.9-A adversarial fix #4: observes the VM's one-shot
+ * [permissionDeniedEvents] Flow and shows the Snackbar on every emission.
+ * The prior implementation used a StateFlow<Boolean> which fired only on
+ * the false→true transition — a user who denied once and re-attempted TTS
+ * saw nothing. Channel-backed events fire per-attempt.
+ *
+ * Pair with [BackgroundPlaybackUnavailableEffect] which handles the
+ * distinct FGS-rejection failure mode (ADR-AND-W §FGS start exception).
+ */
+@androidx.compose.runtime.Composable
+private fun NotificationPermissionDeniedEffect(
+    snackbarHostState: SnackbarHostState,
+    events: kotlinx.coroutines.flow.Flow<Unit>,
+) {
+    val msg = stringResource(R.string.tts_permission_denied_snackbar)
+    LaunchedEffect(Unit) {
+        events.collect {
+            snackbarHostState.showSnackbar(
+                message = msg,
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
+}
+
+/**
+ * V2.9-A adversarial fix #3: shows a Snackbar when the OS rejected the
+ * foreground-service start (ForegroundServiceStartNotAllowedException on
+ * API 31+). TTS still works in V1 foreground-only mode — the message tells
+ * the user background playback is unavailable so the behaviour difference
+ * isn't silent.
+ */
+@androidx.compose.runtime.Composable
+private fun BackgroundPlaybackUnavailableEffect(
+    snackbarHostState: SnackbarHostState,
+    events: kotlinx.coroutines.flow.Flow<Unit>,
+) {
+    val msg = stringResource(R.string.tts_background_playback_unavailable_snackbar)
+    LaunchedEffect(Unit) {
+        events.collect {
+            snackbarHostState.showSnackbar(
+                message = msg,
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
+}
+
+/** Bundles the reader's Snackbar side-effects to keep `onCreateView` short. */
+@androidx.compose.runtime.Composable
+private fun ReaderSnackbarEffects(
+    snackbarHostState: SnackbarHostState,
+    viewModel: EpubReaderViewModel,
+) {
+    UndoDeleteAnnotationEffect(
+        snackbarHostState = snackbarHostState,
+        deletedAnnotations = viewModel.deletedAnnotations,
+        onRestore = viewModel::restoreAnnotation,
+    )
+    NotificationPermissionDeniedEffect(
+        snackbarHostState = snackbarHostState,
+        events = viewModel.permissionDeniedEvents,
+    )
+    BackgroundPlaybackUnavailableEffect(
+        snackbarHostState = snackbarHostState,
+        events = viewModel.backgroundPlaybackUnavailableEvents,
+    )
 }

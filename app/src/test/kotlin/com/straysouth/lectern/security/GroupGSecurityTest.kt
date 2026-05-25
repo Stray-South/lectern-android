@@ -37,6 +37,7 @@ import java.io.File
  * Working-directory assumption: file paths resolve relative to the `app/` module
  * directory, which is the default CWD for `./gradlew testDebugUnitTest`.
  */
+@Suppress("LargeClass") // One JUnit class per Group keeps the regression contract co-located.
 class GroupGSecurityTest {
 
     // ── G.1 — Animation durations ≤ 200 ms ───────────────────────────────────
@@ -571,6 +572,351 @@ class GroupGSecurityTest {
         assertTrue(
             "LibraryScreen must expose onReviewRequested (V2.3 entry point)",
             library.contains("onReviewRequested"),
+        )
+    }
+
+    // ── V2.9 — TTS foreground service (ADR-AND-W) ───────────────────────────
+
+    /**
+     * V2.9 — synchronous-default-then-async-rich notification build.
+     *
+     * `TtsForegroundService.onCreate` must call `startForeground` with
+     * `TtsNotificationBuilder.buildDefault(...)` immediately (ANR-safe; meets
+     * the foreground-service-start deadline regardless of how long book
+     * metadata lookups take). The rich notification (book title + chapter)
+     * is populated later via `updateNowPlaying` → `NotificationManagerCompat.
+     * notify(NOTIFICATION_ID, buildRich(...))`. Pinned by source assertion
+     * per ADR-AND-W §Decision.
+     */
+    @Test
+    fun audhd_serviceNotification_richContent_atomicUpdate() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsForegroundService.kt").readText(),
+        )
+        val onCreateIdx = source.indexOf("override fun onCreate()")
+        assertTrue(
+            "TtsForegroundService.onCreate() must exist (ADR-AND-W §Decision)",
+            onCreateIdx >= 0,
+        )
+        val onCreateBody = source.substring(
+            onCreateIdx,
+            (onCreateIdx + 600).coerceAtMost(source.length),
+        )
+        assertTrue(
+            "TtsForegroundService.onCreate must call startForeground with the default " +
+                "notification builder result — ANR-safe synchronous start (ADR-AND-W)",
+            onCreateBody.contains("startForeground(") &&
+                onCreateBody.contains("TtsNotificationBuilder.buildDefault("),
+        )
+        val updateIdx = source.indexOf("private fun updateNowPlaying(")
+        assertTrue(
+            "TtsForegroundService.updateNowPlaying must exist as the rich-update path " +
+                "(ADR-AND-W §Decision)",
+            updateIdx >= 0,
+        )
+        val updateBody = source.substring(
+            updateIdx,
+            (updateIdx + 2200).coerceAtMost(source.length),
+        )
+        assertTrue(
+            "updateNowPlaying must atomically replace the default notification — call " +
+                "TtsNotificationBuilder.buildRich(...) and post it via " +
+                "NotificationManagerCompat.notify(NOTIFICATION_ID, ...) (ADR-AND-W)",
+            updateBody.contains("TtsNotificationBuilder.buildRich("),
+        )
+        assertTrue(
+            "TtsForegroundService must post the rich notification through " +
+                "NotificationManagerCompat.notify(NOTIFICATION_ID, ...) so the system " +
+                "replaces the default notification in place (ADR-AND-W)",
+            source.contains("NotificationManagerCompat.from(this).notify(") &&
+                source.contains("NOTIFICATION_ID"),
+        )
+    }
+
+    /**
+     * V2.9 — POST_NOTIFICATIONS gate on the service-start path.
+     *
+     * `EpubReaderViewModel` must check `POST_NOTIFICATIONS` before binding the
+     * foreground service. API 33+ users who deny the permission get V1
+     * foreground-only TTS, not a crash (ADR-AND-W §Decision).
+     */
+    @Test
+    fun platform_serviceStart_requiresPostNotificationsPermission() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        assertTrue(
+            "EpubReaderViewModel must reference Manifest.permission.POST_NOTIFICATIONS " +
+                "to gate the foreground-service start path (ADR-AND-W)",
+            source.contains("Manifest.permission.POST_NOTIFICATIONS"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must invoke ContextCompat.checkSelfPermission on the " +
+                "service-start path to detect denied POST_NOTIFICATIONS at API 33+ " +
+                "(ADR-AND-W graceful-fallback rule)",
+            source.contains("ContextCompat.checkSelfPermission("),
+        )
+        assertTrue(
+            "EpubReaderViewModel must gate the service bind on Build.VERSION.SDK_INT " +
+                ">= Build.VERSION_CODES.TIRAMISU — POST_NOTIFICATIONS is install-time on " +
+                "older API levels (ADR-AND-W)",
+            source.contains("Build.VERSION_CODES.TIRAMISU"),
+        )
+    }
+
+    /**
+     * V2.9 — single cleanup path through the ViewModel.
+     *
+     * Per ADR-AND-W §Decision: every stop trigger — including a recents-swipe
+     * delivered to `onTaskRemoved` — routes through `viewModel.stopTts()`.
+     * The service does not call its own `stopSelf()` in response to user
+     * input; the VM decides. Pinned by source assertion on the service's
+     * onTaskRemoved + the binder's callback contract.
+     */
+    @Test
+    fun platform_serviceCleanup_singlePathThroughViewModel() {
+        val serviceSource = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsForegroundService.kt").readText(),
+        )
+        val taskRemovedIdx = serviceSource.indexOf("override fun onTaskRemoved(")
+        assertTrue(
+            "TtsForegroundService.onTaskRemoved must exist so recents-swipe routes " +
+                "back to the VM (ADR-AND-W single-cleanup-path)",
+            taskRemovedIdx >= 0,
+        )
+        val taskRemovedBody = serviceSource.substring(
+            taskRemovedIdx,
+            (taskRemovedIdx + 400).coerceAtMost(serviceSource.length),
+        )
+        assertTrue(
+            "TtsForegroundService.onTaskRemoved must invoke callbacks?.onTaskRemoved() " +
+                "— the service must not call stopSelf() directly, the VM owns cleanup " +
+                "(ADR-AND-W)",
+            taskRemovedBody.contains("callbacks?.onTaskRemoved()"),
+        )
+        val callbacksSource = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsServiceCallbacks.kt").readText(),
+        )
+        assertTrue(
+            "TtsServiceCallbacks must declare onTaskRemoved() as part of the binder " +
+                "contract (ADR-AND-W)",
+            callbacksSource.contains("fun onTaskRemoved()"),
+        )
+        val vmSource = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        val callbacksImplIdx = vmSource.indexOf("object : TtsServiceCallbacks")
+        assertTrue(
+            "EpubReaderViewModel must implement TtsServiceCallbacks (ADR-AND-W)",
+            callbacksImplIdx >= 0,
+        )
+        val implWindow = vmSource.substring(
+            callbacksImplIdx,
+            (callbacksImplIdx + 800).coerceAtMost(vmSource.length),
+        )
+        assertTrue(
+            "EpubReaderViewModel.TtsServiceCallbacks.onTaskRemoved must route to " +
+                "stopTts() — the VM is the single cleanup path (ADR-AND-W)",
+            implWindow.contains("override fun onTaskRemoved()") &&
+                implWindow.contains("stopTts()"),
+        )
+    }
+
+    // ── V2.9-A adversarial fixes (ADR-AND-W lockscreen + FGS + lazy prompt) ──
+
+    /**
+     * V2.9-A fix #1: notifications use VISIBILITY_PRIVATE and the rich
+     * notification ships a redacted public version (app name + "Reading",
+     * no book title, no chapter). Lockscreen has a wider attacker model
+     * than the unlocked notification shade (physical access, no auth) so
+     * the proportional-exposure argument from ADR-AND-W §Threat model
+     * does NOT extend there. Per ADR-AND-W §FGS notification visibility
+     * policy (amendment 2026-05-25).
+     */
+    @Test
+    fun platform_serviceNotification_visibilityPrivate_andPublicRedacted() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsNotificationBuilder.kt").readText(),
+        )
+        // Window-scoped: slice the source into per-function bodies so we can
+        // assert visibility per builder rather than via global contains() —
+        // a global "no VISIBILITY_PUBLIC" check would be wrong because the
+        // legitimate redacted helper sets itself PUBLIC for the lockscreen.
+        val defaultIdx = source.indexOf("fun buildDefault(")
+        assertTrue(
+            "TtsNotificationBuilder.buildDefault must exist " +
+                "(ADR-AND-W §FGS notification visibility)",
+            defaultIdx >= 0,
+        )
+        val redactedIdx = source.indexOf("fun buildPublicRedacted(")
+        assertTrue(
+            "TtsNotificationBuilder must define a buildPublicRedacted helper for the " +
+                "lockscreen-safe public version (ADR-AND-W §FGS notification visibility)",
+            redactedIdx >= 0,
+        )
+        val richIdx = source.indexOf("fun buildRich(")
+        assertTrue(
+            "TtsNotificationBuilder.buildRich must exist " +
+                "(ADR-AND-W §FGS notification visibility)",
+            richIdx >= 0,
+        )
+        val defaultBody = source.substring(defaultIdx, redactedIdx)
+        val redactedBody = source.substring(redactedIdx, richIdx)
+        val richBody = source.substring(richIdx)
+        assertTrue(
+            "TtsNotificationBuilder.buildDefault must use VISIBILITY_PRIVATE — anything " +
+                "else leaks notification content on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            defaultBody.contains("setVisibility(NotificationCompat.VISIBILITY_PRIVATE)"),
+        )
+        assertFalse(
+            "TtsNotificationBuilder.buildDefault must NOT call setVisibility(VISIBILITY_PUBLIC) " +
+                "— the default notification renders directly on lockscreen and has no " +
+                "redacted public version (ADR-AND-W §FGS notification visibility)",
+            defaultBody.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)"),
+        )
+        assertTrue(
+            "TtsNotificationBuilder.buildRich must use VISIBILITY_PRIVATE so the system " +
+                "substitutes the redacted public version on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            richBody.contains("setVisibility(NotificationCompat.VISIBILITY_PRIVATE)"),
+        )
+        assertFalse(
+            "TtsNotificationBuilder.buildRich must NOT call setVisibility(VISIBILITY_PUBLIC) " +
+                "— title and chapter would leak on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            richBody.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)"),
+        )
+        assertTrue(
+            "TtsNotificationBuilder.buildPublicRedacted must declare itself VISIBILITY_PUBLIC " +
+                "— it IS the lockscreen-safe version the system substitutes in " +
+                "(ADR-AND-W §FGS notification visibility)",
+            redactedBody.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)"),
+        )
+        assertTrue(
+            "TtsNotificationBuilder.buildRich must call setPublicVersion(buildPublicRedacted(...)) " +
+                "so the system substitutes the redacted notification on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            richBody.contains(".setPublicVersion(buildPublicRedacted("),
+        )
+    }
+
+    /**
+     * V2.9-A fix #3: startForegroundService is wrapped in try/catch for
+     * ForegroundServiceStartNotAllowedException (API 31+). On catch the VM
+     * falls back to V1 foreground-only TTS and surfaces a Snackbar via
+     * backgroundPlaybackUnavailableEvents so the user knows. Per ADR-AND-W
+     * §FGS start exception policy.
+     */
+    @Test
+    fun platform_startForegroundService_exceptionGuarded() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        val startIdx = source.indexOf("ContextCompat.startForegroundService(")
+        assertTrue(
+            "ContextCompat.startForegroundService call must exist in EpubReaderViewModel " +
+                "(V2.9 service-start path)",
+            startIdx >= 0,
+        )
+        // The catch must appear within a narrow window after the call so the
+        // try block actually wraps the start. 400-char window covers a try
+        // block and a single specific exception catch.
+        val window = source.substring(
+            (startIdx - 50).coerceAtLeast(0),
+            (startIdx + 400).coerceAtMost(source.length),
+        )
+        assertTrue(
+            "ContextCompat.startForegroundService must be inside a try { ... } block " +
+                "(ADR-AND-W §FGS start exception policy)",
+            window.contains("try {"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must catch IllegalStateException around startForegroundService " +
+                "— ForegroundServiceStartNotAllowedException (API 31+) extends IllegalStateException " +
+                "(ADR-AND-W §FGS start exception policy)",
+            window.contains("catch (e: IllegalStateException)") ||
+                window.contains("catch (_: IllegalStateException)"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must expose backgroundPlaybackUnavailableEvents so the UI " +
+                "can surface a Snackbar when the FGS start is rejected (ADR-AND-W §FGS start " +
+                "exception policy)",
+            source.contains("val backgroundPlaybackUnavailableEvents"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must emit _backgroundPlaybackUnavailableEvents.trySend(Unit) " +
+                "INSIDE the FGS-rejection catch block (not on an unconditional path) so the " +
+                "Snackbar fires only on rejection (ADR-AND-W §FGS start exception policy)",
+            window.contains("_backgroundPlaybackUnavailableEvents.trySend(Unit)"),
+        )
+    }
+
+    /**
+     * V2.9-A fix #2 + #4: POST_NOTIFICATIONS prompt is LAZY (triggered on the
+     * first startTts() attempt that needs it, not on Fragment.onCreate). The
+     * denied-Snackbar consumes one-shot events (Channel-backed Flow), so every
+     * startTts() attempt without permission fires the Snackbar — not just the
+     * first deny. Per ADR-AND-W §Lazy permission policy.
+     */
+    @Test
+    fun audhd_postNotifications_prompt_lazyAndOneShot() {
+        val fragmentSrc = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderFragment.kt").readText(),
+        )
+        val vmSrc = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        // Lazy: Fragment.onCreate must NOT trigger the launcher directly.
+        val onCreateIdx = fragmentSrc.indexOf("override fun onCreate(savedInstanceState: Bundle?)")
+        assertTrue("EpubReaderFragment.onCreate must exist", onCreateIdx >= 0)
+        // Bound the onCreate body at the next function declaration so we don't
+        // overlap helper functions that legitimately reference the launcher.
+        val afterOnCreate = onCreateIdx + "override fun onCreate(savedInstanceState: Bundle?)".length
+        val nextFunIdx = listOf(
+            fragmentSrc.indexOf("    override fun ", afterOnCreate),
+            fragmentSrc.indexOf("    private fun ", afterOnCreate),
+            fragmentSrc.indexOf("    fun ", afterOnCreate),
+        ).filter { it >= 0 }.minOrNull() ?: fragmentSrc.length
+        val onCreateBody = fragmentSrc.substring(onCreateIdx, nextFunIdx)
+        assertFalse(
+            "EpubReaderFragment.onCreate must NOT launch postNotificationsLauncher directly " +
+                "— the prompt is lazy, triggered on first startTts() (ADR-AND-W §Lazy permission)",
+            onCreateBody.contains("postNotificationsLauncher.launch("),
+        )
+        assertFalse(
+            "EpubReaderFragment.onCreate must NOT call requestPostNotificationsIfNeeded — that " +
+                "API was removed; the VM emits permissionRequestEvents lazily (ADR-AND-W §Lazy permission)",
+            onCreateBody.contains("requestPostNotificationsIfNeeded("),
+        )
+        // VM emits the request event; Fragment forwards to the launcher.
+        assertTrue(
+            "EpubReaderViewModel must expose permissionRequestEvents so the Fragment can " +
+                "trigger the system dialog lazily (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("val permissionRequestEvents"),
+        )
+        assertTrue(
+            "EpubReaderFragment must observe permissionRequestEvents and forward to " +
+                "postNotificationsLauncher.launch(...) (ADR-AND-W §Lazy permission)",
+            fragmentSrc.contains("viewModel.permissionRequestEvents.collect") &&
+                fragmentSrc.contains("postNotificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)"),
+        )
+        // One-shot: events flow, not StateFlow<Boolean>. Channel guarantees per-attempt firing.
+        assertTrue(
+            "EpubReaderViewModel must expose permissionDeniedEvents as a Flow (Channel-backed) " +
+                "so the Snackbar fires every attempt, not just first deny (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("val permissionDeniedEvents: kotlinx.coroutines.flow.Flow<Unit>"),
+        )
+        assertFalse(
+            "EpubReaderViewModel must NOT expose notificationPermissionDenied as a " +
+                "StateFlow<Boolean> — the prior shape only fired Snackbar on first false→true " +
+                "transition (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("val notificationPermissionDenied: StateFlow<Boolean>"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must emit _permissionDeniedEvents.trySend(Unit) on the " +
+                "denial path (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("_permissionDeniedEvents.trySend(Unit)"),
         )
     }
 
