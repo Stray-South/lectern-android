@@ -1,11 +1,24 @@
 package com.straysouth.lectern.ui.reader
 
+import android.Manifest
 import android.app.Application
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.IBinder
 import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.straysouth.lectern.audio.AudioSessionCoordinator
+import com.straysouth.lectern.service.TtsForegroundService
+import com.straysouth.lectern.service.TtsForegroundService.LocalBinder
+import com.straysouth.lectern.service.TtsServiceCallbacks
 import com.straysouth.lectern.data.db.AppDatabase
 import com.straysouth.lectern.data.db.ReadingProgress
 import com.straysouth.lectern.data.repository.AnchorRepository
@@ -51,6 +64,7 @@ private typealias AndroidTtsNav = TtsNavigator<
     AndroidTtsEngine.Error,
     AndroidTtsEngine.Voice>
 
+@Suppress("TooManyFunctions")
 class EpubReaderViewModel(application: Application) : AndroidViewModel(application) {
 
     private val pubRepository = PublicationRepository(application)
@@ -131,16 +145,49 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // Sole owner of AudioManager focus state — see ADR-AND-A.
     private val audioSession = AudioSessionCoordinator(application)
 
+    // V2.9 — foreground-service binding. The service is a sentinel + notification
+    // owner per ADR-AND-W; this VM remains the sole owner of _ttsNavigator and
+    // the AudioSessionCoordinator binding. Null while no TTS session is active
+    // or when POST_NOTIFICATIONS is denied (graceful fallback to V1 behaviour).
+    @Volatile private var _ttsServiceBinder: LocalBinder? = null
+    private var _bookTitleForNotification: String? = null
+
+    private val _notificationPermissionDenied = MutableStateFlow(false)
+    val notificationPermissionDenied: StateFlow<Boolean> = _notificationPermissionDenied
+
+    private val ttsServiceCallbacks = object : TtsServiceCallbacks {
+        override fun onPlayPause() {
+            val active = _ttsUiState.value as? TtsUiState.Active
+            if (active?.isPlaying == true) pauseTts() else startTts()
+        }
+        override fun onStop() { stopTts() }
+        override fun onTaskRemoved() { stopTts() }
+    }
+
+    private val ttsServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val local = service as? LocalBinder ?: return
+            _ttsServiceBinder = local
+            local.setCallbacks(ttsServiceCallbacks)
+            pushNowPlaying()
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            _ttsServiceBinder = null
+        }
+    }
+
     fun load(bookId: String) {
         if (_publication != null || !_loading.compareAndSet(false, true)) return
         _bookId = bookId
         viewModelScope.launch {
-            val filePath = bookDao.getById(bookId)?.filePath
+            val book = bookDao.getById(bookId)
+            val filePath = book?.filePath
             if (filePath == null) {
                 _loading.set(false)
                 _state.value = State.Error("Book not found")
                 return@launch
             }
+            _bookTitleForNotification = book.title
             val savedLocator = locatorRepository.get(bookId)
             _anchorLocator.value = anchorRepository.get(bookId)
             pubRepository.open(Uri.parse(filePath))
@@ -246,6 +293,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                     return@onSuccess
                 }
                 _ttsNavigator = nav
+                bindForegroundServiceIfPermitted()
                 nav.play()
                 _ttsCollectionJob = launch {
                     combine(nav.playback, nav.location) { pb, loc ->
@@ -259,7 +307,10 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                             )
                         }
                     }.collect { state ->
-                        if (state is TtsUiState.Active) _lastUtteranceLocator = state.utteranceLocator
+                        if (state is TtsUiState.Active) {
+                            _lastUtteranceLocator = state.utteranceLocator
+                            pushNowPlaying(state)
+                        }
                         _ttsUiState.value = state
                         if (state == TtsUiState.Idle) cleanUpTts()
                     }
@@ -321,6 +372,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         _ttsUiState.value = TtsUiState.Idle
         // Release audio focus so music apps resume at full volume after TTS stops.
         audioSession.release()
+        unbindAndStopForegroundService()
         val bookId = _bookId ?: return
         val anchor = _lastUtteranceLocator ?: return
         _lastUtteranceLocator = null
@@ -449,6 +501,78 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         val locator = _pendingNoteLocator.value ?: return
         createNote(locator, body)
         _pendingNoteLocator.value = null
+    }
+
+    // ── V2.9 foreground service plumbing ────────────────────────────────────
+
+    /**
+     * Activity-side hook for the POST_NOTIFICATIONS runtime grant flow. Mirrors
+     * the existing camera-permission pattern in [MainActivity]. No-op on
+     * Android < 13 (permission is install-time).
+     */
+    fun requestPostNotificationsIfNeeded(launcher: ActivityResultLauncher<String>) {
+        if (!needsPostNotificationsRequest()) return
+        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    fun onPostNotificationsResult(granted: Boolean) {
+        _notificationPermissionDenied.value = !granted
+        if (granted && _ttsNavigator != null && _ttsServiceBinder == null) {
+            bindForegroundServiceIfPermitted()
+        }
+    }
+
+    fun dismissNotificationPermissionBanner() {
+        _notificationPermissionDenied.value = false
+    }
+
+    private fun needsPostNotificationsRequest(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        return !hasPostNotificationsPermission()
+    }
+
+    private fun hasPostNotificationsPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        val ctx: Context = getApplication()
+        return ContextCompat.checkSelfPermission(
+            ctx,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun bindForegroundServiceIfPermitted() {
+        if (!hasPostNotificationsPermission()) {
+            _notificationPermissionDenied.value = true
+            return
+        }
+        if (_ttsServiceBinder != null) return
+        val ctx: Context = getApplication()
+        val intent = Intent(ctx, TtsForegroundService::class.java)
+        ContextCompat.startForegroundService(ctx, intent)
+        ctx.bindService(intent, ttsServiceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun unbindAndStopForegroundService() {
+        val ctx: Context = getApplication()
+        val binder = _ttsServiceBinder
+        if (binder != null) {
+            binder.setCallbacks(null)
+            try {
+                ctx.unbindService(ttsServiceConnection)
+            } catch (_: IllegalArgumentException) {
+                // Connection already released by the system; idempotent stop.
+            }
+            _ttsServiceBinder = null
+        }
+        ctx.stopService(Intent(ctx, TtsForegroundService::class.java))
+    }
+
+    private fun pushNowPlaying(state: TtsUiState.Active? = _ttsUiState.value as? TtsUiState.Active) {
+        val binder = _ttsServiceBinder ?: return
+        val title = _bookTitleForNotification
+            ?: getApplication<Application>().getString(com.straysouth.lectern.R.string.app_name)
+        val chapter = state?.utteranceLocator?.title
+        binder.updateNowPlaying(title, chapter, state?.isPlaying ?: true)
     }
 
     override fun onCleared() {

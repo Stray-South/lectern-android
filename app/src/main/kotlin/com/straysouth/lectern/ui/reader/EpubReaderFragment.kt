@@ -111,6 +111,10 @@ class EpubReaderFragment : Fragment() {
         private val ANNOTATION_NOTE_TINT = Color.argb(128, 179, 157, 219)
     }
 
+    private val postNotificationsLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted -> viewModel.onPostNotificationsResult(granted) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val bookId = arguments?.getString(ARG_BOOK_ID)
         // Dummy factory must be set before super.onCreate() so FragmentManager can
@@ -118,6 +122,7 @@ class EpubReaderFragment : Fragment() {
         childFragmentManager.fragmentFactory = EpubNavigatorFragment.createDummyFactory()
         super.onCreate(savedInstanceState)
         if (bookId == null) return
+        viewModel.requestPostNotificationsIfNeeded(postNotificationsLauncher)
         // True only on config change: ViewModel survived, existing navigator is functional.
         val isConfigChange = viewModel.state.value is EpubReaderViewModel.State.Ready
         viewModel.load(bookId)
