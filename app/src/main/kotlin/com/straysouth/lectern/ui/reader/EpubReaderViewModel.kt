@@ -11,7 +11,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import androidx.activity.result.ActivityResultLauncher
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -152,8 +151,51 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     @Volatile private var _ttsServiceBinder: LocalBinder? = null
     private var _bookTitleForNotification: String? = null
 
-    private val _notificationPermissionDenied = MutableStateFlow(false)
-    val notificationPermissionDenied: StateFlow<Boolean> = _notificationPermissionDenied
+    // V2.9-A adversarial fix: one-shot events, not persistent state.
+    // The previous StateFlow<Boolean> only fired the Snackbar on the false→true
+    // transition; a user who declined POST_NOTIFICATIONS once and re-attempted
+    // TTS would see nothing. Channel-backed events fire on every attempt.
+    //
+    // BufferOverflow.DROP_OLDEST + capacity=1: rapid repeat attempts collapse
+    // to a single "latest" notification rather than queueing N Snackbars.
+    private val _permissionDeniedEvents =
+        kotlinx.coroutines.channels.Channel<Unit>(
+            capacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    val permissionDeniedEvents: kotlinx.coroutines.flow.Flow<Unit> =
+        _permissionDeniedEvents.receiveAsFlow()
+
+    // V2.9-A adversarial fix: lazy permission prompt. The launcher lives in the
+    // Fragment (must be registered before STARTED); the VM signals "ask now"
+    // via this channel when startTts() needs the permission and we haven't
+    // asked yet in this VM lifetime. Avoids prompting on Fragment.onCreate
+    // for users who never open the TTS panel.
+    private val _permissionRequestEvents =
+        kotlinx.coroutines.channels.Channel<Unit>(
+            capacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    val permissionRequestEvents: kotlinx.coroutines.flow.Flow<Unit> =
+        _permissionRequestEvents.receiveAsFlow()
+
+    // V2.9-A adversarial fix: surfaces ForegroundServiceStartNotAllowedException
+    // (API 31+) when the OS rejects the FGS start. Distinct from the
+    // permission-denied event so the Snackbar copy can name the failure mode
+    // ("background playback unavailable" vs "notifications denied"). Per
+    // ADR-AND-W §FGS start exception policy.
+    private val _backgroundPlaybackUnavailableEvents =
+        kotlinx.coroutines.channels.Channel<Unit>(
+            capacity = 1,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        )
+    val backgroundPlaybackUnavailableEvents: kotlinx.coroutines.flow.Flow<Unit> =
+        _backgroundPlaybackUnavailableEvents.receiveAsFlow()
+
+    // Guards "ask only once per VM lifetime" so a user who is mid-decision
+    // doesn't get a second system dialog stacked on top. Reset only on
+    // explicit grant or when the VM is cleared.
+    @Volatile private var _permissionRequestInFlight = false
 
     private val ttsServiceCallbacks = object : TtsServiceCallbacks {
         override fun onPlayPause() {
@@ -506,24 +548,25 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // ── V2.9 foreground service plumbing ────────────────────────────────────
 
     /**
-     * Activity-side hook for the POST_NOTIFICATIONS runtime grant flow. Mirrors
-     * the existing camera-permission pattern in [MainActivity]. No-op on
-     * Android < 13 (permission is install-time).
+     * V2.9-A adversarial fix #2: the POST_NOTIFICATIONS runtime grant is now
+     * requested lazily on the first [startTts] attempt, not from
+     * [EpubReaderFragment.onCreate]. Users who never open the TTS panel never
+     * see the permission dialog. Called via [permissionRequestEvents] —
+     * Fragment owns the launcher (activity-result contracts must register
+     * before STARTED) and triggers it on event.
      */
-    fun requestPostNotificationsIfNeeded(launcher: ActivityResultLauncher<String>) {
-        if (!needsPostNotificationsRequest()) return
-        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-
     fun onPostNotificationsResult(granted: Boolean) {
-        _notificationPermissionDenied.value = !granted
-        if (granted && _ttsNavigator != null && _ttsServiceBinder == null) {
-            bindForegroundServiceIfPermitted()
+        _permissionRequestInFlight = false
+        if (granted) {
+            if (_ttsNavigator != null && _ttsServiceBinder == null) {
+                bindForegroundServiceIfPermitted()
+            }
+        } else {
+            // Denial path: fire the Snackbar even on first deny. Subsequent
+            // startTts() attempts also fire (per-attempt, not first-only) via
+            // the gate inside bindForegroundServiceIfPermitted.
+            _permissionDeniedEvents.trySend(Unit)
         }
-    }
-
-    fun dismissNotificationPermissionBanner() {
-        _notificationPermissionDenied.value = false
     }
 
     private fun needsPostNotificationsRequest(): Boolean {
@@ -541,14 +584,49 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun bindForegroundServiceIfPermitted() {
+        // V2.9-A adversarial fix #2+#4: lazy prompt + one-shot Snackbar.
+        // First missing-permission attempt → trigger the system dialog.
+        // Subsequent attempts (or denial) → fire Snackbar per-attempt.
+        // We do NOT request the prompt again if one is already in flight
+        // (the system would queue a second dialog above the first).
         if (!hasPostNotificationsPermission()) {
-            _notificationPermissionDenied.value = true
+            if (needsPostNotificationsRequest() && !_permissionRequestInFlight) {
+                _permissionRequestInFlight = true
+                _permissionRequestEvents.trySend(Unit)
+            } else {
+                _permissionDeniedEvents.trySend(Unit)
+            }
             return
         }
         if (_ttsServiceBinder != null) return
+        startAndBindForegroundService()
+    }
+
+    private fun startAndBindForegroundService() {
         val ctx: Context = getApplication()
         val intent = Intent(ctx, TtsForegroundService::class.java)
-        ContextCompat.startForegroundService(ctx, intent)
+        // V2.9-A adversarial fix #3: ForegroundServiceStartNotAllowedException
+        // (API 31+) fires if the OS decides the app isn't allowed to start a
+        // FGS at this moment (no qualifying allowlist condition: not in
+        // foreground, no recent user interaction, no exempt source). On catch
+        // we fall back to V1 foreground-only TTS and surface a Snackbar so
+        // the user knows background playback won't survive backgrounding.
+        // Per ADR-AND-W §FGS start exception policy.
+        //
+        // Catch the specific exception class on API 31+; on older API levels
+        // the exception type doesn't exist, so a generic IllegalStateException
+        // catch covers the (unreachable on 26-30) defensive path.
+        try {
+            ContextCompat.startForegroundService(ctx, intent)
+        } catch (e: IllegalStateException) {
+            // FgServiceStartNotAllowedException extends IllegalStateException
+            // and is the only IllegalStateException this call documents on
+            // API 31+; on API 26-30 we should never reach this catch, but
+            // the broader type keeps the API floor clean.
+            Log.w("EpubReaderViewModel", "startForegroundService rejected; falling back to V1 TTS path", e)
+            _backgroundPlaybackUnavailableEvents.trySend(Unit)
+            return
+        }
         ctx.bindService(intent, ttsServiceConnection, Context.BIND_AUTO_CREATE)
     }
 

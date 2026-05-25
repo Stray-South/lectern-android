@@ -721,6 +721,165 @@ class GroupGSecurityTest {
         )
     }
 
+    // ── V2.9-A adversarial fixes (ADR-AND-W lockscreen + FGS + lazy prompt) ──
+
+    /**
+     * V2.9-A fix #1: notifications use VISIBILITY_PRIVATE and the rich
+     * notification ships a redacted public version (app name + "Reading",
+     * no book title, no chapter). Lockscreen has a wider attacker model
+     * than the unlocked notification shade (physical access, no auth) so
+     * the proportional-exposure argument from ADR-AND-W §Threat model
+     * does NOT extend there. Per ADR-AND-W §FGS notification visibility
+     * policy (amendment 2026-05-25).
+     */
+    @Test
+    fun platform_serviceNotification_visibilityPrivate_andPublicRedacted() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/service/TtsNotificationBuilder.kt").readText(),
+        )
+        assertFalse(
+            "TtsNotificationBuilder must NOT call setVisibility(VISIBILITY_PUBLIC) on " +
+                "the private notification — title/chapter would leak on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            source.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)") &&
+                !source.contains("buildPublicRedacted"),
+        )
+        assertTrue(
+            "TtsNotificationBuilder.buildDefault must use VISIBILITY_PRIVATE " +
+                "(ADR-AND-W §FGS notification visibility)",
+            source.contains("setVisibility(NotificationCompat.VISIBILITY_PRIVATE)"),
+        )
+        assertTrue(
+            "TtsNotificationBuilder must define a buildPublicRedacted helper for the " +
+                "lockscreen-safe public version (ADR-AND-W §FGS notification visibility)",
+            source.contains("fun buildPublicRedacted("),
+        )
+        assertTrue(
+            "TtsNotificationBuilder.buildRich must call setPublicVersion(buildPublicRedacted(...)) " +
+                "so the system substitutes the redacted notification on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            source.contains(".setPublicVersion(buildPublicRedacted("),
+        )
+    }
+
+    /**
+     * V2.9-A fix #3: startForegroundService is wrapped in try/catch for
+     * ForegroundServiceStartNotAllowedException (API 31+). On catch the VM
+     * falls back to V1 foreground-only TTS and surfaces a Snackbar via
+     * backgroundPlaybackUnavailableEvents so the user knows. Per ADR-AND-W
+     * §FGS start exception policy.
+     */
+    @Test
+    fun platform_startForegroundService_exceptionGuarded() {
+        val source = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        val startIdx = source.indexOf("ContextCompat.startForegroundService(")
+        assertTrue(
+            "ContextCompat.startForegroundService call must exist in EpubReaderViewModel " +
+                "(V2.9 service-start path)",
+            startIdx >= 0,
+        )
+        // The catch must appear within a narrow window after the call so the
+        // try block actually wraps the start. 400-char window covers a try
+        // block and a single specific exception catch.
+        val window = source.substring(
+            (startIdx - 50).coerceAtLeast(0),
+            (startIdx + 400).coerceAtMost(source.length),
+        )
+        assertTrue(
+            "ContextCompat.startForegroundService must be inside a try { ... } block " +
+                "(ADR-AND-W §FGS start exception policy)",
+            window.contains("try {"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must catch IllegalStateException around startForegroundService " +
+                "— ForegroundServiceStartNotAllowedException (API 31+) extends IllegalStateException " +
+                "(ADR-AND-W §FGS start exception policy)",
+            window.contains("catch (e: IllegalStateException)") ||
+                window.contains("catch (_: IllegalStateException)"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must expose backgroundPlaybackUnavailableEvents so the UI " +
+                "can surface a Snackbar when the FGS start is rejected (ADR-AND-W §FGS start " +
+                "exception policy)",
+            source.contains("val backgroundPlaybackUnavailableEvents"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must emit a backgroundPlaybackUnavailableEvents Unit on the " +
+                "FGS-rejection path so the Snackbar fires (ADR-AND-W §FGS start exception policy)",
+            source.contains("_backgroundPlaybackUnavailableEvents.trySend(Unit)"),
+        )
+    }
+
+    /**
+     * V2.9-A fix #2 + #4: POST_NOTIFICATIONS prompt is LAZY (triggered on the
+     * first startTts() attempt that needs it, not on Fragment.onCreate). The
+     * denied-Snackbar consumes one-shot events (Channel-backed Flow), so every
+     * startTts() attempt without permission fires the Snackbar — not just the
+     * first deny. Per ADR-AND-W §Lazy permission policy.
+     */
+    @Test
+    fun audhd_postNotifications_prompt_lazyAndOneShot() {
+        val fragmentSrc = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderFragment.kt").readText(),
+        )
+        val vmSrc = stripComments(
+            File("src/main/kotlin/com/straysouth/lectern/ui/reader/EpubReaderViewModel.kt").readText(),
+        )
+        // Lazy: Fragment.onCreate must NOT trigger the launcher directly.
+        val onCreateIdx = fragmentSrc.indexOf("override fun onCreate(savedInstanceState: Bundle?)")
+        assertTrue("EpubReaderFragment.onCreate must exist", onCreateIdx >= 0)
+        // Bound the onCreate body at the next function declaration so we don't
+        // overlap helper functions that legitimately reference the launcher.
+        val afterOnCreate = onCreateIdx + "override fun onCreate(savedInstanceState: Bundle?)".length
+        val nextFunIdx = listOf(
+            fragmentSrc.indexOf("    override fun ", afterOnCreate),
+            fragmentSrc.indexOf("    private fun ", afterOnCreate),
+            fragmentSrc.indexOf("    fun ", afterOnCreate),
+        ).filter { it >= 0 }.minOrNull() ?: fragmentSrc.length
+        val onCreateBody = fragmentSrc.substring(onCreateIdx, nextFunIdx)
+        assertFalse(
+            "EpubReaderFragment.onCreate must NOT launch postNotificationsLauncher directly " +
+                "— the prompt is lazy, triggered on first startTts() (ADR-AND-W §Lazy permission)",
+            onCreateBody.contains("postNotificationsLauncher.launch("),
+        )
+        assertFalse(
+            "EpubReaderFragment.onCreate must NOT call requestPostNotificationsIfNeeded — that " +
+                "API was removed; the VM emits permissionRequestEvents lazily (ADR-AND-W §Lazy permission)",
+            onCreateBody.contains("requestPostNotificationsIfNeeded("),
+        )
+        // VM emits the request event; Fragment forwards to the launcher.
+        assertTrue(
+            "EpubReaderViewModel must expose permissionRequestEvents so the Fragment can " +
+                "trigger the system dialog lazily (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("val permissionRequestEvents"),
+        )
+        assertTrue(
+            "EpubReaderFragment must observe permissionRequestEvents and forward to " +
+                "postNotificationsLauncher.launch(...) (ADR-AND-W §Lazy permission)",
+            fragmentSrc.contains("viewModel.permissionRequestEvents.collect") &&
+                fragmentSrc.contains("postNotificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)"),
+        )
+        // One-shot: events flow, not StateFlow<Boolean>. Channel guarantees per-attempt firing.
+        assertTrue(
+            "EpubReaderViewModel must expose permissionDeniedEvents as a Flow (Channel-backed) " +
+                "so the Snackbar fires every attempt, not just first deny (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("val permissionDeniedEvents: kotlinx.coroutines.flow.Flow<Unit>"),
+        )
+        assertFalse(
+            "EpubReaderViewModel must NOT expose notificationPermissionDenied as a " +
+                "StateFlow<Boolean> — the prior shape only fired Snackbar on first false→true " +
+                "transition (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("val notificationPermissionDenied: StateFlow<Boolean>"),
+        )
+        assertTrue(
+            "EpubReaderViewModel must emit _permissionDeniedEvents.trySend(Unit) on the " +
+                "denial path (ADR-AND-W §Lazy permission)",
+            vmSrc.contains("_permissionDeniedEvents.trySend(Unit)"),
+        )
+    }
+
     companion object {
         private const val MAX_ANIMATION_MS = 200
 

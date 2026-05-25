@@ -102,4 +102,5 @@
     <string name="tts_notification_action_pause">Pause</string>
     <string name="tts_notification_action_stop">Stop</string>
     <string name="tts_permission_denied_snackbar">Notifications are off, so read-aloud will stop if you leave the app.</string>
+    <string name="tts_background_playback_unavailable_snackbar">Background playback unavailable. Read-aloud will continue while the reader is open.</string>
 </resources>

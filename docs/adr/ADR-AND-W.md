@@ -102,7 +102,75 @@ explicit decision.
 
 The rich notification text equals what the Library screen and
 in-reader chapter rotor already expose — exposure is proportionate,
-not expanded.
+not expanded, **on the unlocked notification shade**.
+
+### FGS notification visibility (amendment 2026-05-25 — V2.9-A adversarial fix #1)
+
+The proportional-exposure argument above does not extend to the
+**lockscreen**. The lockscreen has a wider attacker model: anyone with
+physical access can read it without authenticating, where the library
+and in-reader rotor require an unlocked device. A `VISIBILITY_PUBLIC`
+notification on the lockscreen leaks the user's current book title and
+chapter to that broader attacker set; this is a real net-new exposure
+even though the same data on the unlocked shade is proportionate.
+
+Policy:
+
+- Both `buildDefault` and `buildRich` set `VISIBILITY_PRIVATE`.
+- `buildRich` calls `setPublicVersion(buildPublicRedacted(context))`
+  with a redacted notification that shows only the app name and the
+  generic "Reading" label — no book title, no chapter, no actions
+  beyond what the OS already renders.
+- `buildDefault` is already redacted-equivalent (app name + "Reading")
+  so it serves as its own public version on the lockscreen.
+
+Pinned by `GroupGSecurityTest.platform_serviceNotification_visibilityPrivate_andPublicRedacted`.
+
+### Lazy permission policy (amendment 2026-05-25 — V2.9-A adversarial fixes #2 + #4)
+
+`POST_NOTIFICATIONS` is **not** requested from `EpubReaderFragment.onCreate`.
+Users who never open the TTS panel never see the runtime dialog. The
+prompt is triggered lazily on the first `startTts()` attempt that
+requires it (API 33+, permission not granted), via the VM's
+`permissionRequestEvents` channel which the Fragment forwards to the
+`ActivityResultLauncher` it owns.
+
+The denied-Snackbar consumes one-shot **events** (`Channel<Unit>` →
+`Flow<Unit>`), not a persistent `StateFlow<Boolean>`. The prior
+`StateFlow<Boolean>` only fired on the false→true transition: a user
+who denied once and re-attempted TTS saw nothing. Channel-backed events
+fire on every denied attempt. The two fixes collapse: a user who
+hasn't been prompted is prompted, denies → Snackbar; re-attempts →
+Snackbar again. Every time.
+
+Pinned by `GroupGSecurityTest.audhd_postNotifications_prompt_lazyAndOneShot`.
+
+### FGS start exception policy (amendment 2026-05-25 — V2.9-A adversarial fix #3)
+
+`ContextCompat.startForegroundService` may throw
+`ForegroundServiceStartNotAllowedException` on API 31+ when the OS
+determines the app is not allowed to start a foreground service at
+that moment (no qualifying allowlist condition: not in foreground,
+no recent user interaction, no exempt source such as
+`FOREGROUND_SERVICE_MEDIA_PLAYBACK` priority granted by the system).
+
+Policy:
+
+- The call is wrapped in `try { ... } catch (e: IllegalStateException)`.
+  `ForegroundServiceStartNotAllowedException` extends `IllegalStateException`
+  and is the documented exception on this call path; catching the
+  parent type keeps the API floor clean (minSdk 26, exception class
+  added in API 31).
+- On catch: fall back to **V1 foreground-only TTS** — `_ttsNavigator`
+  is already non-null and `nav.play()` runs immediately after, so
+  the user gets audio while the reader is foregrounded. The service
+  is NOT bound and the rich notification does NOT appear.
+- The VM emits `backgroundPlaybackUnavailableEvents` (distinct from
+  `permissionDeniedEvents` so the Snackbar copy can name the failure
+  mode: "Background playback unavailable. Read-aloud will continue
+  while the reader is open.").
+
+Pinned by `GroupGSecurityTest.platform_startForegroundService_exceptionGuarded`.
 
 ## Consequences
 
@@ -167,6 +235,9 @@ mid-utterance.
 | Service `onCreate` calls `startForeground` with the default builder result; `updateNowPlaying` is the rich-update path | `GroupGSecurityTest.audhd_serviceNotification_richContent_atomicUpdate` |
 | VM start path gates the service bind on a `POST_NOTIFICATIONS` runtime check | `GroupGSecurityTest.platform_serviceStart_requiresPostNotificationsPermission` |
 | Recents swipe → `onTaskRemoved` → bound callback → VM stop (single cleanup path) | `GroupGSecurityTest.platform_serviceCleanup_singlePathThroughViewModel` |
+| Notifications use `VISIBILITY_PRIVATE`; rich notification ships a redacted public version for the lockscreen | `GroupGSecurityTest.platform_serviceNotification_visibilityPrivate_andPublicRedacted` |
+| `startForegroundService` is wrapped in try/catch for `ForegroundServiceStartNotAllowedException` (API 31+) with V1 fallback + Snackbar | `GroupGSecurityTest.platform_startForegroundService_exceptionGuarded` |
+| `POST_NOTIFICATIONS` prompt is lazy (first `startTts`, not `onCreate`); denied-Snackbar is one-shot per attempt | `GroupGSecurityTest.audhd_postNotifications_prompt_lazyAndOneShot` |
 | Zero `AudioManager` calls outside `AudioSessionCoordinator.kt` | `scripts/check_audio_session.sh` (unchanged) |
 
 ## Cross-references
