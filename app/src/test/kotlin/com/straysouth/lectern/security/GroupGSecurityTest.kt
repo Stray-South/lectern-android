@@ -37,6 +37,7 @@ import java.io.File
  * Working-directory assumption: file paths resolve relative to the `app/` module
  * directory, which is the default CWD for `./gradlew testDebugUnitTest`.
  */
+@Suppress("LargeClass") // One JUnit class per Group keeps the regression contract co-located.
 class GroupGSecurityTest {
 
     // ── G.1 — Animation durations ≤ 200 ms ───────────────────────────────────
@@ -737,28 +738,66 @@ class GroupGSecurityTest {
         val source = stripComments(
             File("src/main/kotlin/com/straysouth/lectern/service/TtsNotificationBuilder.kt").readText(),
         )
-        assertFalse(
-            "TtsNotificationBuilder must NOT call setVisibility(VISIBILITY_PUBLIC) on " +
-                "the private notification — title/chapter would leak on the lockscreen " +
-                "(ADR-AND-W §FGS notification visibility)",
-            source.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)") &&
-                !source.contains("buildPublicRedacted"),
-        )
+        // Window-scoped: slice the source into per-function bodies so we can
+        // assert visibility per builder rather than via global contains() —
+        // a global "no VISIBILITY_PUBLIC" check would be wrong because the
+        // legitimate redacted helper sets itself PUBLIC for the lockscreen.
+        val defaultIdx = source.indexOf("fun buildDefault(")
         assertTrue(
-            "TtsNotificationBuilder.buildDefault must use VISIBILITY_PRIVATE " +
+            "TtsNotificationBuilder.buildDefault must exist " +
                 "(ADR-AND-W §FGS notification visibility)",
-            source.contains("setVisibility(NotificationCompat.VISIBILITY_PRIVATE)"),
+            defaultIdx >= 0,
         )
+        val redactedIdx = source.indexOf("fun buildPublicRedacted(")
         assertTrue(
             "TtsNotificationBuilder must define a buildPublicRedacted helper for the " +
                 "lockscreen-safe public version (ADR-AND-W §FGS notification visibility)",
-            source.contains("fun buildPublicRedacted("),
+            redactedIdx >= 0,
+        )
+        val richIdx = source.indexOf("fun buildRich(")
+        assertTrue(
+            "TtsNotificationBuilder.buildRich must exist " +
+                "(ADR-AND-W §FGS notification visibility)",
+            richIdx >= 0,
+        )
+        val defaultBody = source.substring(defaultIdx, redactedIdx)
+        val redactedBody = source.substring(redactedIdx, richIdx)
+        val richBody = source.substring(richIdx)
+        assertTrue(
+            "TtsNotificationBuilder.buildDefault must use VISIBILITY_PRIVATE — anything " +
+                "else leaks notification content on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            defaultBody.contains("setVisibility(NotificationCompat.VISIBILITY_PRIVATE)"),
+        )
+        assertFalse(
+            "TtsNotificationBuilder.buildDefault must NOT call setVisibility(VISIBILITY_PUBLIC) " +
+                "— the default notification renders directly on lockscreen and has no " +
+                "redacted public version (ADR-AND-W §FGS notification visibility)",
+            defaultBody.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)"),
+        )
+        assertTrue(
+            "TtsNotificationBuilder.buildRich must use VISIBILITY_PRIVATE so the system " +
+                "substitutes the redacted public version on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            richBody.contains("setVisibility(NotificationCompat.VISIBILITY_PRIVATE)"),
+        )
+        assertFalse(
+            "TtsNotificationBuilder.buildRich must NOT call setVisibility(VISIBILITY_PUBLIC) " +
+                "— title and chapter would leak on the lockscreen " +
+                "(ADR-AND-W §FGS notification visibility)",
+            richBody.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)"),
+        )
+        assertTrue(
+            "TtsNotificationBuilder.buildPublicRedacted must declare itself VISIBILITY_PUBLIC " +
+                "— it IS the lockscreen-safe version the system substitutes in " +
+                "(ADR-AND-W §FGS notification visibility)",
+            redactedBody.contains("setVisibility(NotificationCompat.VISIBILITY_PUBLIC)"),
         )
         assertTrue(
             "TtsNotificationBuilder.buildRich must call setPublicVersion(buildPublicRedacted(...)) " +
                 "so the system substitutes the redacted notification on the lockscreen " +
                 "(ADR-AND-W §FGS notification visibility)",
-            source.contains(".setPublicVersion(buildPublicRedacted("),
+            richBody.contains(".setPublicVersion(buildPublicRedacted("),
         )
     }
 
