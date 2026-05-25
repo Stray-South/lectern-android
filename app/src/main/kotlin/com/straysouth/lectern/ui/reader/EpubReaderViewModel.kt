@@ -197,6 +197,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     // explicit grant or when the VM is cleared.
     @Volatile private var _permissionRequestInFlight = false
 
+    // Guards "ask only once total per VM lifetime". After the first prompt
+    // (regardless of grant/deny), subsequent missing-permission attempts go
+    // straight to the Snackbar — re-prompting on every startTts() is
+    // user-hostile (Android shows the dialog up to 2x before silent denial,
+    // but UX expectation is one prompt then in-app feedback).
+    @Volatile private var _postNotificationsAskedOnce = false
+
     private val ttsServiceCallbacks = object : TtsServiceCallbacks {
         override fun onPlayPause() {
             val active = _ttsUiState.value as? TtsUiState.Active
@@ -557,6 +564,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
      */
     fun onPostNotificationsResult(granted: Boolean) {
         _permissionRequestInFlight = false
+        _postNotificationsAskedOnce = true
         if (granted) {
             if (_ttsNavigator != null && _ttsServiceBinder == null) {
                 bindForegroundServiceIfPermitted()
@@ -590,7 +598,10 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         // We do NOT request the prompt again if one is already in flight
         // (the system would queue a second dialog above the first).
         if (!hasPostNotificationsPermission()) {
-            if (needsPostNotificationsRequest() && !_permissionRequestInFlight) {
+            val canAsk = needsPostNotificationsRequest() &&
+                !_postNotificationsAskedOnce &&
+                !_permissionRequestInFlight
+            if (canAsk) {
                 _permissionRequestInFlight = true
                 _permissionRequestEvents.trySend(Unit)
             } else {
