@@ -517,23 +517,8 @@ class EpubReaderFragment : Fragment() {
                     val annotations by viewModel.annotationsForOpenBook.collectAsState()
                     val pendingNoteLocator by viewModel.pendingNoteLocator.collectAsState()
 
-                    // V2.2.3 — undo-delete Snackbar (G.3: Indefinite + withDismissAction).
                     val snackbarHostState = remember { SnackbarHostState() }
-                    UndoDeleteAnnotationEffect(
-                        snackbarHostState = snackbarHostState,
-                        deletedAnnotations = viewModel.deletedAnnotations,
-                        onRestore = viewModel::restoreAnnotation,
-                    )
-
-                    // V2.9-A — POST_NOTIFICATIONS denied banner. Mirrors the
-                    // tts_engine_unavailable UX (informational, no Settings deeplink);
-                    // VM continues in V1 foreground-only TTS mode.
-                    NotificationPermissionDeniedEffect(
-                        snackbarHostState = snackbarHostState,
-                        deniedFlow = viewModel.notificationPermissionDenied,
-                        onDismiss = viewModel::dismissNotificationPermissionBanner,
-                    )
-
+                    ReaderSnackbarEffects(snackbarHostState, viewModel)
                     Box(modifier = Modifier.fillMaxSize()) {
                         ReaderOverlay(
                             state = state,
@@ -730,4 +715,22 @@ private fun NotificationPermissionDeniedEffect(
             onDismiss()
         }
     }
+}
+
+/** Bundles the reader's Snackbar side-effects to keep `onCreateView` short. */
+@androidx.compose.runtime.Composable
+private fun ReaderSnackbarEffects(
+    snackbarHostState: SnackbarHostState,
+    viewModel: EpubReaderViewModel,
+) {
+    UndoDeleteAnnotationEffect(
+        snackbarHostState = snackbarHostState,
+        deletedAnnotations = viewModel.deletedAnnotations,
+        onRestore = viewModel::restoreAnnotation,
+    )
+    NotificationPermissionDeniedEffect(
+        snackbarHostState = snackbarHostState,
+        deniedFlow = viewModel.notificationPermissionDenied,
+        onDismiss = viewModel::dismissNotificationPermissionBanner,
+    )
 }
