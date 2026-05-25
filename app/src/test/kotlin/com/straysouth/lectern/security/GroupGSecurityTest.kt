@@ -845,9 +845,10 @@ class GroupGSecurityTest {
             source.contains("val backgroundPlaybackUnavailableEvents"),
         )
         assertTrue(
-            "EpubReaderViewModel must emit a backgroundPlaybackUnavailableEvents Unit on the " +
-                "FGS-rejection path so the Snackbar fires (ADR-AND-W §FGS start exception policy)",
-            source.contains("_backgroundPlaybackUnavailableEvents.trySend(Unit)"),
+            "EpubReaderViewModel must emit _backgroundPlaybackUnavailableEvents.trySend(Unit) " +
+                "INSIDE the FGS-rejection catch block (not on an unconditional path) so the " +
+                "Snackbar fires only on rejection (ADR-AND-W §FGS start exception policy)",
+            window.contains("_backgroundPlaybackUnavailableEvents.trySend(Unit)"),
         )
     }
 
