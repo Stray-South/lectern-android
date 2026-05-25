@@ -143,3 +143,30 @@ strips comments before matching.
 - `app/src/main/kotlin/com/straysouth/lectern/ui/window/WindowSecurityController.kt`
 - `app/src/main/kotlin/com/straysouth/lectern/MainActivity.kt` (Activity-scope binding)
 - `app/src/main/kotlin/com/straysouth/lectern/ui/reader/ReaderScreen.kt` (the `SecureWindow()` call site)
+
+## 2026-05-25 amendment — V2.9 fires trigger 5
+
+**Trigger fired:** reconsideration-triggers item 5 (foreground service
+with a persistent notification — the notification shade is
+screenshot-capturable separately from the app, so its content widens
+the screenshot threat surface).
+
+V2.9 ships a TTS foreground service (`TtsForegroundService`) with a
+rich notification surfacing the current book title and chapter. The
+content policy is documented in `ADR-AND-W` §"Threat model —
+notification content": book title and chapter are allowed (already
+visible on the Library / chapter rotor); TTS body text, annotation
+body, and gaze indicators are **never** in the notification.
+
+**No FLAG_SECURE change required.** The in-app reader continues to
+claim `FLAG_SECURE` via `SecureWindow()` while annotations are on
+screen per the 2026-05-22 amendment. The notification surface is a
+separate threat surface handled by content policy rather than a
+window flag — Android does not expose a `FLAG_SECURE` equivalent for
+notification shades.
+
+See `ADR-AND-W` for the full V2.9 architecture and the four pinning
+tests (`platform_pendingIntent_alwaysImmutable_andOnlyInServiceModule`,
+`audhd_serviceNotification_richContent_atomicUpdate`,
+`platform_serviceStart_requiresPostNotificationsPermission`,
+`platform_serviceCleanup_singlePathThroughViewModel`).
